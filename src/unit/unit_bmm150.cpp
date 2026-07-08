@@ -167,6 +167,7 @@ bool UnitBMM150::writeDataRate(const bmm150::DataRate rate)
 {
     if (write_register8_verified(OP_MODE, static_cast<uint8_t>((static_cast<uint8_t>(rate) << 3) | OPMODE_NORMAL))) {
         _cfg.rate = rate;
+        _interval = interval_ms(rate);
         return true;
     }
     return false;
