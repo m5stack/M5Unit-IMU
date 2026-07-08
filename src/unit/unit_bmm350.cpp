@@ -177,17 +177,17 @@ bool UnitBMM350::begin()
         return false;
     }
 
-    // Magnetic reset (FGR then BR; boot must complete this once before Normal mode)
-    if (!writeRegister8(PMU_CMD, PMU_CMD_FGR)) {
-        M5_LIB_LOGE("Failed to issue FGR");
-        return false;
-    }
-    m5::utility::delay(18);
+    // Magnetic reset (BR then FGR; boot must complete this once before Normal mode)
     if (!writeRegister8(PMU_CMD, PMU_CMD_BR)) {
         M5_LIB_LOGE("Failed to issue BR");
         return false;
     }
     m5::utility::delay(14);
+    if (!writeRegister8(PMU_CMD, PMU_CMD_FGR)) {
+        M5_LIB_LOGE("Failed to issue FGR");
+        return false;
+    }
+    m5::utility::delay(18);
 
     if (!write_register8_verified(INT_CTRL, INT_CTRL_DRDY_DATA_REG_EN)) {
         M5_LIB_LOGE("Failed to initialize");
@@ -291,11 +291,33 @@ bool UnitBMM350::commit_odr_avg(const bmm350::DataRate rate, const bmm350::Avera
     }
     m5::utility::delay(1);
 
+    // Bosch bmm350_set_powermode(): PMU_CMD last written was UPD_OAE, so it always
+    // suspends before transitioning to Normal (see set_odr_performance + set_powermode()
+    // in bmm350_normal_mode.c)
+    if (!writeRegister8(PMU_CMD, PMU_CMD_SUS)) {
+        M5_LIB_LOGE("Failed to suspend");
+        return false;
+    }
+    m5::utility::delay(6);
+
     if (!writeRegister8(PMU_CMD, PMU_CMD_NM)) {
         M5_LIB_LOGE("Failed to enter normal mode");
         return false;
     }
     m5::utility::delay(38);
+
+    uint8_t status0{};
+    if (!read_register8(PMU_CMD_STATUS_0, status0)) {
+        M5_LIB_LOGE("Failed to read PMU_CMD_STATUS_0");
+        return false;
+    }
+    if (status0 & PMU_CMD_STATUS_0_CMD_ILLEGAL) {
+        M5_LIB_LOGE("PMU command illegal (PMU_CMD_STATUS_0:%02X)", status0);
+    }
+    if (!(status0 & PMU_CMD_STATUS_0_PWR_MODE_NORMAL)) {
+        M5_LIB_LOGE("Failed to reach normal mode (PMU_CMD_STATUS_0:%02X)", status0);
+        return false;
+    }
     return true;
 }
 

@@ -121,9 +121,10 @@ protected:
     bool read_registers(const uint8_t reg, uint8_t* out, const uint32_t len);
     bool read_register8(const uint8_t reg, uint8_t& out);
     bool download_otp(bmm350::otp_compensation_t& comp);
-    // Suspend->(AGGR_SET)->UPD_OAE->Normal tail shared by begin() and the writeDataRate()/
-    // writeAveraging() setters (the SUS transition itself is only needed by the setters,
-    // since begin() is already suspended right after the magnetic reset)
+    // AGGR_SET->UPD_OAE->SUS->Normal tail shared by begin() and the writeDataRate()/
+    // writeAveraging() setters (Bosch bmm350_set_odr_performance() + bmm350_set_powermode():
+    // the SUS step is always issued here since PMU_CMD was just left at UPD_OAE). Verifies
+    // PMU_CMD_STATUS_0.pwr_mode_is_normal after the Normal transition.
     bool commit_odr_avg(const bmm350::DataRate rate, const bmm350::Averaging avg);
 
     M5_UNIT_COMPONENT_PERIODIC_MEASUREMENT_ADAPTER_HPP_BUILDER(UnitBMM350, bmm350::Data);
@@ -142,6 +143,7 @@ namespace command {
 constexpr uint8_t CHIP_ID          = 0x00;
 constexpr uint8_t PMU_CMD_AGGR_SET = 0x04;  // bits[3:0]=odr, bits[5:4]=avg
 constexpr uint8_t PMU_CMD          = 0x06;
+constexpr uint8_t PMU_CMD_STATUS_0 = 0x07;  // bit3=pwr_mode_is_normal, bit4=cmd_is_illegal
 constexpr uint8_t INT_CTRL         = 0x2E;  // bit7 = drdy_data_reg_en
 constexpr uint8_t INT_STATUS       = 0x30;  // bit2 = drdy_data_reg (clears on read)
 constexpr uint8_t MAG_X_XLSB       = 0x31;  // 12 bytes: mag X/Y/Z (24bit each) + temperature (24bit)
@@ -162,6 +164,10 @@ constexpr uint8_t PMU_CMD_NM      = 0x01;
 constexpr uint8_t PMU_CMD_UPD_OAE = 0x02;
 constexpr uint8_t PMU_CMD_FGR     = 0x05;
 constexpr uint8_t PMU_CMD_BR      = 0x07;
+
+// PMU_CMD_STATUS_0 (0x07) bits
+constexpr uint8_t PMU_CMD_STATUS_0_PWR_MODE_NORMAL = 0x08;  // bit3: pwr_mode_is_normal
+constexpr uint8_t PMU_CMD_STATUS_0_CMD_ILLEGAL     = 0x10;  // bit4: cmd_is_illegal
 
 // OTP_CMD_REG (0x50) values
 constexpr uint8_t OTP_CMD_DIR_READ    = 0x20;
