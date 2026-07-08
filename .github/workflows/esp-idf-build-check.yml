@@ -1,0 +1,90 @@
+name: Build(esp-idf-native)
+
+on:
+  push:
+    tags-ignore:
+      - '*.*.*'
+      - 'v*.*.*'
+    branches:
+      - '*'
+    paths:
+      - 'src/**.cpp'
+      - 'src/**.hpp'
+      - 'src/**.h'
+      - 'src/**.c'
+      - 'CMakeLists.txt'
+      - 'idf_component.yml'
+      - 'examples/UnitUnified/**.cpp'
+      - 'examples/UnitUnified/**.hpp'
+      - 'examples/UnitUnified/**.h'
+      - 'examples/UnitUnified/**.c'
+      - 'examples/UnitUnified/**/CMakeLists.txt'
+      - 'examples/UnitUnified/**/Kconfig.projbuild'
+      - 'examples/UnitUnified/common/**'
+      - '.github/workflows/esp-idf-build-check.yml'
+  pull_request:
+    paths:
+      - 'src/**.cpp'
+      - 'src/**.hpp'
+      - 'src/**.h'
+      - 'src/**.c'
+      - 'CMakeLists.txt'
+      - 'idf_component.yml'
+      - 'examples/UnitUnified/**.cpp'
+      - 'examples/UnitUnified/**.hpp'
+      - 'examples/UnitUnified/**.h'
+      - 'examples/UnitUnified/**.c'
+      - 'examples/UnitUnified/**/CMakeLists.txt'
+      - 'examples/UnitUnified/**/Kconfig.projbuild'
+      - 'examples/UnitUnified/common/**'
+      - '.github/workflows/esp-idf-build-check.yml'
+  workflow_dispatch:
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Cross design: UnitIMU (MPU6886) has a single example (PlotToSerial) and a single Kconfig
+# variant (USING_UNIT_IMU_MINI, no Hat/alternate variant), so there is no separate variant
+# axis to cover. One job iterates chip x idf boundaries directly.
+jobs:
+  build:
+    name: ${{ matrix.idf }} ${{ matrix.target }} PlotToSerial-UnitIMU
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix:
+        # idf boundaries: 5.1.7 = oldest legacy-driver (5.0.x dropped: M5GFX needs esp_mm added
+        # in 5.1), 5.4.4 = new driver/*_master.h era, 5.5.4 = latest.
+        idf: [v5.1.7, v5.4.4, v5.5.4]
+        # esp32 = classic Xtensa dual-core. esp32s3 = LCD-capable dual-core with PSRAM.
+        # esp32c6 (NanoC6) / esp32h2 (NanoH2) = RISC-V single-core, exercises the app_main
+        # CONFIG_FREERTOS_UNICORE feedIdle branch. esp32p4 (M5Stack Tab5) = RISC-V dual-core.
+        target: [esp32, esp32s3, esp32c6, esp32h2, esp32p4]
+        exclude:
+          # esp32p4 stable from IDF v5.3 (M5GFX P4 verified on 5.4/5.5). 5.1.7 not applicable.
+          - target: esp32p4
+            idf: v5.1.7
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Kconfig variant
+        # The example's own sdkconfig.defaults is not read (top CMakeLists points SDKCONFIG_DEFAULTS
+        # at common/sdkconfig.defaults). Append the choice to common/ in the CI workspace only.
+        run: |
+          echo "" >> examples/UnitUnified/common/sdkconfig.defaults
+          echo "CONFIG_EXAMPLE_USING_UNIT_IMU_MINI=y" >> examples/UnitUnified/common/sdkconfig.defaults
+
+      - name: ESP-IDF build
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: ${{ matrix.idf }}
+          target: ${{ matrix.target }}
+          path: examples/UnitUnified/PlotToSerial
