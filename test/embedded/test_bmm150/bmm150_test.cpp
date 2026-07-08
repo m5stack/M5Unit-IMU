@@ -13,7 +13,7 @@
       M5Unified 内蔵 IMU として BMM150 を M5.In_I2C 経由で保持している
       (M5Unified/src/utility/IMU_Class.cpp:123, :130 の board_M5Stack 分岐/
       M5Unified/src/utility/imu/BMM150_Class.cpp)
-    - AtomS3R は BMI270 の AUX インタフェース経由 (Task 6, UnitBMI270 側で対応)
+    - CoreS3 / AtomS3R は BMI270 の AUX インタフェース経由 (Task 6, UnitBMI270 側で対応)
   内蔵バスでの実行方法の前例は、M5Unit-ENV の
   examples/UnitUnified/Paper/main/Paper.cpp (M5Paper 内蔵 SHT30 を
   `M5.getBoard() == m5::board_t::board_M5Paper` で判定し `Units.add(sht30, M5.In_I2C)`

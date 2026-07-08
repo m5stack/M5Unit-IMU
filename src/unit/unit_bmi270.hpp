@@ -14,6 +14,7 @@
 #include <m5_utility/container/circular_buffer.hpp>
 #include <memory>
 #include "unit_bmi270_data.hpp"
+#include "unit_bmm150_data.hpp"
 #include "../imu/imu_data_source.hpp"
 
 namespace m5 {
@@ -22,8 +23,9 @@ namespace unit {
 /*!
   @class UnitBMI270
   @brief 6-axis (accel + gyro) IMU unit. CoreS3/AtomS3R built-in
-  @note The AUX interface (on-chip BMM150 magnetometer bridge, as wired on
-  AtomS3R) is not yet supported by this class
+  @note When config_t::enable_aux_bmm150 is set (the default) and an on-chip
+  BMM150 is detected via the AUX interface (as wired on CoreS3/AtomS3R), this
+  unit also provides compensated magnetometer data; see imuSpec()
  */
 class UnitBMI270 : public Component,
                    public PeriodicMeasurementAdapter<UnitBMI270, bmi270::Data>,
@@ -46,6 +48,9 @@ public:
         bmi270::AccelODR accel_odr{bmi270::AccelODR::Rate100Hz};
         //! Gyroscope output data rate (periodic measurement interval is derived from this)
         bmi270::GyroODR gyro_odr{bmi270::GyroODR::Rate100Hz};
+        //! Probe for an on-chip BMM150 magnetometer via the AUX interface on begin()?
+        //! If no BMM150 responds, begin() still succeeds with 6-axis (accel/gyro) only
+        bool enable_aux_bmm150{true};
         //! Ring buffer depth. This unit treats config_t as the sole control surface;
         //! component_config().stored_size is synced to this value in begin()
         uint32_t stored_size{8};
@@ -103,10 +108,12 @@ public:
     ///@name IMUDataSource
     ///@{
     //! @brief Capability of this unit
-    //! @return Accel | Gyro | Temp
+    //! @return Accel | Gyro | Temp, plus Mag if an AUX BMM150 was detected in begin()
     virtual m5::imu::Capability imuSpec() const override
     {
-        return m5::imu::Capability::Accel | m5::imu::Capability::Gyro | m5::imu::Capability::Temp;
+        using m5::imu::Capability;
+        const auto base = Capability::Accel | Capability::Gyro | Capability::Temp;
+        return _aux_mag ? (base | Capability::Mag) : base;
     }
     //! @brief Read the latest raw IMU data
     //! @param[out] out Raw IMU data
@@ -128,12 +135,29 @@ protected:
     // BMI270_Class::_upload_file() which always returns true regardless of write result.
     bool upload_config();
 
+    // AUX (on-chip BMM150) support. Called once from begin() after the ACC/GYR config
+    // writes succeed; on success the AUX interface is left in data mode (BMI270 auto-polls
+    // the BMM150 at 30Hz into DATA_0..DATA_7) and _mag_trim holds the factory trim read
+    // via the AUX bridge. On failure (no BMM150 wired), the caller falls back to 6-axis.
+    bool probe_aux_bmm150();
+    // Polls STATUS.aux_busy (bit2) until clear; gates every AUX manual transaction below
+    bool aux_wait_ready();
+    bool aux_write_register8(const uint8_t reg, const uint8_t val);
+    bool aux_read_register8(const uint8_t reg, uint8_t& out);
+    // Manual burst read of 8 bytes starting at a BMM150 register, via the AUX bridge
+    bool aux_read_burst8(const uint8_t bmm150_reg, std::array<uint8_t, 8>& out);
+    // Reads the BMM150 factory trim (registers 0x5D-0x71) through 3 overlapping 8 byte AUX
+    // bursts (0x5D/0x65/0x6A) and maps them the same way as UnitBMM150::read_trim()
+    bool aux_read_trim(bmm150::trim_t& trim);
+
     M5_UNIT_COMPONENT_PERIODIC_MEASUREMENT_ADAPTER_HPP_BUILDER(UnitBMI270, bmi270::Data);
 
 private:
     config_t _cfg{};
     int16_t _last_temp{};             // Latest valid TEMPERATURE_0 reading (register update is not per-sample)
     uint32_t _pushed{}, _consumed{};  // readImuRaw pop counters (do not disturb latest()/oldest())
+    bool _aux_mag{false};             // True if an AUX BMM150 was detected and configured in begin()
+    bmm150::trim_t _mag_trim{};       // Factory trim read via the AUX bridge, valid only if _aux_mag
     std::unique_ptr<m5::container::CircularBuffer<bmi270::Data>> _data{};
 };
 
@@ -141,40 +165,83 @@ namespace bmi270 {
 namespace command {
 ///@cond
 // Register addresses (I2C addr 0x68 (SDO=GND) / 0x69 (SDO=VDDIO, M5 board default))
+constexpr uint8_t DATA_0     = 0x04;       // AUX (mag) burst start: 20 bytes = mag(8)+accel(6)+gyro(6), see DATA_8
+constexpr uint8_t STATUS_REG = 0x03;       // bit2 = aux_man_op busy (named STATUS_REG: ESP-IDF's
+                                           // ets_sys.h has a global `typedef enum STATUS STATUS`)
 constexpr uint8_t DATA_8          = 0x0C;  // 12 bytes: accel X/Y/Z, gyro X/Y/Z (little-endian)
-constexpr uint8_t INT_STATUS_1    = 0x1D;  // bit7 acc_drdy, bit6 gyr_drdy
+constexpr uint8_t INT_STATUS_1    = 0x1D;  // bit7 acc_drdy, bit6 gyr_drdy, bit5 aux_drdy
 constexpr uint8_t TEMPERATURE_0   = 0x22;  // 2 bytes, little-endian, 0x8000 = invalid
 constexpr uint8_t INTERNAL_STATUS = 0x21;
 constexpr uint8_t ACC_CONF        = 0x40;
 constexpr uint8_t ACC_RANGE       = 0x41;
 constexpr uint8_t GYR_CONF        = 0x42;
 constexpr uint8_t GYR_RANGE       = 0x43;
-constexpr uint8_t INIT_CTRL       = 0x59;
-constexpr uint8_t INIT_ADDR_0     = 0x5B;  // followed by INIT_ADDR_1 (0x5C)
-constexpr uint8_t INIT_DATA       = 0x5E;
-constexpr uint8_t PWR_CONF        = 0x7C;  // bit0 adv_power_save
-constexpr uint8_t PWR_CTRL        = 0x7D;  // bit0 aux_en, bit1 gyr_en, bit2 acc_en, bit3 temp_en
-constexpr uint8_t CMD             = 0x7E;
-constexpr uint8_t CHIP_ID         = 0x00;
+constexpr uint8_t AUX_DEV_ID      = 0x4B;
+constexpr uint8_t AUX_IF_CONF =
+    0x4C;  // bit7 manual_en, bit6 fcu_write_en, bits[3:2] man_rd_burst, bits[1:0] aux_rd_burst
+constexpr uint8_t AUX_RD_ADDR = 0x4D;  // write triggers an AUX read transaction
+constexpr uint8_t AUX_WR_ADDR = 0x4E;  // write triggers an AUX write transaction (of AUX_WR_DATA)
+constexpr uint8_t AUX_WR_DATA = 0x4F;
+constexpr uint8_t INIT_CTRL   = 0x59;
+constexpr uint8_t INIT_ADDR_0 = 0x5B;  // followed by INIT_ADDR_1 (0x5C)
+constexpr uint8_t INIT_DATA   = 0x5E;
+constexpr uint8_t IF_CONF     = 0x6B;  // bit5 aux_en
+constexpr uint8_t PWR_CONF    = 0x7C;  // bit0 adv_power_save
+constexpr uint8_t PWR_CTRL    = 0x7D;  // bit0 aux_en, bit1 gyr_en, bit2 acc_en, bit3 temp_en
+constexpr uint8_t CMD         = 0x7E;
+constexpr uint8_t CHIP_ID     = 0x00;
 
 constexpr uint8_t CHIP_ID_VALUE = 0x24;
 constexpr uint8_t CMD_SOFTRESET = 0xB6;
 
+// STATUS (0x03) bits
+constexpr uint8_t STATUS_AUX_BUSY = 0x04;  // bit2
+
 // INT_STATUS_1 (0x1D) bits
 constexpr uint8_t INT_STATUS_1_GYR_DRDY = 0x40;  // bit6
 constexpr uint8_t INT_STATUS_1_ACC_DRDY = 0x80;  // bit7
+constexpr uint8_t INT_STATUS_1_AUX_DRDY = 0x20;  // bit5 (not used to gate reads; BMM150's own 30Hz update
+                                                 // rate means a stale AUX sample is simply re-read as-is)
 
 // INTERNAL_STATUS (0x21) message field, bits[3:0]. Not enum'd: 0x00 (not_init) is a
 // transient polling state, not a selectable setting (m5-cpp-rules)
 constexpr uint8_t INTERNAL_STATUS_MESSAGE_MASK = 0x0F;
 constexpr uint8_t INTERNAL_STATUS_INIT_OK      = 0x01;
 
-// ACC_CONF (0x40) / GYR_CONF (0x42): bit7 filter_perf=1 (high performance), bits[5:4] bwp=2 (normal)
+// ACC_CONF (0x40): acc_bwp is bits[6:4] / GYR_CONF (0x42): gyr_bwp is bits[5:4].
+// Value 0x20 selects bwp=2 (normal) in both fields, so one literal serves both registers
 constexpr uint8_t CONF_FILTER_PERF = 0x80;
 constexpr uint8_t CONF_BWP_NORMAL  = 0x20;
 
-// PWR_CTRL (0x7D): temp_en | acc_en | gyr_en (aux_en left off; see AUX support note in unit_bmi270.hpp)
-constexpr uint8_t PWR_CTRL_ACC_GYR_TEMP_ON = 0x0E;
+// PWR_CTRL (0x7D): temp_en | acc_en | gyr_en (aux_en added separately once AUX probing succeeds)
+constexpr uint8_t PWR_CTRL_ACC_GYR_TEMP_ON     = 0x0E;
+constexpr uint8_t PWR_CTRL_ACC_GYR_TEMP_AUX_ON = 0x0F;
+
+// IF_CONF (0x6B)
+constexpr uint8_t IF_CONF_AUX_EN = 0x20;  // bit5
+
+// AUX_IF_CONF (0x4C) presets used during the BMM150 probe/data-mode switch
+constexpr uint8_t AUX_IF_CONF_MANUAL_BL1 = 0x80;  // manual_en=1, man_rd_burst=BL1 (setup/single-register access)
+constexpr uint8_t AUX_IF_CONF_MANUAL_BL8 = 0x8C;  // manual_en=1, man_rd_burst=BL8 (trim burst read)
+constexpr uint8_t AUX_IF_CONF_DATA_MODE  = 0x4F;  // manual_en=0 (data mode), fcu_write_en=1, man_rd_burst=BL8,
+                                                  // aux_rd_burst=BL8 (BMI270 auto-polls the AUX target)
+
+// AUX_DEV_ID (0x4B) value for the on-chip BMM150 (7bit I2C address 0x10, shifted for the addr<<1 encoding)
+constexpr uint8_t AUX_DEV_ID_BMM150 = 0x10 << 1;
+
+// BMM150 registers, reachable only indirectly through the AUX bridge above (distinct
+// address space from this chip's own registers)
+constexpr uint8_t BMM150_CHIP_ID       = 0x40;
+constexpr uint8_t BMM150_DATA_X_LSB    = 0x42;
+constexpr uint8_t BMM150_POWER_CONTROL = 0x4B;
+constexpr uint8_t BMM150_OP_MODE       = 0x4C;
+
+constexpr uint8_t BMM150_CHIP_ID_VALUE = 0x32;
+// bit7+bit1 SoftReset + bit0 PowerControl combined (same alias as bmm150::command::SOFT_RESET_AND_POWER_ON,
+// duplicated here since this AUX path talks to the BMM150 directly, not through UnitBMM150)
+constexpr uint8_t BMM150_SOFT_RESET_AND_POWER_ON = 0x83;
+// DataRate::Rate30Hz (0x07) << 3 | Opmode Normal (0x00)
+constexpr uint8_t BMM150_OP_MODE_NORMAL_ODR30HZ = 0x38;
 ///@endcond
 }  // namespace command
 }  // namespace bmi270

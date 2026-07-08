@@ -12,6 +12,7 @@
 
 #include <array>
 #include <cstdint>
+#include "unit_bmm150_data.hpp"
 
 namespace m5 {
 namespace unit {
@@ -64,8 +65,8 @@ enum class AccelODR : uint8_t {
 enum class GyroODR : uint8_t {
     Rate25Hz = 0x06,  //!< @brief 25Hz
     Rate50Hz,         //!< @brief 50Hz
-    Rate100Hz,        //!< @brief 100Hz (power-on default)
-    Rate200Hz,        //!< @brief 200Hz
+    Rate100Hz,        //!< @brief 100Hz
+    Rate200Hz,        //!< @brief 200Hz (power-on default)
     Rate400Hz,        //!< @brief 400Hz
     Rate800Hz,        //!< @brief 800Hz
     Rate1600Hz,       //!< @brief 1600Hz
@@ -106,10 +107,17 @@ constexpr uint32_t odr_interval_ms(const GyroODR odr)
 
 /*!
   @struct Data
-  @brief One measurement (12 bytes burst from DATA_8, register 0x0C, little-endian)
+  @brief One measurement. Accel/gyro are always 12 bytes, little-endian
+  (register 0x0C when the AUX/BMM150 bridge is not in use, or bytes [8..19] of
+  the 20 byte burst from register 0x04 when it is; see UnitBMI270::read_measurement())
  */
 struct Data {
     std::array<uint8_t, 12> raw{};  //!< @brief [0..5] accel XYZ, [6..11] gyro XYZ
+    //! @brief AUX (on-chip BMM150) magnetometer sample, valid only when aux_mag is true.
+    //! Reuses bmm150::Data's bit-packing and trim compensation (comp_x()/comp_y()/comp_z())
+    //! so the AUX path and the standalone UnitBMM150 path share identical math
+    bmm150::Data mag{};
+    bool aux_mag{false};  //!< @brief True if mag holds a sample from the AUX (BMM150) bridge
 
     ///@name Raw ADC values (little-endian)
     ///@{

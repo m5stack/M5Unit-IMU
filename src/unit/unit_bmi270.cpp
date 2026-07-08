@@ -35,6 +35,11 @@ constexpr uint32_t INTERNAL_STATUS_POLL_RETRY{20};
 // scheme below.
 constexpr size_t CONFIG_CHUNK_SIZE{64};
 
+// STATUS.aux_busy must clear within this many 1ms polls (datasheet-cited AUX transaction timing)
+constexpr uint32_t AUX_BUSY_POLL_RETRY{3};
+// BMM150 soft-reset settling time before it responds to AUX reads (datasheet 3.0ms)
+constexpr uint32_t AUX_RESET_DELAY_MS{3};
+
 #include "unit_bmi270_config.inl"
 
 }  // namespace
@@ -157,6 +162,14 @@ bool UnitBMI270::begin()
         return false;
     }
 
+    _aux_mag = _cfg.enable_aux_bmm150 && probe_aux_bmm150();
+    if (_cfg.enable_aux_bmm150 && !_aux_mag) {
+        // No BMM150 responded on the AUX interface (normal on boards without one):
+        // disable the AUX interface and continue with 6-axis (accel/gyro/temp) only.
+        writeRegister8(IF_CONF, 0x00);
+        M5_LIB_LOGI("No AUX BMM150 detected; continuing with 6-axis (accel/gyro/temp) only");
+    }
+
     return _cfg.start_periodic ? startPeriodicMeasurement() : true;
 }
 
@@ -239,6 +252,123 @@ bool UnitBMI270::upload_config()
     return true;
 }
 
+bool UnitBMI270::probe_aux_bmm150()
+{
+    // Setup mode: enable the AUX interface and switch it to manual (single-register) access
+    // so we can talk to the BMM150 directly (mirrors M5Unified's BMI270_Class::auxSetupMode()).
+    if (!writeRegister8(IF_CONF, IF_CONF_AUX_EN) || !writeRegister8(PWR_CONF, 0x00) ||
+        !writeRegister8(PWR_CTRL, PWR_CTRL_ACC_GYR_TEMP_ON) || !writeRegister8(AUX_IF_CONF, AUX_IF_CONF_MANUAL_BL1) ||
+        !writeRegister8(AUX_DEV_ID, AUX_DEV_ID_BMM150)) {
+        M5_LIB_LOGE("Failed to configure the AUX interface");
+        return false;
+    }
+
+    if (!aux_write_register8(BMM150_POWER_CONTROL, BMM150_SOFT_RESET_AND_POWER_ON)) {
+        M5_LIB_LOGE("Failed to reset the AUX BMM150");
+        return false;
+    }
+    m5::utility::delay(AUX_RESET_DELAY_MS);
+
+    // The first read right after a fresh AUX target reset returns a stale value
+    // (M5Unified BMI270_Class.cpp:76-77); discard it before checking the chip ID.
+    uint8_t who{};
+    if (!aux_read_register8(BMM150_CHIP_ID, who) || !aux_read_register8(BMM150_CHIP_ID, who) ||
+        who != BMM150_CHIP_ID_VALUE) {
+        return false;  // No AUX BMM150 wired on this board (normal case, no log)
+    }
+
+    if (!aux_read_trim(_mag_trim)) {
+        M5_LIB_LOGE("Failed to read the AUX BMM150 trim registers");
+        return false;
+    }
+
+    if (!aux_write_register8(BMM150_OP_MODE, BMM150_OP_MODE_NORMAL_ODR30HZ) ||
+        !write_register8_verified(AUX_IF_CONF, AUX_IF_CONF_DATA_MODE) ||
+        !write_register8_verified(AUX_RD_ADDR, BMM150_DATA_X_LSB) ||
+        !write_register8_verified(PWR_CTRL, PWR_CTRL_ACC_GYR_TEMP_AUX_ON)) {
+        M5_LIB_LOGE("Failed to switch the AUX BMM150 to data mode");
+        return false;
+    }
+    return true;
+}
+
+bool UnitBMI270::aux_wait_ready()
+{
+    for (uint32_t retry = 0; retry < AUX_BUSY_POLL_RETRY; ++retry) {
+        uint8_t status{};
+        if (!readRegister8(STATUS_REG, status, 0)) {
+            return false;
+        }
+        if ((status & STATUS_AUX_BUSY) == 0) {
+            return true;
+        }
+        m5::utility::delay(1);
+    }
+    return false;
+}
+
+bool UnitBMI270::aux_write_register8(const uint8_t reg, const uint8_t val)
+{
+    return writeRegister8(AUX_WR_DATA, val) && writeRegister8(AUX_WR_ADDR, reg) && aux_wait_ready();
+}
+
+bool UnitBMI270::aux_read_register8(const uint8_t reg, uint8_t& out)
+{
+    if (!writeRegister8(AUX_IF_CONF, AUX_IF_CONF_MANUAL_BL1) || !writeRegister8(AUX_RD_ADDR, reg) ||
+        !aux_wait_ready()) {
+        return false;
+    }
+    return readRegister8(DATA_0, out, 0);
+}
+
+bool UnitBMI270::aux_read_burst8(const uint8_t bmm150_reg, std::array<uint8_t, 8>& out)
+{
+    if (!writeRegister8(AUX_RD_ADDR, bmm150_reg) || !aux_wait_ready()) {
+        return false;
+    }
+    return readRegister(DATA_0, out.data(), out.size(), 0);
+}
+
+bool UnitBMI270::aux_read_trim(bmm150::trim_t& trim)
+{
+    // BMM150 trim occupies registers 0x5D-0x71 (21 bytes), but AUX manual burst reads are
+    // limited to 1/2/6/8 bytes. Three overlapping 8 byte bursts starting at 0x5D/0x65/0x6A
+    // cover the whole range; overlapping bytes are simply overwritten with identical values.
+    constexpr uint8_t TRIM_FIRST  = 0x5D;
+    constexpr uint8_t TRIM_SECOND = 0x65;
+    constexpr uint8_t TRIM_THIRD  = 0x6A;
+    constexpr size_t TRIM_BYTES   = 0x71 - TRIM_FIRST + 1;  // 21
+
+    if (!writeRegister8(AUX_IF_CONF, AUX_IF_CONF_MANUAL_BL8)) {
+        return false;
+    }
+
+    std::array<uint8_t, 8> w0{}, w1{}, w2{};
+    if (!aux_read_burst8(TRIM_FIRST, w0) || !aux_read_burst8(TRIM_SECOND, w1) || !aux_read_burst8(TRIM_THIRD, w2)) {
+        return false;
+    }
+
+    // Reassemble into the 0x5D..0x71 layout, indexed by (register - TRIM_FIRST), the same
+    // way UnitBMM150::read_trim() consumes its own (non-AUX) burst reads.
+    std::array<uint8_t, TRIM_BYTES> t{};
+    std::copy(w0.begin(), w0.end(), t.begin());
+    std::copy(w1.begin(), w1.end(), t.begin() + (TRIM_SECOND - TRIM_FIRST));
+    std::copy(w2.begin(), w2.end(), t.begin() + (TRIM_THIRD - TRIM_FIRST));
+
+    trim.dig_x1   = static_cast<int8_t>(t[0x5D - TRIM_FIRST]);
+    trim.dig_y1   = static_cast<int8_t>(t[0x5E - TRIM_FIRST]);
+    trim.dig_z4   = static_cast<int16_t>((t[0x63 - TRIM_FIRST] << 8) | t[0x62 - TRIM_FIRST]);
+    trim.dig_x2   = static_cast<int8_t>(t[0x64 - TRIM_FIRST]);
+    trim.dig_y2   = static_cast<int8_t>(t[0x65 - TRIM_FIRST]);
+    trim.dig_z2   = static_cast<int16_t>((t[0x69 - TRIM_FIRST] << 8) | t[0x68 - TRIM_FIRST]);
+    trim.dig_z1   = static_cast<uint16_t>((t[0x6B - TRIM_FIRST] << 8) | t[0x6A - TRIM_FIRST]);
+    trim.dig_xyz1 = static_cast<uint16_t>(((t[0x6D - TRIM_FIRST] << 8) | t[0x6C - TRIM_FIRST]) & 0x3FFF);
+    trim.dig_z3   = static_cast<int16_t>((t[0x6F - TRIM_FIRST] << 8) | t[0x6E - TRIM_FIRST]);
+    trim.dig_xy2  = static_cast<int8_t>(t[0x70 - TRIM_FIRST]);
+    trim.dig_xy1  = t[0x71 - TRIM_FIRST];
+    return true;
+}
+
 bool UnitBMI270::read_measurement(bmi270::Data& d)
 {
     uint8_t status{};
@@ -250,9 +380,25 @@ bool UnitBMI270::read_measurement(bmi270::Data& d)
     if ((status & both_drdy) != both_drdy) {
         return false;  // Not ready yet (normal case, no log)
     }
-    if (!readRegister(DATA_8, d.raw.data(), d.raw.size(), 0)) {
-        M5_LIB_LOGE("Failed to read data");
-        return false;
+
+    if (_aux_mag) {
+        // AUX data mode auto-polls the BMM150 into DATA_0..DATA_7 (mag+rhall) followed by
+        // the usual accel/gyro at DATA_8..DATA_19; one 20 byte burst covers all three.
+        std::array<uint8_t, 20> buf{};
+        if (!readRegister(DATA_0, buf.data(), buf.size(), 0)) {
+            M5_LIB_LOGE("Failed to read data");
+            return false;
+        }
+        std::copy(buf.begin(), buf.begin() + d.mag.raw.size(), d.mag.raw.begin());
+        std::copy(buf.begin() + d.mag.raw.size(), buf.end(), d.raw.begin());
+        d.mag.trim = _mag_trim;
+        d.aux_mag  = true;
+    } else {
+        if (!readRegister(DATA_8, d.raw.data(), d.raw.size(), 0)) {
+            M5_LIB_LOGE("Failed to read data");
+            return false;
+        }
+        d.aux_mag = false;
     }
 
     // Temperature is a separate, lower rate register (updates every 10ms in gyro normal
@@ -306,6 +452,11 @@ Capability UnitBMI270::readImuRaw(m5::imu::imu_raw_data_t& out)
     out.gyro[1]  = d->gyro_y();
     out.gyro[2]  = d->gyro_z();
     out.temp     = _last_temp;
+    if (d->aux_mag) {
+        out.mag[0] = d->mag.comp_x();
+        out.mag[1] = d->mag.comp_y();
+        out.mag[2] = d->mag.comp_z();
+    }
     return imuSpec();
 }
 
@@ -315,6 +466,9 @@ void UnitBMI270::imuConvertParam(m5::imu::imu_convert_param_t& out) const
     out.gyro_res    = gyro_res(_cfg.gyro_range);
     out.temp_res    = 1.0f / 512.0f;
     out.temp_offset = 23.0f;
+    if (_aux_mag) {
+        out.mag_res = 1.0f / 16.0f;  // Compensated BMM150 output, matches UnitBMM150's scale
+    }
 }
 
 }  // namespace unit

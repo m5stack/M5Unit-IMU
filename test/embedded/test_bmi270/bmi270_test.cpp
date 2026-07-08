@@ -105,3 +105,41 @@ TEST_F(TestBMI270, WriteRange)
     EXPECT_FLOAT_EQ(p.accel_res, 4.0f / 32768);
     EXPECT_FLOAT_EQ(p.gyro_res, 500.0f / 32768);
 }
+
+TEST_F(TestBMI270, AuxMagWhenPresent)
+{
+    SCOPED_TRACE(ustr);
+
+    // Whether an on-chip BMM150 is wired to the AUX interface depends on the board
+    // (CoreS3/AtomS3R: yes; other BMI270 wiring: no). Either way, begin() must have
+    // succeeded (fixture requirement) and readImuRaw()'s mag output must agree with
+    // what imuSpec() advertises.
+    const bool has_mag = m5::imu::any(unit->imuSpec() & m5::imu::Capability::Mag);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    for (int i = 0; i < 10; ++i) {
+        unit->update();
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+
+    m5::imu::imu_raw_data_t raw{};
+    bool saw_nonzero_mag{false};
+    int popped{};
+    while (m5::imu::any(unit->readImuRaw(raw))) {
+        ++popped;
+        if (raw.mag[0] != 0 || raw.mag[1] != 0 || raw.mag[2] != 0) {
+            saw_nonzero_mag = true;
+        }
+    }
+    EXPECT_GT(popped, 0);
+
+    if (has_mag) {
+        // AUX BMM150 detected: expect a real magnetometer reading in at least one of the
+        // popped samples (BMM150 updates at 30Hz; 100ms should yield at least one)
+        EXPECT_TRUE(saw_nonzero_mag);
+    } else {
+        // No AUX BMM150 wired: readImuRaw() never touches out.mag, so it stays at its
+        // zero-initialized default across every popped sample
+        EXPECT_FALSE(saw_nonzero_mag);
+    }
+}
