@@ -137,7 +137,7 @@ TEST(MatrixTest, Invert3x3KnownDiagonalMatrixRecoversIdentity)
 
     Matrix<3, 3> inv;
     const bool ok = invert3x3(m, inv);
-    ASSERT_TRUE(ok);
+    EXPECT_TRUE(ok);
 
     EXPECT_NEAR(inv(0, 0), 0.5f, 1e-6f);
     EXPECT_NEAR(inv(1, 1), 0.25f, 1e-6f);
@@ -170,7 +170,7 @@ TEST(MatrixTest, Invert3x3NonDiagonalMatrixRecoversIdentity)
 
     Matrix<3, 3> inv;
     const bool ok = invert3x3(m, inv);
-    ASSERT_TRUE(ok);
+    EXPECT_TRUE(ok);
 
     const Matrix<3, 3> product = m * inv;
     for (std::size_t r = 0; r < 3; ++r) {
@@ -221,7 +221,7 @@ TEST(MatrixTest, CholeskySolveKnownSPDSystem)
 
     Matrix<3, 1> x;
     const bool ok = cholesky_solve(a, b, x);
-    ASSERT_TRUE(ok);
+    EXPECT_TRUE(ok);
 
     EXPECT_NEAR(x(0, 0), 1.0f, 1e-3f);
     EXPECT_NEAR(x(1, 0), 2.0f, 1e-3f);
