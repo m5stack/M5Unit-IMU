@@ -19,6 +19,14 @@ using m5::imu::Capability;
 namespace {
 constexpr uint32_t WRITE_VERIFY_RETRY{16};
 
+// REG_CHIP_ID expected value / REG_POWER_CONTROL, REG_OP_MODE command values
+constexpr uint8_t WHOAMI_VALUE{0x32};
+constexpr uint8_t POWER_ON{0x01};
+// bit7 SoftReset + bit1 SoftReset + bit0 PowerControl combined.
+// Not modeled as an enum because it aliases distinct bit fields (m5-cpp-rules)
+constexpr uint8_t SOFT_RESET_AND_POWER_ON{0x83};
+constexpr uint8_t OPMODE_NORMAL{0x00};
+
 // Output data rate -> sampling interval (ms), indexed by the DataRate raw value.
 // DataRate is bit-value based (non-monotonic in Hz); see unit_bmm150_data.hpp
 constexpr uint32_t RATE_INTERVAL_MS[8] = {
@@ -47,48 +55,43 @@ const types::uid_t UnitBMM150::uid{"UnitBMM150"_mmh3};
 const types::attr_t UnitBMM150::attr{attribute::AccessI2C};
 
 UnitBMM150::UnitBMM150(const uint8_t addr)
-    : Component(addr), _data{new m5::container::CircularBuffer<bmm150::Data>(_cfg.stored_size)}
+    : Component(addr), _data{new m5::container::CircularBuffer<bmm150::Data>(bmm150::DEFAULT_STORED_SIZE)}
 {
     auto ccfg        = component_config();
     ccfg.clock       = 400 * 1000U;
-    ccfg.stored_size = _cfg.stored_size;
+    ccfg.stored_size = bmm150::DEFAULT_STORED_SIZE;
     component_config(ccfg);
 }
 
 bool UnitBMM150::begin()
 {
-    if (_cfg.stored_size != _data->capacity()) {
-        _data.reset(new m5::container::CircularBuffer<bmm150::Data>(_cfg.stored_size));
-    }
-    if (!_data) {
-        M5_LIB_LOGE("Failed to allocate");
-        return false;
+    auto ssize = stored_size();
+    if (ssize != _data->capacity()) {
+        _data.reset(new m5::container::CircularBuffer<bmm150::Data>(ssize));
+        if (!_data) {
+            M5_LIB_LOGE("Failed to allocate");
+            return false;
+        }
     }
     _data->clear();
     _pushed = _consumed = 0;
 
-    // config_t.stored_size is the sole control surface for the ring buffer depth;
-    // keep component_config().stored_size in sync with it here.
-    auto ccfg        = component_config();
-    ccfg.stored_size = _cfg.stored_size;
-    component_config(ccfg);
-
     // Suspend->Sleep transition: power on then wait for the start-up time before
-    // CHIP_ID becomes readable (datasheet 3.0ms; missing in M5Unified's implementation)
-    if (!writeRegister8(POWER_CONTROL, POWER_ON)) {
+    // REG_CHIP_ID becomes readable (datasheet 3.0ms; missing in M5Unified's implementation)
+    if (!writeRegister8(REG_POWER_CONTROL, POWER_ON)) {
         M5_LIB_LOGE("Failed to power on");
         return false;
     }
     m5::utility::delay(3);
 
-    // CHIP_ID reads 0x00 while suspended, so this check must come after power-on
+    // REG_CHIP_ID reads 0x00 while suspended, so this check must come after power-on
     uint8_t id{};
-    if (!readRegister8(CHIP_ID, id, 0) || id != WHOAMI_VALUE) {
+    if (!readRegister8(REG_CHIP_ID, id, 0) || id != WHOAMI_VALUE) {
         M5_LIB_LOGE("Not BMM150 %02X", id);
         return false;
     }
 
-    if (!writeRegister8(POWER_CONTROL, SOFT_RESET_AND_POWER_ON)) {
+    if (!writeRegister8(REG_POWER_CONTROL, SOFT_RESET_AND_POWER_ON)) {
         M5_LIB_LOGE("Failed to reset");
         return false;
     }
@@ -98,9 +101,9 @@ bool UnitBMM150::begin()
         return false;
     }
 
-    if (!write_register8_verified(REP_XY, preset_rep_xy(_cfg.preset)) ||
-        !write_register8_verified(REP_Z, preset_rep_z(_cfg.preset)) ||
-        !write_register8_verified(OP_MODE,
+    if (!write_register8_verified(REG_REP_XY, preset_rep_xy(_cfg.preset)) ||
+        !write_register8_verified(REG_REP_Z, preset_rep_z(_cfg.preset)) ||
+        !write_register8_verified(REG_OP_MODE,
                                   static_cast<uint8_t>((static_cast<uint8_t>(_cfg.rate) << 3) | OPMODE_NORMAL))) {
         M5_LIB_LOGE("Failed to initialize");
         return false;
@@ -155,8 +158,8 @@ bool UnitBMM150::stopPeriodicMeasurement()
 
 bool UnitBMM150::writePreset(const bmm150::Preset preset)
 {
-    if (write_register8_verified(REP_XY, preset_rep_xy(preset)) &&
-        write_register8_verified(REP_Z, preset_rep_z(preset))) {
+    if (write_register8_verified(REG_REP_XY, preset_rep_xy(preset)) &&
+        write_register8_verified(REG_REP_Z, preset_rep_z(preset))) {
         _cfg.preset = preset;
         return true;
     }
@@ -165,12 +168,40 @@ bool UnitBMM150::writePreset(const bmm150::Preset preset)
 
 bool UnitBMM150::writeDataRate(const bmm150::DataRate rate)
 {
-    if (write_register8_verified(OP_MODE, static_cast<uint8_t>((static_cast<uint8_t>(rate) << 3) | OPMODE_NORMAL))) {
+    if (write_register8_verified(REG_OP_MODE,
+                                 static_cast<uint8_t>((static_cast<uint8_t>(rate) << 3) | OPMODE_NORMAL))) {
         _cfg.rate = rate;
         _interval = interval_ms(rate);
         return true;
     }
     return false;
+}
+
+bool UnitBMM150::readDataRate(bmm150::DataRate& rate)
+{
+    uint8_t reg{};
+    if (!readRegister8(REG_OP_MODE, reg, 0)) {
+        return false;
+    }
+    rate = static_cast<bmm150::DataRate>((reg >> 3) & 0x07);
+    return true;
+}
+
+bool UnitBMM150::readPreset(bmm150::Preset& preset)
+{
+    uint8_t rep_xy{}, rep_z{};
+    if (!readRegister8(REG_REP_XY, rep_xy, 0) || !readRegister8(REG_REP_Z, rep_z, 0)) {
+        return false;
+    }
+    constexpr bmm150::Preset PRESETS[]{bmm150::Preset::LowPower, bmm150::Preset::Regular,
+                                       bmm150::Preset::EnhancedRegular, bmm150::Preset::HighAccuracy};
+    for (const auto p : PRESETS) {
+        if (rep_xy == preset_rep_xy(p) && rep_z == preset_rep_z(p)) {
+            preset = p;
+            return true;
+        }
+    }
+    return false;  // Current registers do not match any known preset
 }
 
 bool UnitBMM150::read_trim(bmm150::trim_t& trim)
@@ -179,9 +210,9 @@ bool UnitBMM150::read_trim(bmm150::trim_t& trim)
     std::array<uint8_t, 4> buf1{};   // 0x62..0x65: dig_z4(2), dig_x2, dig_y2
     std::array<uint8_t, 10> buf2{};  // 0x68..0x71: dig_z2(2), dig_z1(2), dig_xyz1(2), dig_z3(2), dig_xy2, dig_xy1
 
-    if (!readRegister(TRIM_START, buf0.data(), buf0.size(), 0) ||
-        !readRegister(static_cast<uint8_t>(TRIM_START + 5), buf1.data(), buf1.size(), 0) ||
-        !readRegister(static_cast<uint8_t>(TRIM_START + 11), buf2.data(), buf2.size(), 0)) {
+    if (!readRegister(REG_TRIM_START, buf0.data(), buf0.size(), 0) ||
+        !readRegister(static_cast<uint8_t>(REG_TRIM_START + 5), buf1.data(), buf1.size(), 0) ||
+        !readRegister(static_cast<uint8_t>(REG_TRIM_START + 11), buf2.data(), buf2.size(), 0)) {
         M5_LIB_LOGE("Failed to read trim registers");
         return false;
     }
@@ -205,7 +236,7 @@ bool UnitBMM150::read_trim(bmm150::trim_t& trim)
 
 bool UnitBMM150::read_measurement(bmm150::Data& d)
 {
-    if (!readRegister(DATA_X_LSB, d.raw.data(), d.raw.size(), 0)) {
+    if (!readRegister(REG_DATA_X_LSB, d.raw.data(), d.raw.size(), 0)) {
         M5_LIB_LOGE("Failed to read data");
         return false;
     }

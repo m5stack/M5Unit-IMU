@@ -19,19 +19,19 @@ using m5::imu::Capability;
 
 namespace {
 constexpr uint32_t WRITE_VERIFY_RETRY{16};
-// PWR_CONF must read 0 within 16ms of soft reset (datasheet-cited retry count, 1ms steps)
+// REG_PWR_CONF must read 0 within 16ms of soft reset (datasheet-cited retry count, 1ms steps)
 constexpr uint32_t PWR_CONF_POLL_RETRY{16};
-// INTERNAL_STATUS.message must reach init_ok (0x01) within ~20ms of INIT_CTRL=0x01 (1ms steps)
+// REG_INTERNAL_STATUS.message must reach init_ok (0x01) within ~20ms of REG_INIT_CTRL=0x01 (1ms steps)
 constexpr uint32_t INTERNAL_STATUS_POLL_RETRY{20};
 
-// Chunk size (bytes) for the config blob burst write to INIT_DATA (0x5E).
+// Chunk size (bytes) for the config blob burst write to REG_INIT_DATA (0x5E).
 // Rationale: AdapterI2C::WireImpl::writeWithTransaction() (m5_unit_component/adapter_i2c.cpp)
 // buffers the register address byte plus the payload in a single Wire transaction before
 // endTransmission() actually clocks it out, and arduino-esp32's TwoWire defaults
 // I2C_BUFFER_LENGTH to 128 bytes (Wire.h). 64 bytes of payload (+1 register address byte =
 // 65 bytes) stays well under that default regardless of which bus backend is active
 // (SoftwareI2C bit-bangs a byte at a time and has no such limit), and divides the 8192 byte
-// blob evenly (128 chunks) while staying word (2 byte) aligned for the INIT_ADDR_0/1 addressing
+// blob evenly (128 chunks) while staying word (2 byte) aligned for the REG_INIT_ADDR_0/1 addressing
 // scheme below.
 constexpr size_t CONFIG_CHUNK_SIZE{64};
 
@@ -39,6 +39,53 @@ constexpr size_t CONFIG_CHUNK_SIZE{64};
 constexpr uint32_t AUX_BUSY_POLL_RETRY{3};
 // BMM150 soft-reset settling time before it responds to AUX reads (datasheet 3.0ms)
 constexpr uint32_t AUX_RESET_DELAY_MS{3};
+
+// REG_CHIP_ID expected value / REG_CMD command value
+constexpr uint8_t CHIP_ID_VALUE{0x24};
+constexpr uint8_t CMD_SOFTRESET{0xB6};
+
+// REG_STATUS (0x03) bits
+constexpr uint8_t STATUS_AUX_BUSY{0x04};  // bit2
+
+// REG_INT_STATUS_1 (0x1D) bits
+constexpr uint8_t INT_STATUS_1_GYR_DRDY{0x40};  // bit6
+constexpr uint8_t INT_STATUS_1_ACC_DRDY{0x80};  // bit7
+constexpr uint8_t INT_STATUS_1_AUX_DRDY{0x20};  // bit5 (not used to gate reads; BMM150's own 30Hz update
+                                                // rate means a stale AUX sample is simply re-read as-is)
+
+// REG_INTERNAL_STATUS (0x21) message field, bits[3:0]. Not enum'd: 0x00 (not_init) is a
+// transient polling state, not a selectable setting (m5-cpp-rules)
+constexpr uint8_t INTERNAL_STATUS_MESSAGE_MASK{0x0F};
+constexpr uint8_t INTERNAL_STATUS_INIT_OK{0x01};
+
+// REG_ACC_CONF (0x40): acc_bwp is bits[6:4] / REG_GYR_CONF (0x42): gyr_bwp is bits[5:4].
+// Value 0x20 selects bwp=2 (normal) in both fields, so one literal serves both registers
+constexpr uint8_t CONF_FILTER_PERF{0x80};
+constexpr uint8_t CONF_BWP_NORMAL{0x20};
+
+// REG_PWR_CTRL (0x7D): temp_en | acc_en | gyr_en (aux_en added separately once AUX probing succeeds)
+constexpr uint8_t PWR_CTRL_ACC_GYR_TEMP_ON{0x0E};
+constexpr uint8_t PWR_CTRL_ACC_GYR_TEMP_AUX_ON{0x0F};
+
+// REG_IF_CONF (0x6B)
+constexpr uint8_t IF_CONF_AUX_EN{0x20};  // bit5
+
+// REG_AUX_IF_CONF (0x4C) presets used during the BMM150 probe/data-mode switch
+constexpr uint8_t AUX_IF_CONF_MANUAL_BL1{0x80};  // manual_en=1, man_rd_burst=BL1 (setup/single-register access)
+constexpr uint8_t AUX_IF_CONF_MANUAL_BL8{0x8C};  // manual_en=1, man_rd_burst=BL8 (trim burst read)
+constexpr uint8_t AUX_IF_CONF_DATA_MODE{0x4F};   // manual_en=0 (data mode), fcu_write_en=1, man_rd_burst=BL8,
+                                                 // aux_rd_burst=BL8 (BMI270 auto-polls the AUX target)
+
+// REG_AUX_DEV_ID (0x4B) value for the on-chip BMM150 (7bit I2C address 0x10, shifted for the addr<<1 encoding)
+constexpr uint8_t AUX_DEV_ID_BMM150{0x10 << 1};
+
+// BMM150 command values, reached only through the AUX bridge (distinct register space)
+constexpr uint8_t BMM150_CHIP_ID_VALUE{0x32};
+// bit7+bit1 SoftReset + bit0 PowerControl combined (same alias as bmm150::command::SOFT_RESET_AND_POWER_ON,
+// duplicated here since this AUX path talks to the BMM150 directly, not through UnitBMM150)
+constexpr uint8_t BMM150_SOFT_RESET_AND_POWER_ON{0x83};
+// DataRate::Rate30Hz (0x07) << 3 | Opmode Normal (0x00)
+constexpr uint8_t BMM150_OP_MODE_NORMAL_ODR30HZ{0x38};
 
 #include "unit_bmi270_config.inl"
 
@@ -53,40 +100,35 @@ const types::uid_t UnitBMI270::uid{"UnitBMI270"_mmh3};
 const types::attr_t UnitBMI270::attr{attribute::AccessI2C};
 
 UnitBMI270::UnitBMI270(const uint8_t addr)
-    : Component(addr), _data{new m5::container::CircularBuffer<bmi270::Data>(_cfg.stored_size)}
+    : Component(addr), _data{new m5::container::CircularBuffer<bmi270::Data>(bmi270::DEFAULT_STORED_SIZE)}
 {
     auto ccfg        = component_config();
     ccfg.clock       = 400 * 1000U;
-    ccfg.stored_size = _cfg.stored_size;
+    ccfg.stored_size = bmi270::DEFAULT_STORED_SIZE;
     component_config(ccfg);
 }
 
 bool UnitBMI270::begin()
 {
-    if (_cfg.stored_size != _data->capacity()) {
-        _data.reset(new m5::container::CircularBuffer<bmi270::Data>(_cfg.stored_size));
-    }
-    if (!_data) {
-        M5_LIB_LOGE("Failed to allocate");
-        return false;
+    auto ssize = stored_size();
+    if (ssize != _data->capacity()) {
+        _data.reset(new m5::container::CircularBuffer<bmi270::Data>(ssize));
+        if (!_data) {
+            M5_LIB_LOGE("Failed to allocate");
+            return false;
+        }
     }
     _data->clear();
     _pushed = _consumed = 0;
     _last_temp          = 0;
 
-    // config_t.stored_size is the sole control surface for the ring buffer depth;
-    // keep component_config().stored_size in sync with it here.
-    auto ccfg        = component_config();
-    ccfg.stored_size = _cfg.stored_size;
-    component_config(ccfg);
-
     uint8_t id{};
-    if (!readRegister8(CHIP_ID, id, 0) || id != CHIP_ID_VALUE) {
+    if (!readRegister8(REG_CHIP_ID, id, 0) || id != CHIP_ID_VALUE) {
         M5_LIB_LOGE("Not BMI270 %02X", id);
         return false;
     }
 
-    if (!writeRegister8(CMD, CMD_SOFTRESET)) {
+    if (!writeRegister8(REG_CMD, CMD_SOFTRESET)) {
         M5_LIB_LOGE("Failed to reset");
         return false;
     }
@@ -95,8 +137,8 @@ bool UnitBMI270::begin()
         uint32_t retry = PWR_CONF_POLL_RETRY;
         for (;;) {
             m5::utility::delay(1);
-            if (!readRegister8(PWR_CONF, pwr_conf, 0)) {
-                M5_LIB_LOGE("Failed to read PWR_CONF");
+            if (!readRegister8(REG_PWR_CONF, pwr_conf, 0)) {
+                M5_LIB_LOGE("Failed to read REG_PWR_CONF");
                 return false;
             }
             if (pwr_conf == 0 || --retry == 0) {
@@ -104,18 +146,18 @@ bool UnitBMI270::begin()
             }
         }
         if (pwr_conf != 0) {
-            M5_LIB_LOGE("PWR_CONF did not clear after reset");
+            M5_LIB_LOGE("REG_PWR_CONF did not clear after reset");
             return false;
         }
     }
 
-    if (!writeRegister8(PWR_CONF, 0x00)) {
+    if (!writeRegister8(REG_PWR_CONF, 0x00)) {
         M5_LIB_LOGE("Failed to disable advanced power save");
         return false;
     }
     m5::utility::delay(1);  // >= 450us required before further register access
 
-    if (!writeRegister8(INIT_CTRL, 0x00)) {
+    if (!writeRegister8(REG_INIT_CTRL, 0x00)) {
         M5_LIB_LOGE("Failed to begin config load");
         return false;
     }
@@ -123,7 +165,7 @@ bool UnitBMI270::begin()
         M5_LIB_LOGE("Failed to upload config");
         return false;
     }
-    if (!writeRegister8(INIT_CTRL, 0x01)) {
+    if (!writeRegister8(REG_INIT_CTRL, 0x01)) {
         M5_LIB_LOGE("Failed to finalize config load");
         return false;
     }
@@ -133,8 +175,8 @@ bool UnitBMI270::begin()
         uint32_t retry = INTERNAL_STATUS_POLL_RETRY;
         for (;;) {
             m5::utility::delay(1);
-            if (!readRegister8(INTERNAL_STATUS, status, 0)) {
-                M5_LIB_LOGE("Failed to read INTERNAL_STATUS");
+            if (!readRegister8(REG_INTERNAL_STATUS, status, 0)) {
+                M5_LIB_LOGE("Failed to read REG_INTERNAL_STATUS");
                 return false;
             }
             const uint8_t msg = status & INTERNAL_STATUS_MESSAGE_MASK;
@@ -142,22 +184,23 @@ bool UnitBMI270::begin()
                 break;
             }
             if (msg != 0x00) {
-                M5_LIB_LOGE("BMI270 init error (INTERNAL_STATUS:%02X)", status);
+                M5_LIB_LOGE("BMI270 init error (REG_INTERNAL_STATUS:%02X)", status);
                 return false;
             }
             if (--retry == 0) {
-                M5_LIB_LOGE("BMI270 init timeout (INTERNAL_STATUS:%02X)", status);
+                M5_LIB_LOGE("BMI270 init timeout (REG_INTERNAL_STATUS:%02X)", status);
                 return false;
             }
         }
     }
 
-    if (!write_register8_verified(PWR_CTRL, PWR_CTRL_ACC_GYR_TEMP_ON) ||
-        !write_register8_verified(ACC_CONF,
+    if (!write_register8_verified(REG_PWR_CTRL, PWR_CTRL_ACC_GYR_TEMP_ON) ||
+        !write_register8_verified(REG_ACC_CONF,
                                   CONF_FILTER_PERF | CONF_BWP_NORMAL | static_cast<uint8_t>(_cfg.accel_odr)) ||
-        !write_register8_verified(ACC_RANGE, static_cast<uint8_t>(_cfg.accel_range)) ||
-        !write_register8_verified(GYR_CONF, CONF_FILTER_PERF | CONF_BWP_NORMAL | static_cast<uint8_t>(_cfg.gyro_odr)) ||
-        !write_register8_verified(GYR_RANGE, static_cast<uint8_t>(_cfg.gyro_range))) {
+        !write_register8_verified(REG_ACC_RANGE, static_cast<uint8_t>(_cfg.accel_range)) ||
+        !write_register8_verified(REG_GYR_CONF,
+                                  CONF_FILTER_PERF | CONF_BWP_NORMAL | static_cast<uint8_t>(_cfg.gyro_odr)) ||
+        !write_register8_verified(REG_GYR_RANGE, static_cast<uint8_t>(_cfg.gyro_range))) {
         M5_LIB_LOGE("Failed to configure");
         return false;
     }
@@ -166,7 +209,7 @@ bool UnitBMI270::begin()
     if (_cfg.enable_aux_bmm150 && !_aux_mag) {
         // No BMM150 responded on the AUX interface (normal on boards without one):
         // disable the AUX interface and continue with 6-axis (accel/gyro/temp) only.
-        writeRegister8(IF_CONF, 0x00);
+        writeRegister8(REG_IF_CONF, 0x00);
         M5_LIB_LOGI("AUX BMM150 not available; continuing with 6-axis (accel/gyro/temp) only");
     }
 
@@ -219,7 +262,7 @@ bool UnitBMI270::stopPeriodicMeasurement()
 
 bool UnitBMI270::writeAccelRange(const bmi270::AccelRange range)
 {
-    if (write_register8_verified(ACC_RANGE, static_cast<uint8_t>(range))) {
+    if (write_register8_verified(REG_ACC_RANGE, static_cast<uint8_t>(range))) {
         _cfg.accel_range = range;
         return true;
     }
@@ -228,11 +271,35 @@ bool UnitBMI270::writeAccelRange(const bmi270::AccelRange range)
 
 bool UnitBMI270::writeGyroRange(const bmi270::GyroRange range)
 {
-    if (write_register8_verified(GYR_RANGE, static_cast<uint8_t>(range))) {
+    if (write_register8_verified(REG_GYR_RANGE, static_cast<uint8_t>(range))) {
         _cfg.gyro_range = range;
         return true;
     }
     return false;
+}
+
+bool UnitBMI270::readAccelRange(bmi270::AccelRange& range)
+{
+    uint8_t reg{};
+    if (!readRegister8(REG_ACC_RANGE, reg, 0)) {
+        return false;
+    }
+    range = static_cast<bmi270::AccelRange>(reg & 0x03);
+    return true;
+}
+
+bool UnitBMI270::readGyroRange(bmi270::GyroRange& range)
+{
+    uint8_t reg{};
+    if (!readRegister8(REG_GYR_RANGE, reg, 0)) {
+        return false;
+    }
+    const uint8_t val = reg & 0x07;
+    if (val > static_cast<uint8_t>(bmi270::GyroRange::DPS125)) {
+        return false;  // 5..7 are reserved (unmapped) values
+    }
+    range = static_cast<bmi270::GyroRange>(val);
+    return true;
 }
 
 bool UnitBMI270::upload_config()
@@ -244,7 +311,8 @@ bool UnitBMI270::upload_config()
             static_cast<uint8_t>((index >> 1) & 0x0F),
             static_cast<uint8_t>(index >> 5),
         };
-        if (!writeRegister(INIT_ADDR_0, addr, 2) || !writeRegister(INIT_DATA, bmi270_config_file + index, len)) {
+        if (!writeRegister(REG_INIT_ADDR_0, addr, 2) ||
+            !writeRegister(REG_INIT_DATA, bmi270_config_file + index, len)) {
             M5_LIB_LOGE("Failed to upload config at offset %u", static_cast<unsigned int>(index));
             return false;
         }
@@ -256,14 +324,15 @@ bool UnitBMI270::probe_aux_bmm150()
 {
     // Setup mode: enable the AUX interface and switch it to manual (single-register) access
     // so we can talk to the BMM150 directly (mirrors M5Unified's BMI270_Class::auxSetupMode()).
-    if (!writeRegister8(IF_CONF, IF_CONF_AUX_EN) || !writeRegister8(PWR_CONF, 0x00) ||
-        !writeRegister8(PWR_CTRL, PWR_CTRL_ACC_GYR_TEMP_ON) || !writeRegister8(AUX_IF_CONF, AUX_IF_CONF_MANUAL_BL1) ||
-        !writeRegister8(AUX_DEV_ID, AUX_DEV_ID_BMM150)) {
+    if (!writeRegister8(REG_IF_CONF, IF_CONF_AUX_EN) || !writeRegister8(REG_PWR_CONF, 0x00) ||
+        !writeRegister8(REG_PWR_CTRL, PWR_CTRL_ACC_GYR_TEMP_ON) ||
+        !writeRegister8(REG_AUX_IF_CONF, AUX_IF_CONF_MANUAL_BL1) ||
+        !writeRegister8(REG_AUX_DEV_ID, AUX_DEV_ID_BMM150)) {
         M5_LIB_LOGE("Failed to configure the AUX interface");
         return false;
     }
 
-    if (!aux_write_register8(BMM150_POWER_CONTROL, BMM150_SOFT_RESET_AND_POWER_ON)) {
+    if (!aux_write_register8(REG_BMM150_POWER_CONTROL, BMM150_SOFT_RESET_AND_POWER_ON)) {
         M5_LIB_LOGE("Failed to reset the AUX BMM150");
         return false;
     }
@@ -272,7 +341,7 @@ bool UnitBMI270::probe_aux_bmm150()
     // The first read right after a fresh AUX target reset returns a stale value
     // (M5Unified BMI270_Class.cpp:76-77); discard it before checking the chip ID.
     uint8_t who{};
-    if (!aux_read_register8(BMM150_CHIP_ID, who) || !aux_read_register8(BMM150_CHIP_ID, who) ||
+    if (!aux_read_register8(REG_BMM150_CHIP_ID, who) || !aux_read_register8(REG_BMM150_CHIP_ID, who) ||
         who != BMM150_CHIP_ID_VALUE) {
         return false;  // No AUX BMM150 wired on this board (normal case, no log)
     }
@@ -282,10 +351,10 @@ bool UnitBMI270::probe_aux_bmm150()
         return false;
     }
 
-    if (!aux_write_register8(BMM150_OP_MODE, BMM150_OP_MODE_NORMAL_ODR30HZ) ||
-        !write_register8_verified(AUX_IF_CONF, AUX_IF_CONF_DATA_MODE) ||
-        !write_register8_verified(AUX_RD_ADDR, BMM150_DATA_X_LSB) ||
-        !write_register8_verified(PWR_CTRL, PWR_CTRL_ACC_GYR_TEMP_AUX_ON)) {
+    if (!aux_write_register8(REG_BMM150_OP_MODE, BMM150_OP_MODE_NORMAL_ODR30HZ) ||
+        !write_register8_verified(REG_AUX_IF_CONF, AUX_IF_CONF_DATA_MODE) ||
+        !write_register8_verified(REG_AUX_RD_ADDR, REG_BMM150_DATA_X_LSB) ||
+        !write_register8_verified(REG_PWR_CTRL, PWR_CTRL_ACC_GYR_TEMP_AUX_ON)) {
         M5_LIB_LOGE("Failed to switch the AUX BMM150 to data mode");
         return false;
     }
@@ -296,7 +365,7 @@ bool UnitBMI270::aux_wait_ready()
 {
     for (uint32_t retry = 0; retry < AUX_BUSY_POLL_RETRY; ++retry) {
         uint8_t status{};
-        if (!readRegister8(STATUS_REG, status, 0)) {
+        if (!readRegister8(REG_STATUS, status, 0)) {
             return false;
         }
         if ((status & STATUS_AUX_BUSY) == 0) {
@@ -309,24 +378,24 @@ bool UnitBMI270::aux_wait_ready()
 
 bool UnitBMI270::aux_write_register8(const uint8_t reg, const uint8_t val)
 {
-    return writeRegister8(AUX_WR_DATA, val) && writeRegister8(AUX_WR_ADDR, reg) && aux_wait_ready();
+    return writeRegister8(REG_AUX_WR_DATA, val) && writeRegister8(REG_AUX_WR_ADDR, reg) && aux_wait_ready();
 }
 
 bool UnitBMI270::aux_read_register8(const uint8_t reg, uint8_t& out)
 {
-    if (!writeRegister8(AUX_IF_CONF, AUX_IF_CONF_MANUAL_BL1) || !writeRegister8(AUX_RD_ADDR, reg) ||
+    if (!writeRegister8(REG_AUX_IF_CONF, AUX_IF_CONF_MANUAL_BL1) || !writeRegister8(REG_AUX_RD_ADDR, reg) ||
         !aux_wait_ready()) {
         return false;
     }
-    return readRegister8(DATA_0, out, 0);
+    return readRegister8(REG_DATA_0, out, 0);
 }
 
 bool UnitBMI270::aux_read_burst8(const uint8_t bmm150_reg, std::array<uint8_t, 8>& out)
 {
-    if (!writeRegister8(AUX_RD_ADDR, bmm150_reg) || !aux_wait_ready()) {
+    if (!writeRegister8(REG_AUX_RD_ADDR, bmm150_reg) || !aux_wait_ready()) {
         return false;
     }
-    return readRegister(DATA_0, out.data(), out.size(), 0);
+    return readRegister(REG_DATA_0, out.data(), out.size(), 0);
 }
 
 bool UnitBMI270::aux_read_trim(bmm150::trim_t& trim)
@@ -334,12 +403,12 @@ bool UnitBMI270::aux_read_trim(bmm150::trim_t& trim)
     // BMM150 trim occupies registers 0x5D-0x71 (21 bytes), but AUX manual burst reads are
     // limited to 1/2/6/8 bytes. Three overlapping 8 byte bursts starting at 0x5D/0x65/0x6A
     // cover the whole range; overlapping bytes are simply overwritten with identical values.
-    constexpr uint8_t TRIM_FIRST  = 0x5D;
-    constexpr uint8_t TRIM_SECOND = 0x65;
-    constexpr uint8_t TRIM_THIRD  = 0x6A;
-    constexpr size_t TRIM_BYTES   = 0x71 - TRIM_FIRST + 1;  // 21
+    constexpr uint8_t TRIM_FIRST{0x5D};
+    constexpr uint8_t TRIM_SECOND{0x65};
+    constexpr uint8_t TRIM_THIRD{0x6A};
+    constexpr size_t TRIM_BYTES{0x71 - TRIM_FIRST + 1};  // 21
 
-    if (!writeRegister8(AUX_IF_CONF, AUX_IF_CONF_MANUAL_BL8)) {
+    if (!writeRegister8(REG_AUX_IF_CONF, AUX_IF_CONF_MANUAL_BL8)) {
         return false;
     }
 
@@ -372,20 +441,20 @@ bool UnitBMI270::aux_read_trim(bmm150::trim_t& trim)
 bool UnitBMI270::read_measurement(bmi270::Data& d)
 {
     uint8_t status{};
-    if (!readRegister8(INT_STATUS_1, status, 0)) {
-        M5_LIB_LOGE("Failed to read INT_STATUS_1");
+    if (!readRegister8(REG_INT_STATUS_1, status, 0)) {
+        M5_LIB_LOGE("Failed to read REG_INT_STATUS_1");
         return false;
     }
-    constexpr uint8_t both_drdy = INT_STATUS_1_ACC_DRDY | INT_STATUS_1_GYR_DRDY;
+    constexpr uint8_t both_drdy{INT_STATUS_1_ACC_DRDY | INT_STATUS_1_GYR_DRDY};
     if ((status & both_drdy) != both_drdy) {
         return false;  // Not ready yet (normal case, no log)
     }
 
     if (_aux_mag) {
-        // AUX data mode auto-polls the BMM150 into DATA_0..DATA_7 (mag+rhall) followed by
-        // the usual accel/gyro at DATA_8..DATA_19; one 20 byte burst covers all three.
+        // AUX data mode auto-polls the BMM150 into REG_DATA_0..DATA_7 (mag+rhall) followed by
+        // the usual accel/gyro at REG_DATA_8..DATA_19; one 20 byte burst covers all three.
         std::array<uint8_t, 20> buf{};
-        if (!readRegister(DATA_0, buf.data(), buf.size(), 0)) {
+        if (!readRegister(REG_DATA_0, buf.data(), buf.size(), 0)) {
             M5_LIB_LOGE("Failed to read data");
             return false;
         }
@@ -394,7 +463,7 @@ bool UnitBMI270::read_measurement(bmi270::Data& d)
         d.mag.trim = _mag_trim;
         d.aux_mag  = true;
     } else {
-        if (!readRegister(DATA_8, d.raw.data(), d.raw.size(), 0)) {
+        if (!readRegister(REG_DATA_8, d.raw.data(), d.raw.size(), 0)) {
             M5_LIB_LOGE("Failed to read data");
             return false;
         }
@@ -405,7 +474,7 @@ bool UnitBMI270::read_measurement(bmi270::Data& d)
     // mode); a failed or invalid read simply keeps the previous _last_temp, it does not
     // fail the whole measurement.
     uint8_t traw[2]{};
-    if (readRegister(TEMPERATURE_0, traw, sizeof(traw), 0)) {
+    if (readRegister(REG_TEMPERATURE_0, traw, sizeof(traw), 0)) {
         const int16_t t = static_cast<int16_t>((traw[1] << 8) | traw[0]);
         if (t != static_cast<int16_t>(0x8000)) {
             _last_temp = t;

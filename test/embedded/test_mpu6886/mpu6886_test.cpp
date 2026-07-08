@@ -95,4 +95,11 @@ TEST_F(TestMPU6886, WriteRange)
     unit->imuConvertParam(p);
     EXPECT_FLOAT_EQ(p.accel_res, 4.0f / 32768);
     EXPECT_FLOAT_EQ(p.gyro_res, 500.0f / 32768);
+
+    AccelRange ar{};
+    GyroRange gr{};
+    EXPECT_TRUE(unit->readAccelRange(ar));
+    EXPECT_EQ(ar, AccelRange::G4);
+    EXPECT_TRUE(unit->readGyroRange(gr));
+    EXPECT_EQ(gr, GyroRange::DPS500);
 }

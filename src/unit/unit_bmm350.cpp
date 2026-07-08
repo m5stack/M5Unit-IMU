@@ -21,10 +21,37 @@ using m5::imu::Capability;
 
 namespace {
 constexpr uint32_t WRITE_VERIFY_RETRY{16};
-// Bounded poll for OTP_STATUS_REG.otp_cmd_done (datasheet/SensorAPI poll every 300us; 1ms steps here)
+// Bounded poll for REG_OTP_STATUS.otp_cmd_done (datasheet/SensorAPI poll every 300us; 1ms steps here)
 constexpr uint32_t OTP_POLL_RETRY{50};
 // Max single-shot read length via read_registers() (2 dummy bytes are added on top of this)
 constexpr uint32_t READ_MAX_LEN{15};
+
+// REG_CHIP_ID expected value / REG_CMD, REG_INT_CTRL, REG_INT_STATUS command values
+constexpr uint8_t CHIP_ID_VALUE{0x33};
+constexpr uint8_t CMD_SOFTRESET{0xB6};
+constexpr uint8_t INT_CTRL_DRDY_DATA_REG_EN{0x80};  // bit7. Not enum'd: other bits are unrelated flags (m5-cpp-rules)
+constexpr uint8_t INT_STATUS_DRDY_DATA_REG{0x04};   // bit2
+
+// REG_PMU_CMD (0x06) values. In Normal mode, only SUS and UPD_OAE are accepted.
+constexpr uint8_t PMU_CMD_SUS{0x00};
+constexpr uint8_t PMU_CMD_NM{0x01};
+constexpr uint8_t PMU_CMD_UPD_OAE{0x02};
+constexpr uint8_t PMU_CMD_FGR{0x05};
+constexpr uint8_t PMU_CMD_BR{0x07};
+
+// REG_PMU_CMD_STATUS_0 (0x07) bits
+constexpr uint8_t PMU_CMD_STATUS_0_PWR_MODE_NORMAL{0x08};  // bit3: pwr_mode_is_normal
+constexpr uint8_t PMU_CMD_STATUS_0_CMD_ILLEGAL{0x10};      // bit4: cmd_is_illegal
+
+// REG_OTP_CMD (0x50) values
+constexpr uint8_t OTP_CMD_DIR_READ{0x20};
+constexpr uint8_t OTP_CMD_PWR_OFF_OTP{0x80};
+constexpr uint8_t OTP_WORD_ADDR_MASK{0x1F};
+// REG_OTP_STATUS (0x55) bits
+constexpr uint8_t OTP_STATUS_CMD_DONE{0x01};    // bit0
+constexpr uint8_t OTP_STATUS_ERROR_MASK{0xE0};  // bits[7:5]
+
+constexpr uint32_t OTP_WORD_COUNT{32};
 
 // Output data rate -> sampling interval (ms), indexed by the DataRate raw value (0x02..0x0A)
 constexpr uint32_t RATE_INTERVAL_MS[11] = {
@@ -45,7 +72,7 @@ constexpr int32_t fix_sign_bits(const uint32_t val, const uint32_t bits)
     return (val >= (1u << (bits - 1))) ? static_cast<int32_t>(val - (1u << bits)) : static_cast<int32_t>(val);
 }
 
-// Decodes the 32 OTP words (read via OTP_CMD_REG/OTP_DATA_MSB/OTP_DATA_LSB at boot) into the
+// Decodes the 32 OTP words (read via REG_OTP_CMD/REG_OTP_DATA_MSB/REG_OTP_DATA_LSB at boot) into the
 // per-chip compensation coefficients consumed by bmm350::Data. Word indices and bit layout
 // re-implemented (not copied) from the Bosch BMM350_SensorAPI update_mag_off_sens() (bmm350.c,
 // BSD-3-Clause), verified against
@@ -54,8 +81,8 @@ otp_compensation_t decode_otp(const std::array<uint16_t, OTP_WORD_COUNT>& otp)
 {
     otp_compensation_t comp{};
 
-    constexpr uint16_t LSB_MASK = 0x00FF;
-    constexpr uint16_t MSB_MASK = 0xFF00;
+    constexpr uint16_t LSB_MASK{0x00FF};
+    constexpr uint16_t MSB_MASK{0xFF00};
 
     // OTP word indices (BMM350_TEMP_OFF_SENS=0x0D, BMM350_MAG_OFFSET_X/Y/Z=0x0E/0x0F/0x10)
     const uint32_t off_x = otp[0x0E] & 0x0FFFu;
@@ -124,42 +151,37 @@ const types::uid_t UnitBMM350::uid{"UnitBMM350"_mmh3};
 const types::attr_t UnitBMM350::attr{attribute::AccessI2C};
 
 UnitBMM350::UnitBMM350(const uint8_t addr)
-    : Component(addr), _data{new m5::container::CircularBuffer<bmm350::Data>(_cfg.stored_size)}
+    : Component(addr), _data{new m5::container::CircularBuffer<bmm350::Data>(bmm350::DEFAULT_STORED_SIZE)}
 {
     auto ccfg        = component_config();
     ccfg.clock       = 400 * 1000U;
-    ccfg.stored_size = _cfg.stored_size;
+    ccfg.stored_size = bmm350::DEFAULT_STORED_SIZE;
     component_config(ccfg);
 }
 
 bool UnitBMM350::begin()
 {
-    if (_cfg.stored_size != _data->capacity()) {
-        _data.reset(new m5::container::CircularBuffer<bmm350::Data>(_cfg.stored_size));
-    }
-    if (!_data) {
-        M5_LIB_LOGE("Failed to allocate");
-        return false;
+    auto ssize = stored_size();
+    if (ssize != _data->capacity()) {
+        _data.reset(new m5::container::CircularBuffer<bmm350::Data>(ssize));
+        if (!_data) {
+            M5_LIB_LOGE("Failed to allocate");
+            return false;
+        }
     }
     _data->clear();
     _pushed = _consumed = 0;
-
-    // config_t.stored_size is the sole control surface for the ring buffer depth;
-    // keep component_config().stored_size in sync with it here.
-    auto ccfg        = component_config();
-    ccfg.stored_size = _cfg.stored_size;
-    component_config(ccfg);
 
     // Startup time from POR (datasheet 3ms)
     m5::utility::delay(3);
 
     uint8_t id{};
-    if (!read_register8(CHIP_ID, id) || id != CHIP_ID_VALUE) {
+    if (!read_register8(REG_CHIP_ID, id) || id != CHIP_ID_VALUE) {
         M5_LIB_LOGE("Not BMM350 %02X", id);
         return false;
     }
 
-    if (!writeRegister8(CMD, CMD_SOFTRESET)) {
+    if (!writeRegister8(REG_CMD, CMD_SOFTRESET)) {
         M5_LIB_LOGE("Failed to reset");
         return false;
     }
@@ -172,24 +194,24 @@ bool UnitBMM350::begin()
     }
     _comp = comp;
 
-    if (!writeRegister8(OTP_CMD_REG, OTP_CMD_PWR_OFF_OTP)) {
+    if (!writeRegister8(REG_OTP_CMD, OTP_CMD_PWR_OFF_OTP)) {
         M5_LIB_LOGE("Failed to power off OTP");
         return false;
     }
 
     // Magnetic reset (BR then FGR; boot must complete this once before Normal mode)
-    if (!writeRegister8(PMU_CMD, PMU_CMD_BR)) {
+    if (!writeRegister8(REG_PMU_CMD, PMU_CMD_BR)) {
         M5_LIB_LOGE("Failed to issue BR");
         return false;
     }
     m5::utility::delay(14);
-    if (!writeRegister8(PMU_CMD, PMU_CMD_FGR)) {
+    if (!writeRegister8(REG_PMU_CMD, PMU_CMD_FGR)) {
         M5_LIB_LOGE("Failed to issue FGR");
         return false;
     }
     m5::utility::delay(18);
 
-    if (!write_register8_verified(INT_CTRL, INT_CTRL_DRDY_DATA_REG_EN)) {
+    if (!write_register8_verified(REG_INT_CTRL, INT_CTRL_DRDY_DATA_REG_EN)) {
         M5_LIB_LOGE("Failed to initialize");
         return false;
     }
@@ -248,7 +270,7 @@ bool UnitBMM350::stopPeriodicMeasurement()
 
 bool UnitBMM350::writeDataRate(const bmm350::DataRate rate)
 {
-    if (!writeRegister8(PMU_CMD, PMU_CMD_SUS)) {
+    if (!writeRegister8(REG_PMU_CMD, PMU_CMD_SUS)) {
         M5_LIB_LOGE("Failed to suspend");
         return false;
     }
@@ -264,7 +286,7 @@ bool UnitBMM350::writeDataRate(const bmm350::DataRate rate)
 
 bool UnitBMM350::writeAveraging(const bmm350::Averaging avg)
 {
-    if (!writeRegister8(PMU_CMD, PMU_CMD_SUS)) {
+    if (!writeRegister8(REG_PMU_CMD, PMU_CMD_SUS)) {
         M5_LIB_LOGE("Failed to suspend");
         return false;
     }
@@ -277,45 +299,70 @@ bool UnitBMM350::writeAveraging(const bmm350::Averaging avg)
     return true;
 }
 
+bool UnitBMM350::readDataRate(bmm350::DataRate& rate)
+{
+    uint8_t reg{};
+    if (!read_register8(REG_PMU_CMD_AGGR_SET, reg)) {
+        return false;
+    }
+    const uint8_t val = reg & 0x0F;
+    if (val < static_cast<uint8_t>(bmm350::DataRate::Rate400Hz) ||
+        val > static_cast<uint8_t>(bmm350::DataRate::Rate1_5625Hz)) {
+        return false;  // 0x00/0x01/0x0B..0x0F are reserved (unmapped) values
+    }
+    rate = static_cast<bmm350::DataRate>(val);
+    return true;
+}
+
+bool UnitBMM350::readAveraging(bmm350::Averaging& avg)
+{
+    uint8_t reg{};
+    if (!read_register8(REG_PMU_CMD_AGGR_SET, reg)) {
+        return false;
+    }
+    avg = static_cast<bmm350::Averaging>((reg >> 4) & 0x03);
+    return true;
+}
+
 bool UnitBMM350::commit_odr_avg(const bmm350::DataRate rate, const bmm350::Averaging avg)
 {
     const auto clamped = bmm350::clamp_averaging(rate, avg);
     const uint8_t aggr = static_cast<uint8_t>((static_cast<uint8_t>(clamped) << 4) | static_cast<uint8_t>(rate));
-    if (!write_register8_verified(PMU_CMD_AGGR_SET, aggr)) {
+    if (!write_register8_verified(REG_PMU_CMD_AGGR_SET, aggr)) {
         return false;
     }
 
-    if (!writeRegister8(PMU_CMD, PMU_CMD_UPD_OAE)) {
+    if (!writeRegister8(REG_PMU_CMD, PMU_CMD_UPD_OAE)) {
         M5_LIB_LOGE("Failed to update OAE");
         return false;
     }
     m5::utility::delay(1);
 
-    // Bosch bmm350_set_powermode(): PMU_CMD last written was UPD_OAE, so it always
+    // Bosch bmm350_set_powermode(): REG_PMU_CMD last written was UPD_OAE, so it always
     // suspends before transitioning to Normal (see set_odr_performance + set_powermode()
     // in bmm350_normal_mode.c)
-    if (!writeRegister8(PMU_CMD, PMU_CMD_SUS)) {
+    if (!writeRegister8(REG_PMU_CMD, PMU_CMD_SUS)) {
         M5_LIB_LOGE("Failed to suspend");
         return false;
     }
     m5::utility::delay(6);
 
-    if (!writeRegister8(PMU_CMD, PMU_CMD_NM)) {
+    if (!writeRegister8(REG_PMU_CMD, PMU_CMD_NM)) {
         M5_LIB_LOGE("Failed to enter normal mode");
         return false;
     }
     m5::utility::delay(38);
 
     uint8_t status0{};
-    if (!read_register8(PMU_CMD_STATUS_0, status0)) {
-        M5_LIB_LOGE("Failed to read PMU_CMD_STATUS_0");
+    if (!read_register8(REG_PMU_CMD_STATUS_0, status0)) {
+        M5_LIB_LOGE("Failed to read REG_PMU_CMD_STATUS_0");
         return false;
     }
     if (status0 & PMU_CMD_STATUS_0_CMD_ILLEGAL) {
-        M5_LIB_LOGE("PMU command illegal (PMU_CMD_STATUS_0:%02X)", status0);
+        M5_LIB_LOGE("PMU command illegal (REG_PMU_CMD_STATUS_0:%02X)", status0);
     }
     if (!(status0 & PMU_CMD_STATUS_0_PWR_MODE_NORMAL)) {
-        M5_LIB_LOGE("Failed to reach normal mode (PMU_CMD_STATUS_0:%02X)", status0);
+        M5_LIB_LOGE("Failed to reach normal mode (REG_PMU_CMD_STATUS_0:%02X)", status0);
         return false;
     }
     return true;
@@ -326,7 +373,7 @@ bool UnitBMM350::download_otp(bmm350::otp_compensation_t& comp)
     std::array<uint16_t, OTP_WORD_COUNT> words{};
 
     for (uint32_t i = 0; i < OTP_WORD_COUNT; ++i) {
-        if (!writeRegister8(OTP_CMD_REG, static_cast<uint8_t>(OTP_CMD_DIR_READ | (i & OTP_WORD_ADDR_MASK)))) {
+        if (!writeRegister8(REG_OTP_CMD, static_cast<uint8_t>(OTP_CMD_DIR_READ | (i & OTP_WORD_ADDR_MASK)))) {
             M5_LIB_LOGE("Failed to issue OTP read at word %u", i);
             return false;
         }
@@ -335,7 +382,7 @@ bool UnitBMM350::download_otp(bmm350::otp_compensation_t& comp)
         for (uint32_t retry = 0; retry < OTP_POLL_RETRY; ++retry) {
             m5::utility::delay(1);
             uint8_t status{};
-            if (!read_register8(OTP_STATUS_REG, status)) {
+            if (!read_register8(REG_OTP_STATUS, status)) {
                 M5_LIB_LOGE("Failed to read OTP status");
                 return false;
             }
@@ -354,7 +401,7 @@ bool UnitBMM350::download_otp(bmm350::otp_compensation_t& comp)
         }
 
         uint8_t msb{}, lsb{};
-        if (!read_register8(OTP_DATA_MSB, msb) || !read_register8(OTP_DATA_LSB, lsb)) {
+        if (!read_register8(REG_OTP_DATA_MSB, msb) || !read_register8(REG_OTP_DATA_LSB, lsb)) {
             M5_LIB_LOGE("Failed to read OTP data at word %u", i);
             return false;
         }
@@ -368,14 +415,14 @@ bool UnitBMM350::download_otp(bmm350::otp_compensation_t& comp)
 bool UnitBMM350::read_measurement(bmm350::Data& d)
 {
     uint8_t status{};
-    if (!read_register8(INT_STATUS, status)) {
-        M5_LIB_LOGE("Failed to read INT_STATUS");
+    if (!read_register8(REG_INT_STATUS, status)) {
+        M5_LIB_LOGE("Failed to read REG_INT_STATUS");
         return false;
     }
     if (!(status & INT_STATUS_DRDY_DATA_REG)) {
         return false;  // Not ready yet (normal case, no log)
     }
-    if (!read_registers(MAG_X_XLSB, d.raw.data(), d.raw.size())) {
+    if (!read_registers(REG_MAG_X_XLSB, d.raw.data(), d.raw.size())) {
         M5_LIB_LOGE("Failed to read data");
         return false;
     }

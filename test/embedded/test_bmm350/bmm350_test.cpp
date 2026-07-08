@@ -89,3 +89,17 @@ TEST_F(TestBMM350, ReadImuRawPopSemantics)
     EXPECT_FALSE(m5::imu::any(unit->readImuRaw(raw)));
     EXPECT_FALSE(unit->empty());
 }
+
+TEST_F(TestBMM350, ReadSettings)
+{
+    SCOPED_TRACE(ustr);
+
+    // begin() 直後は config_t のデフォルト (DataRate::Rate100Hz / Averaging::X4, clamp_averaging()
+    // でも Rate100Hz は X4 まで許容するのでクランプされない) のはず
+    DataRate rate{};
+    Averaging avg{};
+    EXPECT_TRUE(unit->readDataRate(rate));
+    EXPECT_EQ(rate, DataRate::Rate100Hz);
+    EXPECT_TRUE(unit->readAveraging(avg));
+    EXPECT_EQ(avg, Averaging::X4);
+}

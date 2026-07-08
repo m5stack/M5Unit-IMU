@@ -19,7 +19,7 @@ namespace bmm150 {
 
 /*!
   @enum DataRate
-  @brief Output data rate (OP_MODE register bits 5:3, value order is NOT
+  @brief Output data rate (REG_OP_MODE register bits 5:3, value order is NOT
   monotonic in Hz)
  */
 enum class DataRate : uint8_t {
@@ -35,7 +35,7 @@ enum class DataRate : uint8_t {
 
 /*!
   @enum Preset
-  @brief Preset accuracy/power modes, controlling the REP_XY/REP_Z repetition
+  @brief Preset accuracy/power modes, controlling the REG_REP_XY/REG_REP_Z repetition
   counts (see preset_rep_xy()/preset_rep_z())
  */
 enum class Preset : uint8_t {
@@ -45,7 +45,7 @@ enum class Preset : uint8_t {
     HighAccuracy,     //!< @brief Highest accuracy, highest power
 };
 
-//! @brief REP_XY register value (0x51) for the given preset
+//! @brief REG_REP_XY register value (0x51) for the given preset
 constexpr uint8_t preset_rep_xy(const Preset p)
 {
     return (p == Preset::LowPower)          ? 0x01
@@ -54,7 +54,7 @@ constexpr uint8_t preset_rep_xy(const Preset p)
                                             : 0x17;
 }
 
-//! @brief REP_Z register value (0x52) for the given preset
+//! @brief REG_REP_Z register value (0x52) for the given preset
 constexpr uint8_t preset_rep_z(const Preset p)
 {
     return (p == Preset::LowPower)          ? 0x02
@@ -64,13 +64,13 @@ constexpr uint8_t preset_rep_z(const Preset p)
 }
 
 //! @brief Sentinel returned by comp_x()/comp_y()/comp_z() on overflow or invalid input
-constexpr int16_t OVERFLOW_OUTPUT = -32768;
+constexpr int16_t OVERFLOW_OUTPUT{-32768};
 
 namespace internal {
-constexpr int16_t XY_OVERFLOW_RAW       = -4096;
-constexpr int16_t Z_OVERFLOW_RAW        = -16384;
-constexpr int32_t Z_POSITIVE_SATURATION = 32767;
-constexpr int32_t Z_NEGATIVE_SATURATION = -32767;
+constexpr int16_t XY_OVERFLOW_RAW{-4096};
+constexpr int16_t Z_OVERFLOW_RAW{-16384};
+constexpr int32_t Z_POSITIVE_SATURATION{32767};
+constexpr int32_t Z_NEGATIVE_SATURATION{-32767};
 }  // namespace internal
 
 /*!
@@ -94,7 +94,7 @@ struct trim_t {
 
 /*!
   @struct Data
-  @brief One measurement (8 bytes burst from DATA_X_LSB, register 0x42)
+  @brief One measurement (8 bytes burst from REG_DATA_X_LSB, register 0x42)
  */
 struct Data {
     std::array<uint8_t, 8> raw{};  //!< @brief [0..1] X, [2..3] Y, [4..5] Z, [6..7] RHALL (bit0 of [6] = DRDY)
@@ -103,31 +103,31 @@ struct Data {
     ///@name Raw ADC values
     ///@{
     //! @brief Raw magnetometer X (13bit signed, register bits[15:3])
-    int16_t x_raw() const
+    inline int16_t x_raw() const
     {
         const int16_t v = static_cast<int16_t>((raw[1] << 8) | raw[0]);
         return static_cast<int16_t>(v >> 3);
     }
     //! @brief Raw magnetometer Y (13bit signed, register bits[15:3])
-    int16_t y_raw() const
+    inline int16_t y_raw() const
     {
         const int16_t v = static_cast<int16_t>((raw[3] << 8) | raw[2]);
         return static_cast<int16_t>(v >> 3);
     }
     //! @brief Raw magnetometer Z (15bit signed, register bits[15:1])
-    int16_t z_raw() const
+    inline int16_t z_raw() const
     {
         const int16_t v = static_cast<int16_t>((raw[5] << 8) | raw[4]);
         return static_cast<int16_t>(v >> 1);
     }
     //! @brief Raw hall resistance (14bit unsigned, register bits[15:2])
-    uint16_t rhall() const
+    inline uint16_t rhall() const
     {
         const uint16_t v = static_cast<uint16_t>((raw[7] << 8) | raw[6]);
         return static_cast<uint16_t>(v >> 2);
     }
     //! @brief Data ready flag (bit0 of register 0x48)
-    bool drdy() const
+    inline bool drdy() const
     {
         return (raw[6] & 0x01) != 0;
     }
@@ -136,7 +136,7 @@ struct Data {
     ///@name Compensated values (Bosch trim compensation, 16 LSB/uT)
     ///@{
     //! @brief Compensated magnetometer X (OVERFLOW_OUTPUT on overflow)
-    int16_t comp_x() const
+    inline int16_t comp_x() const
     {
         const int16_t data_x = x_raw();
         if (data_x == internal::XY_OVERFLOW_RAW) {
@@ -167,7 +167,7 @@ struct Data {
         return result;
     }
     //! @brief Compensated magnetometer Y (OVERFLOW_OUTPUT on overflow)
-    int16_t comp_y() const
+    inline int16_t comp_y() const
     {
         const int16_t data_y = y_raw();
         if (data_y == internal::XY_OVERFLOW_RAW) {
@@ -198,7 +198,7 @@ struct Data {
         return result;
     }
     //! @brief Compensated magnetometer Z (OVERFLOW_OUTPUT on overflow), saturated to +-32767 before scaling
-    int16_t comp_z() const
+    inline int16_t comp_z() const
     {
         const int16_t data_z = z_raw();
         if (data_z == internal::Z_OVERFLOW_RAW) {

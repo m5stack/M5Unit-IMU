@@ -34,17 +34,16 @@ public:
     /*!
       @struct config_t
       @brief Settings for begin()
+      @note Ring buffer depth is configured via component_config() (default:
+      bmm150::DEFAULT_STORED_SIZE)
      */
     struct config_t {
         //! Start periodic measurement on begin()?
         bool start_periodic{true};
-        //! Accuracy/power preset (controls REP_XY/REP_Z)
+        //! Accuracy/power preset (controls REG_REP_XY/REG_REP_Z)
         bmm150::Preset preset{bmm150::Preset::Regular};
         //! Output data rate
         bmm150::DataRate rate{bmm150::DataRate::Rate30Hz};
-        //! Ring buffer depth. This unit treats config_t as the sole control surface;
-        //! component_config().stored_size is synced to this value in begin()
-        uint32_t stored_size{4};
     };
 
     explicit UnitBMM150(const uint8_t addr = DEFAULT_ADDRESS);
@@ -76,7 +75,7 @@ public:
 
     ///@name Setting (applies immediately)
     ///@{
-    //! @brief Write the accuracy/power preset (REP_XY/REP_Z)
+    //! @brief Write the accuracy/power preset (REG_REP_XY/REG_REP_Z)
     //! @param[in] preset Preset
     //! @return True if successful
     bool writePreset(const bmm150::Preset preset);
@@ -84,6 +83,15 @@ public:
     //! @param[in] rate Data rate
     //! @return True if successful
     bool writeDataRate(const bmm150::DataRate rate);
+    //! @brief Read the output data rate from the device (REG_OP_MODE bits[5:3])
+    //! @param[out] rate Data rate
+    //! @return True if successful
+    bool readDataRate(bmm150::DataRate& rate);
+    //! @brief Read the accuracy/power preset from the device (REG_REP_XY/REG_REP_Z)
+    //! @param[out] preset Preset
+    //! @return True if successful, false if the current REG_REP_XY/REG_REP_Z values do not
+    //! match any of the known presets
+    bool readPreset(bmm150::Preset& preset);
     ///@}
 
     ///@name Periodic measurement
@@ -130,24 +138,21 @@ private:
 };
 
 namespace bmm150 {
+//! @brief Default ring buffer depth (used to construct the internal buffer and as the
+//! component_config().stored_size default; see config_t)
+constexpr uint32_t DEFAULT_STORED_SIZE{4};
+
 namespace command {
 ///@cond
 // Register addresses (I2C addr 0x10/0x11/0x12/0x13 by CSB/SDO pins)
-constexpr uint8_t CHIP_ID       = 0x40;
-constexpr uint8_t DATA_X_LSB    = 0x42;  // 8 bytes: X/Y/Z/RHALL burst (bit0 of [6] = DRDY)
-constexpr uint8_t INT_STATUS    = 0x4A;
-constexpr uint8_t POWER_CONTROL = 0x4B;  // bit7+bit1 = SoftReset / bit0 = PowerControl
-constexpr uint8_t OP_MODE       = 0x4C;  // bit5:3 = DataRate / bit2:1 = Opmode
-constexpr uint8_t REP_XY        = 0x51;
-constexpr uint8_t REP_Z         = 0x52;
-constexpr uint8_t TRIM_START    = 0x5D;  // 21 bytes: 0x5D..0x71 (see read_trim())
-
-constexpr uint8_t WHOAMI_VALUE = 0x32;
-constexpr uint8_t POWER_ON     = 0x01;
-// bit7 SoftReset + bit1 SoftReset + bit0 PowerControl combined.
-// Not modeled as an enum because it aliases distinct bit fields (m5-cpp-rules)
-constexpr uint8_t SOFT_RESET_AND_POWER_ON = 0x83;
-constexpr uint8_t OPMODE_NORMAL           = 0x00;
+constexpr uint8_t REG_CHIP_ID{0x40};
+constexpr uint8_t REG_DATA_X_LSB{0x42};  // 8 bytes: X/Y/Z/RHALL burst (bit0 of [6] = DRDY)
+constexpr uint8_t REG_INT_STATUS{0x4A};
+constexpr uint8_t REG_POWER_CONTROL{0x4B};  // bit7+bit1 = SoftReset / bit0 = PowerControl
+constexpr uint8_t REG_OP_MODE{0x4C};        // bit5:3 = DataRate / bit2:1 = Opmode
+constexpr uint8_t REG_REP_XY{0x51};
+constexpr uint8_t REG_REP_Z{0x52};
+constexpr uint8_t REG_TRIM_START{0x5D};  // 21 bytes: 0x5D..0x71 (see read_trim())
 ///@endcond
 }  // namespace command
 }  // namespace bmm150

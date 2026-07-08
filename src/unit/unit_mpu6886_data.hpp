@@ -41,7 +41,7 @@ enum class GyroRange : uint8_t {
 
 /*!
   @enum Dlpf
-  @brief Gyro/temp digital low pass filter (CONFIG reg DLPF_CFG, valid when FCHOICE_B=00)
+  @brief Gyro/temp digital low pass filter (REG_CONFIG reg DLPF_CFG, valid when FCHOICE_B=00)
  */
 enum class Dlpf : uint8_t {
     BW250,   //!< @brief 250Hz (gyro output 8kHz)
@@ -67,7 +67,7 @@ constexpr float gyro_res(const GyroRange r)
 
 /*!
   @struct Data
-  @brief One measurement (14 bytes burst from ACCEL_XOUT_H, big-endian)
+  @brief One measurement (14 bytes burst from REG_ACCEL_XOUT_H, big-endian)
  */
 struct Data {
     std::array<uint8_t, 14> raw{};  //!< @brief [0..5] accel, [6..7] temp, [8..13] gyro
@@ -75,44 +75,44 @@ struct Data {
     ///@name Raw ADC values
     ///@{
     //! @brief Raw accelerometer X
-    int16_t accel_x() const
+    inline int16_t accel_x() const
     {
         return static_cast<int16_t>((raw[0] << 8) | raw[1]);
     }
     //! @brief Raw accelerometer Y
-    int16_t accel_y() const
+    inline int16_t accel_y() const
     {
         return static_cast<int16_t>((raw[2] << 8) | raw[3]);
     }
     //! @brief Raw accelerometer Z
-    int16_t accel_z() const
+    inline int16_t accel_z() const
     {
         return static_cast<int16_t>((raw[4] << 8) | raw[5]);
     }
     //! @brief Raw temperature ADC
-    int16_t temp_adc() const
+    inline int16_t temp_adc() const
     {
         return static_cast<int16_t>((raw[6] << 8) | raw[7]);
     }
     //! @brief Raw gyroscope X
-    int16_t gyro_x() const
+    inline int16_t gyro_x() const
     {
         return static_cast<int16_t>((raw[8] << 8) | raw[9]);
     }
     //! @brief Raw gyroscope Y
-    int16_t gyro_y() const
+    inline int16_t gyro_y() const
     {
         return static_cast<int16_t>((raw[10] << 8) | raw[11]);
     }
     //! @brief Raw gyroscope Z
-    int16_t gyro_z() const
+    inline int16_t gyro_z() const
     {
         return static_cast<int16_t>((raw[12] << 8) | raw[13]);
     }
     ///@}
 
     //! @brief Temperature in degC (T = adc/326.8 + 25.0)
-    float temperature() const
+    inline float temperature() const
     {
         return temp_adc() / 326.8f + 25.0f;
     }

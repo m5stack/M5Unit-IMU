@@ -20,7 +20,7 @@ namespace bmi270 {
 
 /*!
   @enum AccelRange
-  @brief Accelerometer full scale range (ACC_RANGE register 0x41)
+  @brief Accelerometer full scale range (REG_ACC_RANGE register 0x41)
  */
 enum class AccelRange : uint8_t {
     G2,   //!< @brief +-2G (16384 LSB/G)
@@ -31,7 +31,7 @@ enum class AccelRange : uint8_t {
 
 /*!
   @enum GyroRange
-  @brief Gyroscope full scale range (GYR_RANGE register 0x43)
+  @brief Gyroscope full scale range (REG_GYR_RANGE register 0x43)
   @note Unlike UnitMPU6886's GyroRange, value 0 is the *largest* range here
   (register encoding is chip-native, not renumbered to match MPU6886)
  */
@@ -45,7 +45,7 @@ enum class GyroRange : uint8_t {
 
 /*!
   @enum AccelODR
-  @brief Accelerometer output data rate (ACC_CONF register 0x40, bits[3:0])
+  @brief Accelerometer output data rate (REG_ACC_CONF register 0x40, bits[3:0])
  */
 enum class AccelODR : uint8_t {
     Rate12_5Hz = 0x05,  //!< @brief 12.5Hz
@@ -60,7 +60,7 @@ enum class AccelODR : uint8_t {
 
 /*!
   @enum GyroODR
-  @brief Gyroscope output data rate (GYR_CONF register 0x42, bits[3:0])
+  @brief Gyroscope output data rate (REG_GYR_CONF register 0x42, bits[3:0])
  */
 enum class GyroODR : uint8_t {
     Rate25Hz = 0x06,  //!< @brief 25Hz
@@ -122,32 +122,32 @@ struct Data {
     ///@name Raw ADC values (little-endian)
     ///@{
     //! @brief Raw accelerometer X
-    int16_t accel_x() const
+    inline int16_t accel_x() const
     {
         return static_cast<int16_t>((raw[1] << 8) | raw[0]);
     }
     //! @brief Raw accelerometer Y
-    int16_t accel_y() const
+    inline int16_t accel_y() const
     {
         return static_cast<int16_t>((raw[3] << 8) | raw[2]);
     }
     //! @brief Raw accelerometer Z
-    int16_t accel_z() const
+    inline int16_t accel_z() const
     {
         return static_cast<int16_t>((raw[5] << 8) | raw[4]);
     }
     //! @brief Raw gyroscope X
-    int16_t gyro_x() const
+    inline int16_t gyro_x() const
     {
         return static_cast<int16_t>((raw[7] << 8) | raw[6]);
     }
     //! @brief Raw gyroscope Y
-    int16_t gyro_y() const
+    inline int16_t gyro_y() const
     {
         return static_cast<int16_t>((raw[9] << 8) | raw[8]);
     }
     //! @brief Raw gyroscope Z
-    int16_t gyro_z() const
+    inline int16_t gyro_z() const
     {
         return static_cast<int16_t>((raw[11] << 8) | raw[10]);
     }

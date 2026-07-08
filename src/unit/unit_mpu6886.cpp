@@ -18,6 +18,13 @@ using m5::imu::Capability;
 
 namespace {
 constexpr uint32_t WRITE_VERIFY_RETRY{16};
+
+// REG_WHO_AM_I expected value / REG_PWR_MGMT_1 command values
+constexpr uint8_t WHOAMI_VALUE{0x19};
+// CLKSEL: 0,6 = internal 20MHz (alias) / 1..5 = auto PLL (alias) / 7 = stop
+// Not modeled as an enum because of duplicate values (m5-cpp-rules). Use 1 (auto PLL) for full performance
+constexpr uint8_t CLKSEL_AUTO_PLL{0x01};
+constexpr uint8_t DEVICE_RESET{0x80};
 }  // namespace
 
 namespace m5 {
@@ -29,48 +36,44 @@ const types::uid_t UnitMPU6886::uid{"UnitMPU6886"_mmh3};
 const types::attr_t UnitMPU6886::attr{attribute::AccessI2C};
 
 UnitMPU6886::UnitMPU6886(const uint8_t addr)
-    : Component(addr), _data{new m5::container::CircularBuffer<mpu6886::Data>(_cfg.stored_size)}
+    : Component(addr), _data{new m5::container::CircularBuffer<mpu6886::Data>(mpu6886::DEFAULT_STORED_SIZE)}
 {
     auto ccfg        = component_config();
     ccfg.clock       = 400 * 1000U;
-    ccfg.stored_size = _cfg.stored_size;
+    ccfg.stored_size = mpu6886::DEFAULT_STORED_SIZE;
     component_config(ccfg);
 }
 
 bool UnitMPU6886::begin()
 {
-    if (_cfg.stored_size != _data->capacity()) {
-        _data.reset(new m5::container::CircularBuffer<mpu6886::Data>(_cfg.stored_size));
-    }
-    if (!_data) {
-        M5_LIB_LOGE("Failed to allocate");
-        return false;
+    auto ssize = stored_size();
+    if (ssize != _data->capacity()) {
+        _data.reset(new m5::container::CircularBuffer<mpu6886::Data>(ssize));
+        if (!_data) {
+            M5_LIB_LOGE("Failed to allocate");
+            return false;
+        }
     }
     _data->clear();
     _pushed = _consumed = 0;
 
-    // config_t.stored_size is the sole control surface for the ring buffer depth;
-    // keep component_config().stored_size in sync with it here.
-    auto ccfg        = component_config();
-    ccfg.stored_size = _cfg.stored_size;
-    component_config(ccfg);
-
     uint8_t id{};
-    if (!readRegister8(WHO_AM_I, id, 0) || id != WHOAMI_VALUE) {
+    if (!readRegister8(REG_WHO_AM_I, id, 0) || id != WHOAMI_VALUE) {
         M5_LIB_LOGE("Not MPU6886 %02X", id);
         return false;
     }
-    if (!writeRegister8(PWR_MGMT_1, DEVICE_RESET)) {
+    if (!writeRegister8(REG_PWR_MGMT_1, DEVICE_RESET)) {
         M5_LIB_LOGE("Failed to reset");
         return false;
     }
     m5::utility::delay(10);
 
-    if (!write_register8_verified(PWR_MGMT_1, CLKSEL_AUTO_PLL) || !writeAccelRange(_cfg.accel_range) ||
-        !writeGyroRange(_cfg.gyro_range) || !write_register8_verified(CONFIG, static_cast<uint8_t>(_cfg.dlpf)) ||
-        !write_register8_verified(SMPLRT_DIV, _cfg.sample_rate_div) || !write_register8_verified(INT_PIN_CFG, 0xC0) ||
-        !write_register8_verified(INT_ENABLE, 0x00) || !write_register8_verified(ACCEL_CONFIG2, 0x00) ||
-        !write_register8_verified(USER_CTRL, 0x00) || !write_register8_verified(FIFO_EN, 0x00)) {
+    if (!write_register8_verified(REG_PWR_MGMT_1, CLKSEL_AUTO_PLL) || !writeAccelRange(_cfg.accel_range) ||
+        !writeGyroRange(_cfg.gyro_range) || !write_register8_verified(REG_CONFIG, static_cast<uint8_t>(_cfg.dlpf)) ||
+        !write_register8_verified(REG_SMPLRT_DIV, _cfg.sample_rate_div) ||
+        !write_register8_verified(REG_INT_PIN_CFG, 0xC0) || !write_register8_verified(REG_INT_ENABLE, 0x00) ||
+        !write_register8_verified(REG_ACCEL_CONFIG2, 0x00) || !write_register8_verified(REG_USER_CTRL, 0x00) ||
+        !write_register8_verified(REG_FIFO_EN, 0x00)) {
         M5_LIB_LOGE("Failed to initialize");
         return false;
     }
@@ -125,7 +128,7 @@ bool UnitMPU6886::stopPeriodicMeasurement()
 
 bool UnitMPU6886::writeAccelRange(const mpu6886::AccelRange range)
 {
-    if (write_register8_verified(ACCEL_CONFIG, static_cast<uint8_t>(range) << 3)) {
+    if (write_register8_verified(REG_ACCEL_CONFIG, static_cast<uint8_t>(range) << 3)) {
         _cfg.accel_range = range;
         return true;
     }
@@ -134,24 +137,44 @@ bool UnitMPU6886::writeAccelRange(const mpu6886::AccelRange range)
 
 bool UnitMPU6886::writeGyroRange(const mpu6886::GyroRange range)
 {
-    if (write_register8_verified(GYRO_CONFIG, static_cast<uint8_t>(range) << 3)) {
+    if (write_register8_verified(REG_GYRO_CONFIG, static_cast<uint8_t>(range) << 3)) {
         _cfg.gyro_range = range;
         return true;
     }
     return false;
 }
 
+bool UnitMPU6886::readAccelRange(mpu6886::AccelRange& range)
+{
+    uint8_t reg{};
+    if (!readRegister8(REG_ACCEL_CONFIG, reg, 0)) {
+        return false;
+    }
+    range = static_cast<mpu6886::AccelRange>((reg >> 3) & 0x03);
+    return true;
+}
+
+bool UnitMPU6886::readGyroRange(mpu6886::GyroRange& range)
+{
+    uint8_t reg{};
+    if (!readRegister8(REG_GYRO_CONFIG, reg, 0)) {
+        return false;
+    }
+    range = static_cast<mpu6886::GyroRange>((reg >> 3) & 0x03);
+    return true;
+}
+
 bool UnitMPU6886::read_measurement(mpu6886::Data& d)
 {
     uint8_t status{};
-    if (!readRegister8(INT_STATUS, status, 0)) {
-        M5_LIB_LOGE("Failed to read INT_STATUS");
+    if (!readRegister8(REG_INT_STATUS, status, 0)) {
+        M5_LIB_LOGE("Failed to read REG_INT_STATUS");
         return false;
     }
     if (!(status & 0x01)) {
         return false;  // Not ready yet (normal case, no log)
     }
-    return readRegister(ACCEL_XOUT_H, d.raw.data(), d.raw.size(), 0);
+    return readRegister(REG_ACCEL_XOUT_H, d.raw.data(), d.raw.size(), 0);
 }
 
 bool UnitMPU6886::write_register8_verified(const uint8_t reg, const uint8_t val)

@@ -20,7 +20,7 @@ namespace bmm350 {
 
 /*!
   @enum DataRate
-  @brief Output data rate (PMU_CMD_AGGR_SET register 0x04, bits[3:0])
+  @brief Output data rate (REG_PMU_CMD_AGGR_SET register 0x04, bits[3:0])
  */
 enum class DataRate : uint8_t {
     Rate400Hz    = 0x02,  //!< @brief 400Hz
@@ -36,7 +36,7 @@ enum class DataRate : uint8_t {
 
 /*!
   @enum Averaging
-  @brief Averaging factor (PMU_CMD_AGGR_SET register 0x04, bits[5:4])
+  @brief Averaging factor (REG_PMU_CMD_AGGR_SET register 0x04, bits[5:4])
  */
 enum class Averaging : uint8_t {
     None,  //!< @brief No averaging, 1 sample (LowPower)
@@ -86,7 +86,7 @@ constexpr float temp_res_raw24()
     return 0.00098128f;
 }
 //! @brief Fixed offset (degC) applied to the primary temperature conversion
-constexpr float TEMP_OFFSET = -25.49f;
+constexpr float TEMP_OFFSET{-25.49f};
 
 /*!
   @struct otp_compensation_t
@@ -110,7 +110,7 @@ struct otp_compensation_t {
     float cross[4]{};   //!< @brief Cross-axis coefficients: [0]=x_y [1]=y_x [2]=z_x [3]=z_y
 
     //! @brief Applies the OTP temperature compensation to a primary-converted temperature (degC)
-    float compensate_temp(const float t_raw) const
+    inline float compensate_temp(const float t_raw) const
     {
         return (1.0f + t_sens) * t_raw + t_offs;
     }
@@ -145,7 +145,7 @@ struct otp_compensation_t {
 
 /*!
   @struct Data
-  @brief One measurement (12 bytes burst from MAG_X_XLSB, register 0x31): 9
+  @brief One measurement (12 bytes burst from REG_MAG_X_XLSB, register 0x31): 9
   bytes magnetometer (X,Y,Z, 24bit little-endian each) followed by 3 bytes
   temperature (24bit little-endian)
  */
@@ -156,27 +156,27 @@ struct Data {
     ///@name Raw ADC values (24bit signed, sign-extended)
     ///@{
     //! @brief Raw magnetometer X
-    int32_t x_raw() const
+    inline int32_t x_raw() const
     {
         return fix_sign24(assemble24(0));
     }
     //! @brief Raw magnetometer Y
-    int32_t y_raw() const
+    inline int32_t y_raw() const
     {
         return fix_sign24(assemble24(3));
     }
     //! @brief Raw magnetometer Z
-    int32_t z_raw() const
+    inline int32_t z_raw() const
     {
         return fix_sign24(assemble24(6));
     }
     //! @brief Raw temperature ADC (24bit, sign-extended)
-    int32_t temp_raw24() const
+    inline int32_t temp_raw24() const
     {
         return fix_sign24(assemble24(9));
     }
     //! @brief Raw temperature ADC normalized to 16bit (temp_raw24() >> 8)
-    int16_t temp_adc() const
+    inline int16_t temp_adc() const
     {
         return static_cast<int16_t>(temp_raw24() >> 8);
     }
@@ -185,17 +185,17 @@ struct Data {
     ///@name Compensated values (primary conversion + OTP compensation applied, uT)
     ///@{
     //! @brief Compensated magnetometer X (uT)
-    float x_ut() const
+    inline float x_ut() const
     {
         return compensated_mag()[0];
     }
     //! @brief Compensated magnetometer Y (uT)
-    float y_ut() const
+    inline float y_ut() const
     {
         return compensated_mag()[1];
     }
     //! @brief Compensated magnetometer Z (uT)
-    float z_ut() const
+    inline float z_ut() const
     {
         return compensated_mag()[2];
     }
@@ -203,18 +203,18 @@ struct Data {
 
 private:
     // Assembles a little-endian 24bit unsigned value from raw[idx..idx+2]
-    uint32_t assemble24(const size_t idx) const
+    inline uint32_t assemble24(const size_t idx) const
     {
         return static_cast<uint32_t>(raw[idx]) | (static_cast<uint32_t>(raw[idx + 1]) << 8) |
                (static_cast<uint32_t>(raw[idx + 2]) << 16);
     }
     // Primary (pre-OTP) temperature conversion (degC)
-    float primary_temp() const
+    inline float primary_temp() const
     {
         return static_cast<float>(temp_raw24()) * temp_res_raw24() + TEMP_OFFSET;
     }
     // Primary conversion (uT) followed by full OTP compensation for all 3 axes
-    std::array<float, 3> compensated_mag() const
+    inline std::array<float, 3> compensated_mag() const
     {
         std::array<float, 3> m{static_cast<float>(x_raw()) * lsb_to_ut_xy(),
                                static_cast<float>(y_raw()) * lsb_to_ut_xy(),

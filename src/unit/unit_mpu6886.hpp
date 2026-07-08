@@ -32,6 +32,8 @@ public:
     /*!
       @struct config_t
       @brief Settings for begin()
+      @note Ring buffer depth is configured via component_config() (default:
+      mpu6886::DEFAULT_STORED_SIZE)
      */
     struct config_t {
         //! Start periodic measurement on begin()?
@@ -44,9 +46,6 @@ public:
         mpu6886::Dlpf dlpf{mpu6886::Dlpf::BW176};
         //! Sample rate divider (ODR = 1000/(1+div) Hz). 3 -> 250Hz
         uint8_t sample_rate_div{3};
-        //! Ring buffer depth. This unit treats config_t as the sole control surface;
-        //! component_config().stored_size is synced to this value in begin()
-        uint32_t stored_size{8};
     };
 
     explicit UnitMPU6886(const uint8_t addr = DEFAULT_ADDRESS);
@@ -86,6 +85,14 @@ public:
     //! @param[in] range Gyroscope range
     //! @return True if successful
     bool writeGyroRange(const mpu6886::GyroRange range);
+    //! @brief Read the accelerometer range from the device (REG_ACCEL_CONFIG bits[4:3])
+    //! @param[out] range Accelerometer range
+    //! @return True if successful
+    bool readAccelRange(mpu6886::AccelRange& range);
+    //! @brief Read the gyroscope range from the device (REG_GYRO_CONFIG bits[4:3])
+    //! @param[out] range Gyroscope range
+    //! @return True if successful
+    bool readGyroRange(mpu6886::GyroRange& range);
     ///@}
 
     ///@name Periodic measurement
@@ -130,30 +137,28 @@ private:
 };
 
 namespace mpu6886 {
+//! @brief Default ring buffer depth (used to construct the internal buffer and as the
+//! component_config().stored_size default; see config_t)
+constexpr uint32_t DEFAULT_STORED_SIZE{8};
+
 namespace command {
 ///@cond
 // Register addresses (I2C addr 0x68/0x69 by AD0 pin)
-constexpr uint8_t GYRO_OFFS_USR = 0x13;  // 6 bytes
-constexpr uint8_t SMPLRT_DIV    = 0x19;
-constexpr uint8_t CONFIG        = 0x1A;
-constexpr uint8_t GYRO_CONFIG   = 0x1B;
-constexpr uint8_t ACCEL_CONFIG  = 0x1C;
-constexpr uint8_t ACCEL_CONFIG2 = 0x1D;
-constexpr uint8_t FIFO_EN       = 0x23;
-constexpr uint8_t INT_PIN_CFG   = 0x37;
-constexpr uint8_t INT_ENABLE    = 0x38;
-constexpr uint8_t INT_STATUS    = 0x3A;  // bit0 = DATA_RDY (read clear)
-constexpr uint8_t ACCEL_XOUT_H  = 0x3B;  // 14 bytes: accel6 + temp2 + gyro6 (big-endian)
-constexpr uint8_t USER_CTRL     = 0x6A;
-constexpr uint8_t PWR_MGMT_1    = 0x6B;  // bit7 RESET / bit6 SLEEP / CLKSEL[2:0]
-constexpr uint8_t PWR_MGMT_2    = 0x6C;
-constexpr uint8_t WHO_AM_I      = 0x75;
-
-constexpr uint8_t WHOAMI_VALUE = 0x19;
-// CLKSEL: 0,6 = internal 20MHz (alias) / 1..5 = auto PLL (alias) / 7 = stop
-// Not modeled as an enum because of duplicate values (m5-cpp-rules). Use 1 (auto PLL) for full performance
-constexpr uint8_t CLKSEL_AUTO_PLL = 0x01;
-constexpr uint8_t DEVICE_RESET    = 0x80;
+constexpr uint8_t REG_GYRO_OFFS_USR{0x13};  // 6 bytes
+constexpr uint8_t REG_SMPLRT_DIV{0x19};
+constexpr uint8_t REG_CONFIG{0x1A};
+constexpr uint8_t REG_GYRO_CONFIG{0x1B};
+constexpr uint8_t REG_ACCEL_CONFIG{0x1C};
+constexpr uint8_t REG_ACCEL_CONFIG2{0x1D};
+constexpr uint8_t REG_FIFO_EN{0x23};
+constexpr uint8_t REG_INT_PIN_CFG{0x37};
+constexpr uint8_t REG_INT_ENABLE{0x38};
+constexpr uint8_t REG_INT_STATUS{0x3A};    // bit0 = DATA_RDY (read clear)
+constexpr uint8_t REG_ACCEL_XOUT_H{0x3B};  // 14 bytes: accel6 + temp2 + gyro6 (big-endian)
+constexpr uint8_t REG_USER_CTRL{0x6A};
+constexpr uint8_t REG_PWR_MGMT_1{0x6B};  // bit7 RESET / bit6 SLEEP / CLKSEL[2:0]
+constexpr uint8_t REG_PWR_MGMT_2{0x6C};
+constexpr uint8_t REG_WHO_AM_I{0x75};
 ///@endcond
 }  // namespace command
 }  // namespace mpu6886

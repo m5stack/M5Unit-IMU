@@ -104,3 +104,16 @@ TEST_F(TestBMM150, ReadImuRawPopSemantics)
     EXPECT_FALSE(m5::imu::any(unit->readImuRaw(raw)));
     EXPECT_FALSE(unit->empty());
 }
+
+TEST_F(TestBMM150, ReadSettings)
+{
+    SCOPED_TRACE(ustr);
+
+    // begin() 直後は config_t のデフォルト (Preset::Regular / DataRate::Rate30Hz) のはず
+    DataRate rate{};
+    Preset preset{};
+    EXPECT_TRUE(unit->readDataRate(rate));
+    EXPECT_EQ(rate, DataRate::Rate30Hz);
+    EXPECT_TRUE(unit->readPreset(preset));
+    EXPECT_EQ(preset, Preset::Regular);
+}
