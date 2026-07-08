@@ -44,7 +44,8 @@ public:
         mpu6886::Dlpf dlpf{mpu6886::Dlpf::BW176};
         //! Sample rate divider (ODR = 1000/(1+div) Hz). 3 -> 250Hz
         uint8_t sample_rate_div{3};
-        //! Ring buffer depth
+        //! Ring buffer depth. This unit treats config_t as the sole control surface;
+        //! component_config().stored_size is synced to this value in begin()
         uint32_t stored_size{8};
     };
 
@@ -53,15 +54,22 @@ public:
     {
     }
 
+    //! @brief Begin the unit
     virtual bool begin() override;
+    //! @brief Update the unit
+    //! @param[in] force Forces an update if true, even if not time for periodic measurement
     virtual void update(const bool force = false) override;
 
     ///@name Settings
     ///@{
+    //! @brief Gets the configuration
+    //! @return Current configuration
     config_t config() const
     {
         return _cfg;
     }
+    //! @brief Set the configuration
+    //! @param[in] cfg Configuration
     void config(const config_t& cfg)
     {
         _cfg = cfg;
@@ -70,13 +78,23 @@ public:
 
     ///@name Range setting (applies immediately)
     ///@{
+    //! @brief Write the accelerometer range
+    //! @param[in] range Accelerometer range
+    //! @return True if successful
     bool writeAccelRange(const mpu6886::AccelRange range);
+    //! @brief Write the gyroscope range
+    //! @param[in] range Gyroscope range
+    //! @return True if successful
     bool writeGyroRange(const mpu6886::GyroRange range);
     ///@}
 
     ///@name Periodic measurement
     ///@{
+    //! @brief Start periodic measurement in the current settings
+    //! @return True if successful
     bool startPeriodicMeasurement();
+    //! @brief Stop periodic measurement
+    //! @return True if successful
     bool stopPeriodicMeasurement();
     ///@}
 
@@ -88,7 +106,12 @@ public:
     {
         return m5::imu::Capability::Accel | m5::imu::Capability::Gyro | m5::imu::Capability::Temp;
     }
+    //! @brief Read the latest raw IMU data
+    //! @param[out] out Raw IMU data
+    //! @return Capability of the data actually stored in out (None if no data available)
     virtual m5::imu::Capability readImuRaw(m5::imu::imu_raw_data_t& out) override;
+    //! @brief Gets the conversion parameters for raw IMU data
+    //! @param[out] out Conversion parameters
     virtual void imuConvertParam(m5::imu::imu_convert_param_t& out) const override;
     ///@}
 

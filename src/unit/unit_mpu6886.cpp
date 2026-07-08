@@ -49,6 +49,12 @@ bool UnitMPU6886::begin()
     _data->clear();
     _pushed = _consumed = 0;
 
+    // config_t.stored_size is the sole control surface for the ring buffer depth;
+    // keep component_config().stored_size in sync with it here.
+    auto ccfg        = component_config();
+    ccfg.stored_size = _cfg.stored_size;
+    component_config(ccfg);
+
     uint8_t id{};
     if (!readRegister8(WHO_AM_I, id, 0) || id != WHOAMI_VALUE) {
         M5_LIB_LOGE("Not MPU6886 %02X", id);
@@ -138,8 +144,12 @@ bool UnitMPU6886::writeGyroRange(const mpu6886::GyroRange range)
 bool UnitMPU6886::read_measurement(mpu6886::Data& d)
 {
     uint8_t status{};
-    if (!readRegister8(INT_STATUS, status, 0) || !(status & 0x01)) {
+    if (!readRegister8(INT_STATUS, status, 0)) {
+        M5_LIB_LOGE("Failed to read INT_STATUS");
         return false;
+    }
+    if (!(status & 0x01)) {
+        return false;  // Not ready yet (normal case, no log)
     }
     return readRegister(ACCEL_XOUT_H, d.raw.data(), d.raw.size(), 0);
 }
