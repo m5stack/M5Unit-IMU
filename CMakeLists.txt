@@ -3,7 +3,7 @@
 #
 # IMU sensors (MPU6886 / BMI270 / BMM150 / BMM350) over I2C. The public headers only
 # pull in M5UnitUnified; M5Utility is used in the .cpp internals only.
-file(GLOB_RECURSE SRCS "src/*.cpp")
+file(GLOB_RECURSE SRCS "src/*.cpp" "src/*.c")
 idf_component_register(
     SRCS ${SRCS}
     INCLUDE_DIRS "src"
