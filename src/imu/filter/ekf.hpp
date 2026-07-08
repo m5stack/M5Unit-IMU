@@ -61,6 +61,11 @@ public:
       @param mag_noise_ut Magnetometer measurement noise (1-sigma), microtesla, must be > 0
       @param bias_random_walk_dps Gyro bias random walk (1-sigma), degrees per second, must be > 0
       @return False (and keeps the previous values) if any parameter is not positive
+      @note The gyro_noise_dps parameter is internally scaled by EKF_PROCESS_NOISE_SCALE
+      (currently 100.0x) when building the process noise covariance Q. This means the
+      actual filter response will be stronger (more responsive to references) than the
+      datasheet raw values might suggest; use this method iteratively with your sensor
+      and reference characteristics to tune the desired tracking behavior.
      */
     bool writeNoiseParams(const float gyro_noise_dps, const float accel_noise_g, const float mag_noise_ut,
                           const float bias_random_walk_dps);

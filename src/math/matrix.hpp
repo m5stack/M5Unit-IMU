@@ -156,6 +156,11 @@ private:
   @param[out] out Inverse of m; only written on success
   @return False if m is (near) singular (determinant magnitude below MATRIX_ZERO_EPSILON),
   leaving out unwritten
+  @note The singularity threshold MATRIX_ZERO_EPSILON is 1e-9 (absolute determinant
+  magnitude). Matrices with very small scale (e.g., condition number > 1e9) will be
+  treated as singular; the caller should handle failure gracefully by skipping the
+  update (as in EKFFilter::apply_axis3_update()), which is safe because the Kalman
+  gain computation is optional for each observation.
  */
 inline bool invert3x3(const Matrix<3, 3>& m, Matrix<3, 3>& out)
 {

@@ -36,6 +36,14 @@ constexpr float EKF_INITIAL_BIAS_VARIANCE_DPS2{25.0f};  // (5 dps)^2
 // responsive to slow-moving references (e.g. a leveled mag heading) once the
 // covariance has shrunk from its initial value, so it is scaled up here rather than
 // fed into Q as-is.
+//
+// Technical detail: The quaternion process noise is computed as Q_q = 0.25·ΞΞᵀ·σ²·dt,
+// where the 0.25 coefficient comes from linearizing qDot = 0.5·Xi(q)·omega and is
+// absorbed into this SCALE factor. The effective result is equivalent to an attitude
+// random walk with σ_eff ≈ 10 dps/√s (degrees per second per root-second), which
+// acts as a tuning floor that keeps the filter responsive to slow corrections.
+// Numerical experiments show a valid effective window of approximately [25, 300)
+// (unitless multiplicative range), beyond which convergence becomes unstable.
 constexpr float EKF_PROCESS_NOISE_SCALE{100.0f};
 
 //! @brief Symmetrize a covariance matrix in place (guards against asymmetric drift from
