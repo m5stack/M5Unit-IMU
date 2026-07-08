@@ -37,3 +37,31 @@ TEST(ImuTypes, RawDataDefaultZero)
     EXPECT_EQ(d.baro, 0);
     EXPECT_EQ(d.temp, 0);
 }
+
+TEST(ImuTypes, CapabilityTempBit)
+{
+    const Capability c = Capability::Accel | Capability::Temp;
+    EXPECT_TRUE(any(c & Capability::Accel));
+    EXPECT_TRUE(any(c & Capability::Temp));
+    EXPECT_FALSE(any(c & Capability::Gyro));
+    EXPECT_FALSE(any(c & Capability::Mag));
+    EXPECT_FALSE(any(c & Capability::Baro));
+
+    Capability t = Capability::None;
+    t |= Capability::Temp;
+    EXPECT_TRUE(any(t & Capability::Temp));
+    EXPECT_FALSE(any(t & Capability::Accel));
+    EXPECT_FALSE(any(t & Capability::Gyro));
+    EXPECT_FALSE(any(t & Capability::Mag));
+    EXPECT_FALSE(any(t & Capability::Baro));
+}
+
+TEST(ImuTypes, ConvertParamDefaults)
+{
+    const imu_convert_param_t p{};
+    EXPECT_FLOAT_EQ(p.accel_res, 8.0f / 32768);
+    EXPECT_FLOAT_EQ(p.gyro_res, 2000.0f / 32768);
+    EXPECT_FLOAT_EQ(p.mag_res, 4912.0f / 32760);
+    EXPECT_FLOAT_EQ(p.temp_res, 1.0f);
+    EXPECT_FLOAT_EQ(p.temp_offset, 0.0f);
+}

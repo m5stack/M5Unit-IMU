@@ -74,30 +74,37 @@ struct Data {
 
     ///@name Raw ADC values
     ///@{
+    //! @brief Raw accelerometer X
     int16_t accel_x() const
     {
         return static_cast<int16_t>((raw[0] << 8) | raw[1]);
     }
+    //! @brief Raw accelerometer Y
     int16_t accel_y() const
     {
         return static_cast<int16_t>((raw[2] << 8) | raw[3]);
     }
+    //! @brief Raw accelerometer Z
     int16_t accel_z() const
     {
         return static_cast<int16_t>((raw[4] << 8) | raw[5]);
     }
+    //! @brief Raw temperature ADC
     int16_t temp_adc() const
     {
         return static_cast<int16_t>((raw[6] << 8) | raw[7]);
     }
+    //! @brief Raw gyroscope X
     int16_t gyro_x() const
     {
         return static_cast<int16_t>((raw[8] << 8) | raw[9]);
     }
+    //! @brief Raw gyroscope Y
     int16_t gyro_y() const
     {
         return static_cast<int16_t>((raw[10] << 8) | raw[11]);
     }
+    //! @brief Raw gyroscope Z
     int16_t gyro_z() const
     {
         return static_cast<int16_t>((raw[12] << 8) | raw[13]);

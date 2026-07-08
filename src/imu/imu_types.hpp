@@ -25,6 +25,7 @@ enum class Capability : uint8_t {
     Gyro  = 1 << 1,  //!< @brief 3-axis gyroscope
     Mag   = 1 << 2,  //!< @brief 3-axis magnetometer
     Baro  = 1 << 3,  //!< @brief Barometric pressure (reserved for future)
+    Temp  = 1 << 4,  //!< @brief Temperature output
 };
 
 //! @brief Bitwise OR
@@ -66,11 +67,11 @@ struct imu_raw_data_t {
   @brief Raw to physical unit conversion coefficients
  */
 struct imu_convert_param_t {
-    float accel_res{8.0f / 32768};        //!< @brief G per LSB
-    float gyro_res{2000.0f / 32768};      //!< @brief dps per LSB
-    float mag_res{10.0f * 4912 / 32760};  //!< @brief uT per LSB
-    float temp_res{1.0f};                 //!< @brief degC per LSB
-    float temp_offset{0.0f};              //!< @brief degC offset
+    float accel_res{8.0f / 32768};    //!< @brief G per LSB
+    float gyro_res{2000.0f / 32768};  //!< @brief dps per LSB
+    float mag_res{4912.0f / 32760};   //!< @brief uT per LSB
+    float temp_res{1.0f};             //!< @brief degC per LSB
+    float temp_offset{0.0f};          //!< @brief degC offset
 };
 
 }  // namespace imu
