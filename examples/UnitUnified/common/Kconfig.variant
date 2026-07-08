@@ -1,0 +1,16 @@
+# Shared "Target unit" selection for the M5Unit-IMU UnitUnified examples (ESP-IDF).
+# rsource'd from each example's main/Kconfig.projbuild. The chosen CONFIG_EXAMPLE_USING_* is mapped
+# to the source-level USING_* macro in common/variant.cmake (shared with the Arduino build).
+menu "M5Unit-IMU example"
+
+choice EXAMPLE_IMU_VARIANT
+    prompt "Target device"
+    default EXAMPLE_USING_UNIT_IMU_MINI
+    help
+        Which IMU unit/device this example drives.
+
+    config EXAMPLE_USING_UNIT_IMU_MINI
+        bool "UnitIMUMini (MPU6886)"
+endchoice
+
+endmenu
