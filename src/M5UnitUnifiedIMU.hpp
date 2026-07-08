@@ -16,6 +16,9 @@
 #include "imu/imu_types.hpp"
 #include "imu/imu_data_source.hpp"
 #include "unit/unit_mpu6886.hpp"
+#include "unit/unit_bmm150.hpp"
+#include "unit/unit_bmm350.hpp"
+#include "unit/unit_bmi270.hpp"
 
 /*!
   @namespace m5
@@ -31,6 +34,7 @@ namespace unit {
 
 //! @brief Alias for UnitIMUMini (MPU6886)
 using UnitIMUMini = m5::unit::UnitMPU6886;
+// Add product-name aliases here as needed (e.g. UnitDoF6, UnitDoF9, UnitDoF10)
 
 }  // namespace unit
 }  // namespace m5

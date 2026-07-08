@@ -24,11 +24,6 @@
 // USING_UNIT_DOF6 (U228) / USING_BUILTIN_IMU
 #endif
 
-#if defined(USING_UNIT_BMM350)
-// Not yet aggregated into M5UnitUnifiedIMU.hpp (planned for a later task); include directly.
-#include <unit/unit_bmm350.hpp>
-#endif
-
 namespace {
 m5::unit::UnitUnified Units;
 
