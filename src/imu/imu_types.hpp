@@ -74,6 +74,17 @@ struct imu_convert_param_t {
     float temp_offset{0.0f};          //!< @brief degC offset
 };
 
+/*!
+  @struct imu_physical_data_t
+  @brief Merged, converted physical-unit IMU sample (AhrsController::latest())
+ */
+struct imu_physical_data_t {
+    float accel[3]{};  //!< @brief Accelerometer X/Y/Z (G)
+    float gyro[3]{};   //!< @brief Gyroscope X/Y/Z (dps)
+    float mag[3]{};    //!< @brief Magnetometer X/Y/Z (uT)
+    float temp{};      //!< @brief Temperature (degC)
+};
+
 }  // namespace imu
 }  // namespace m5
 #endif
