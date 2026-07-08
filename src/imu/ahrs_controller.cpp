@@ -213,13 +213,17 @@ Capability AhrsController::drain_and_fuse(const float dt)
 
         imu_raw_data_t gyro_buf[AHRS_MAX_DRAIN_SAMPLES]{};
         size_t gyro_count{};
+        size_t dropped_count{};
         imu_raw_data_t raw{};
         while (any(_gyro_src->readImuRaw(raw))) {
             if (gyro_count < AHRS_MAX_DRAIN_SAMPLES) {
                 gyro_buf[gyro_count++] = raw;
             } else {
-                M5_LIB_LOGW("AhrsController::update: gyro drain overflow, dropping a sample");
+                ++dropped_count;
             }
+        }
+        if (dropped_count > 0) {
+            M5_LIB_LOGW("AhrsController::update: gyro drain overflow, dropped %zu sample(s)", dropped_count);
         }
 
         if (gyro_count > 0) {

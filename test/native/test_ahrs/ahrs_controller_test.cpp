@@ -100,6 +100,7 @@ public:
         for (int i = 0; i < 3; ++i) {
             _last_accel[i] = accel[i];
             _last_gyro[i]  = gyro[i];
+            _last_mag[i]   = mag ? mag[i] : 0.0f;
         }
     }
     void quaternion(float& w, float& x, float& y, float& z) const override
@@ -126,6 +127,18 @@ public:
     {
         return _last_mag_is_null;
     }
+    inline const float* lastAccel() const
+    {
+        return _last_accel;
+    }
+    inline const float* lastGyro() const
+    {
+        return _last_gyro;
+    }
+    inline const float* lastMag() const
+    {
+        return _last_mag;
+    }
 
 private:
     int _reset_count{};
@@ -134,6 +147,7 @@ private:
     bool _last_mag_is_null{true};
     float _last_accel[3]{};
     float _last_gyro[3]{};
+    float _last_mag[3]{};
     float _qw{1.0f};
     float _qx{};
     float _qy{};
@@ -150,9 +164,9 @@ TEST(AhrsController, MergeNineAxisUpdatesAllCapabilities)
     mag.pushMag(20, 0, -40);
 
     AhrsController ahrs;
-    ASSERT_TRUE(ahrs.add(ag));
-    ASSERT_TRUE(ahrs.add(mag));
-    ASSERT_TRUE(ahrs.begin());
+    EXPECT_TRUE(ahrs.add(ag));
+    EXPECT_TRUE(ahrs.add(mag));
+    EXPECT_TRUE(ahrs.begin());
 
     const Capability updated = ahrs.update(0.01f);
     EXPECT_TRUE(any(updated & Capability::Accel));
@@ -173,9 +187,9 @@ TEST(AhrsController, DuplicateCapabilityKeepsFirstSource)
     second.pushAccelGyro(9, 9, 9, 0, 0, 0);
 
     AhrsController ahrs;
-    ASSERT_TRUE(ahrs.add(first));
+    EXPECT_TRUE(ahrs.add(first));
     EXPECT_TRUE(ahrs.add(second));  // add() itself still succeeds
-    ASSERT_TRUE(ahrs.begin());
+    EXPECT_TRUE(ahrs.begin());
 
     ahrs.update(0.01f);
     EXPECT_FLOAT_EQ(ahrs.latest().accel[0], 0.0f);  // first's value, not second's 9
@@ -190,8 +204,8 @@ TEST(AhrsController, UpdateDrainsAllQueuedSamples)
     }
 
     AhrsController ahrs;
-    ASSERT_TRUE(ahrs.add(ag));
-    ASSERT_TRUE(ahrs.begin());
+    EXPECT_TRUE(ahrs.add(ag));
+    EXPECT_TRUE(ahrs.begin());
 
     const Capability updated = ahrs.update(0.05f);
     EXPECT_TRUE(any(updated & Capability::Gyro));
@@ -211,9 +225,9 @@ TEST(AhrsController, MagOverflowSentinelKeepsLastValidMag)
     mag.pushMag(-32768, 5, 5);  // sentinel -> rejected, previous value must survive
 
     AhrsController ahrs;
-    ASSERT_TRUE(ahrs.add(ag));
-    ASSERT_TRUE(ahrs.add(mag));
-    ASSERT_TRUE(ahrs.begin());
+    EXPECT_TRUE(ahrs.add(ag));
+    EXPECT_TRUE(ahrs.add(mag));
+    EXPECT_TRUE(ahrs.begin());
 
     ahrs.update(0.01f);
     EXPECT_FLOAT_EQ(ahrs.latest().mag[0], 20.0f);
@@ -225,7 +239,7 @@ TEST(AhrsController, BeginFailsWithoutAccelAndGyro)
 {
     MockSource mag(Capability::Mag);
     AhrsController ahrs;
-    ASSERT_TRUE(ahrs.add(mag));
+    EXPECT_TRUE(ahrs.add(mag));
     EXPECT_FALSE(ahrs.begin());
 }
 
@@ -233,7 +247,7 @@ TEST(AhrsController, BeginSucceedsWithAccelGyroAndSelectsDefaultFilter)
 {
     MockSource ag(Capability::Accel | Capability::Gyro);
     AhrsController ahrs;
-    ASSERT_TRUE(ahrs.add(ag));
+    EXPECT_TRUE(ahrs.add(ag));
     EXPECT_EQ(ahrs.filter(), nullptr);
     EXPECT_TRUE(ahrs.begin());
     EXPECT_NE(ahrs.filter(), nullptr);
@@ -247,8 +261,8 @@ TEST(AhrsController, SelectFilterResetsAttitude)
     }
 
     AhrsController ahrs;
-    ASSERT_TRUE(ahrs.add(ag));
-    ASSERT_TRUE(ahrs.begin());
+    EXPECT_TRUE(ahrs.add(ag));
+    EXPECT_TRUE(ahrs.begin());
     ahrs.update(1.0f);
 
     float w{}, x{}, y{}, z{};
@@ -270,8 +284,8 @@ TEST(AhrsController, SetFilterInjectsMockAndReceivesUpdates)
     ag.pushAccelGyro(0, 0, 1, 4, 5, 6);
 
     AhrsController ahrs;
-    ASSERT_TRUE(ahrs.add(ag));
-    ASSERT_TRUE(ahrs.begin());  // selects the default (Madgwick) filter first
+    EXPECT_TRUE(ahrs.add(ag));
+    EXPECT_TRUE(ahrs.begin());  // selects the default (Madgwick) filter first
 
     MockFilter mock;
     ahrs.setFilter(mock);
@@ -282,6 +296,41 @@ TEST(AhrsController, SetFilterInjectsMockAndReceivesUpdates)
     EXPECT_TRUE(mock.lastMagIsNull());  // no mag source was added
 }
 
+TEST(AhrsController, MockFilterReceivesValidMagAndLatestAccelGyro)
+{
+    MockSource ag(Capability::Accel | Capability::Gyro);
+    ag.pushAccelGyro(1, 2, 3, 4, 5, 6);
+    MockSource mag(Capability::Mag);
+    mag.pushMag(20, 0, -40);  // valid, no overflow sentinel
+
+    AhrsController ahrs;
+    EXPECT_TRUE(ahrs.add(ag));
+    EXPECT_TRUE(ahrs.add(mag));
+    EXPECT_TRUE(ahrs.begin());  // selects the default (Madgwick) filter first
+
+    MockFilter mock;
+    ahrs.setFilter(mock);
+
+    ahrs.update(0.01f);
+    EXPECT_EQ(mock.updateCount(), 1);
+    EXPECT_FALSE(mock.lastMagIsNull());  // a valid mag sample must reach the filter as non-null
+
+    const float* last_mag = mock.lastMag();
+    EXPECT_FLOAT_EQ(last_mag[0], 20.0f);
+    EXPECT_FLOAT_EQ(last_mag[1], 0.0f);
+    EXPECT_FLOAT_EQ(last_mag[2], -40.0f);
+
+    const float* last_accel = mock.lastAccel();
+    EXPECT_FLOAT_EQ(last_accel[0], 1.0f);
+    EXPECT_FLOAT_EQ(last_accel[1], 2.0f);
+    EXPECT_FLOAT_EQ(last_accel[2], 3.0f);
+
+    const float* last_gyro = mock.lastGyro();
+    EXPECT_FLOAT_EQ(last_gyro[0], 4.0f);
+    EXPECT_FLOAT_EQ(last_gyro[1], 5.0f);
+    EXPECT_FLOAT_EQ(last_gyro[2], 6.0f);
+}
+
 TEST(AhrsController, UpdateWithDtSplitsEvenlyAcrossGyroSamples)
 {
     MockSource ag(Capability::Accel | Capability::Gyro);
@@ -290,14 +339,14 @@ TEST(AhrsController, UpdateWithDtSplitsEvenlyAcrossGyroSamples)
     }
 
     AhrsController ahrs;
-    ASSERT_TRUE(ahrs.add(ag));
-    ASSERT_TRUE(ahrs.begin());
+    EXPECT_TRUE(ahrs.add(ag));
+    EXPECT_TRUE(ahrs.begin());
 
     MockFilter mock;
     ahrs.setFilter(mock);
 
     ahrs.update(0.08f);  // 0.08 / 4 samples == 0.02 per sample
-    ASSERT_EQ(mock.updateCount(), 4);
+    EXPECT_EQ(mock.updateCount(), 4);
     for (const float dt : mock.dts()) {
         EXPECT_NEAR(dt, 0.02f, 1e-6f);
     }
@@ -311,8 +360,8 @@ TEST(AhrsController, EulerAndLatestAreConsistentAfterUpdate)
     }
 
     AhrsController ahrs;
-    ASSERT_TRUE(ahrs.add(ag));
-    ASSERT_TRUE(ahrs.begin());  // default Madgwick filter
+    EXPECT_TRUE(ahrs.add(ag));
+    EXPECT_TRUE(ahrs.begin());  // default Madgwick filter
 
     ahrs.update(1.0f);  // 100 samples over 1s
 
@@ -331,8 +380,8 @@ TEST(AhrsController, RealClockUpdateSkipsFirstCallThenDrains)
     ag.pushAccelGyro(0, 0, 1, 0, 0, 0);
 
     AhrsController ahrs;
-    ASSERT_TRUE(ahrs.add(ag));
-    ASSERT_TRUE(ahrs.begin());
+    EXPECT_TRUE(ahrs.add(ag));
+    EXPECT_TRUE(ahrs.begin());
 
     const Capability first = ahrs.update();  // seeds the clock only, does not drain yet
     EXPECT_FALSE(any(first));
