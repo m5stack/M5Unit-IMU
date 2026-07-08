@@ -47,10 +47,10 @@ public:
     }
 
 private:
-    float _alpha{0.98f};  //!< @brief Blend factor (weight of the gyro-integrated angle)
-    float _roll{};        //!< @brief Current roll estimate (deg)
-    float _pitch{};       //!< @brief Current pitch estimate (deg)
-    float _yaw{};         //!< @brief Current yaw estimate (deg)
+    float _alpha{0.98f};  // Blend factor (weight of the gyro-integrated angle)
+    float _roll{};        // Current roll estimate (deg)
+    float _pitch{};       // Current pitch estimate (deg)
+    float _yaw{};         // Current yaw estimate (deg)
 };
 
 }  // namespace imu

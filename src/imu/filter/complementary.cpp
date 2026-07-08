@@ -29,12 +29,17 @@ void ComplementaryFilter::reset()
 
 void ComplementaryFilter::update(const float dt, const float accel[3], const float gyro[3], const float* mag)
 {
+    if (dt <= 0.0f) {
+        return;
+    }
+
     const float roll_gyro  = _roll + gyro[0] * dt;
     const float pitch_gyro = _pitch + gyro[1] * dt;
     const float yaw_gyro   = _yaw + gyro[2] * dt;
 
-    // Roll/pitch from the accelerometer (see filter_base.hpp for the assumed
-    // coordinate convention: body Z up, static level reading = (0,0,+1) G).
+    // Roll/pitch from the accelerometer (see filter_base.hpp for the coordinate
+    // convention and its derived sign table: body X forward / Y left / Z up,
+    // static level reading = (0,0,+1) G; +roll = right side down, +pitch = nose down).
     const float roll_acc = std::atan2(accel[1], accel[2]) * COMPLEMENTARY_RAD2DEG;
     const float pitch_acc =
         std::atan2(-accel[0], std::sqrt(accel[1] * accel[1] + accel[2] * accel[2])) * COMPLEMENTARY_RAD2DEG;

@@ -40,6 +40,7 @@ inline void run_static(AhrsFilterBase& filter, const float seconds, const float 
 }
 
 // Body stationary, tilted 30 degrees about the roll (X) axis: accel = (0, sin30, cos30) G.
+// Per filter_base.hpp's derived sign table this is +30 deg roll (right side down).
 inline void run_tilt_roll30(AhrsFilterBase& filter, const float seconds, const float dt)
 {
     const float accel[3] = {0.0f, std::sin(30.0f * SCENARIO_DEG2RAD), std::cos(30.0f * SCENARIO_DEG2RAD)};
@@ -51,6 +52,8 @@ inline void run_tilt_roll30(AhrsFilterBase& filter, const float seconds, const f
 }
 
 // Body level, rotating about the yaw (Z) axis at a constant rate (no mag).
+// Per filter_base.hpp's derived sign table, a positive rate turns left (counter-clockwise
+// viewed from above).
 inline void run_yaw_rotation(AhrsFilterBase& filter, const float dps, const float seconds, const float dt)
 {
     const float accel[3] = {0.0f, 0.0f, 1.0f};
@@ -61,7 +64,9 @@ inline void run_yaw_rotation(AhrsFilterBase& filter, const float dps, const floa
     }
 }
 
-// Body level and stationary with a fixed, north-pointing magnetometer reading.
+// Body level and stationary with a fixed, north-pointing magnetometer reading: horizontal
+// component along body/world +X (heading reference), vertical component pointing down
+// (-Z), i.e. a Northern-hemisphere-like field inclination (see filter_base.hpp).
 inline void run_with_mag(AhrsFilterBase& filter, const float seconds, const float dt)
 {
     const float accel[3] = {0.0f, 0.0f, 1.0f};

@@ -14,11 +14,11 @@
   - dt: seconds elapsed since the previous update() call
 
   ## Coordinate convention
-  Body frame is right-handed: X forward, Y right, Z up. This matches what M5Unified and
-  most consumer IMUs report as-is -- a unit lying flat and stationary reads
-  accel = (0, 0, +1) G (the sensor's raw output, not the true gravity vector, which
-  points the other way). Positive yaw is counter-clockwise viewed from above (right-hand
-  rule about body Z), and roll/pitch likewise follow the right-hand rule about body X/Y.
+  Body frame is right-handed: X forward, Y left, Z up (a ROS REP-103-style body frame;
+  note that (forward, right, up) would be left-handed -- Y must be left to keep the
+  triad right-handed with Z up). This matches what M5Unified and most consumer IMUs
+  report as-is -- a unit lying flat and stationary reads accel = (0, 0, +1) G (the
+  sensor's raw output, not the true gravity vector, which points the other way).
 
   This ("sensor output as-is", Z-up) convention is used instead of the classic aerospace
   NED (Z-down) convention because it needs no sign flip between raw sensor samples and
@@ -29,6 +29,26 @@
   (world) frame: `v_world = q.rotate(v_body)` (see m5::math::Quaternion). Euler angles use
   the aerospace ZYX (yaw-pitch-roll) convention in degrees, matching
   m5::math::Quaternion::fromEuler() / toEuler().
+
+  The physical meaning of each sign below is not asserted; it is derived from
+  `m5::math::Quaternion::fromEuler()` + `rotate()` themselves (see
+  test/native/test_filter for the scenarios this table is checked against):
+
+  | Signal                                 | Derived physical meaning                                     |
+  |-----------------------------------------|----------------------------------------------------------------|
+  | accel = (0, 0, +1) G, static and level  | Body Z (up) aligned with world Z (up)                           |
+  | +roll, e.g. `fromEuler(+30, 0, 0)`      | Right side down (roll right); body Y (left) tilts toward +Z     |
+  | +pitch, e.g. `fromEuler(0, +30, 0)`     | Nose down; body X (forward) tilts toward world -Z               |
+  | +yaw, e.g. `fromEuler(0, 0, +30)`       | Turn left (CCW viewed from above); body X tilts toward world +Y |
+  | mag = (20, 0, -40) uT, level, yaw = 0   | Horizontal along +X (north-ish heading); vertical -Z (down):    |
+  | (world frame at yaw = 0)                | Northern-hemisphere-like field inclination                      |
+
+  Concretely, a body held level and pitched/rolled by 30 degrees per the table above
+  reproduces exactly the accelerometer readings used by
+  `test/native/test_filter/filter_scenario.hpp` (e.g. `run_tilt_roll30()` uses
+  accel = (0, sin30, cos30) G for +30 deg roll), so `ComplementaryFilter`'s
+  `atan2(accel[1], accel[2])` (roll) and `atan2(-accel[0], ...)` (pitch) formulas in
+  complementary.cpp recover these same signs.
 */
 #ifndef M5_UNIT_IMU_IMU_FILTER_FILTER_BASE_HPP
 #define M5_UNIT_IMU_IMU_FILTER_FILTER_BASE_HPP
