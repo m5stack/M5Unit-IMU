@@ -202,18 +202,18 @@ struct Data {
     ///@}
 
 private:
-    //! @brief Assembles a little-endian 24bit unsigned value from raw[idx..idx+2]
+    // Assembles a little-endian 24bit unsigned value from raw[idx..idx+2]
     uint32_t assemble24(const size_t idx) const
     {
         return static_cast<uint32_t>(raw[idx]) | (static_cast<uint32_t>(raw[idx + 1]) << 8) |
                (static_cast<uint32_t>(raw[idx + 2]) << 16);
     }
-    //! @brief Primary (pre-OTP) temperature conversion (degC)
+    // Primary (pre-OTP) temperature conversion (degC)
     float primary_temp() const
     {
         return static_cast<float>(temp_raw24()) * temp_res_raw24() + TEMP_OFFSET;
     }
-    //! @brief Primary conversion (uT) followed by full OTP compensation for all 3 axes
+    // Primary conversion (uT) followed by full OTP compensation for all 3 axes
     std::array<float, 3> compensated_mag() const
     {
         std::array<float, 3> m{static_cast<float>(x_raw()) * lsb_to_ut_xy(),

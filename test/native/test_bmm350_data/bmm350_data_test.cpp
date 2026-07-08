@@ -160,7 +160,7 @@ TEST(BMM350Data, TempAdcNormalizationWithinTolerance)
     for (const int32_t raw24 : raw24_values) {
         Data d{};
         set_raw24(d, 9, raw24);
-        ASSERT_EQ(d.temp_raw24(), raw24);
+        EXPECT_EQ(d.temp_raw24(), raw24);
 
         const float actual = static_cast<float>(raw24) * temp_res_raw24() + TEMP_OFFSET;
         const float approx = static_cast<float>(d.temp_adc()) * (temp_res_raw24() * 256.0f) + TEMP_OFFSET;
