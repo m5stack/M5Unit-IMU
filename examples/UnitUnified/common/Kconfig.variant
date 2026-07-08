@@ -11,6 +11,8 @@ choice EXAMPLE_IMU_VARIANT
 
     config EXAMPLE_USING_UNIT_IMU_MINI
         bool "UnitIMUMini (MPU6886)"
+    config EXAMPLE_USING_UNIT_BMM350
+        bool "UnitBMM350 (U231)"
 endchoice
 
 endmenu

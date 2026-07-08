@@ -86,6 +86,29 @@ jobs:
         espressif32:
           - latest
 
+        include:
+          # UnitBMM350 (U231, GROVE): 4 representative boards only, not the full UnitIMU board list
+          - example: PlotToSerial
+            unit: UnitBMM350
+            board: CoreS3
+            framework: Arduino
+            espressif32: latest
+          - example: PlotToSerial
+            unit: UnitBMM350
+            board: Core2
+            framework: Arduino
+            espressif32: latest
+          - example: PlotToSerial
+            unit: UnitBMM350
+            board: NanoC6
+            framework: Arduino
+            espressif32: latest
+          - example: PlotToSerial
+            unit: UnitBMM350
+            board: NessoN1
+            framework: Arduino
+            espressif32: latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4

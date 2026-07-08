@@ -15,11 +15,18 @@
 // *************************************************************
 // Choose one define symbol to match the unit you are using
 // *************************************************************
-#if !defined(USING_UNIT_IMU_MINI)
+#if !defined(USING_UNIT_IMU_MINI) && !defined(USING_UNIT_BMM350)
 // For UnitIMUMini (SKU: TBD)
 #define USING_UNIT_IMU_MINI
+// For UnitBMM350 (U231)
+// #define USING_UNIT_BMM350
 // Following devices will be supported in later plans:
-// USING_UNIT_BMM350 (U231) / USING_UNIT_DOF6 (U228) / USING_BUILTIN_IMU
+// USING_UNIT_DOF6 (U228) / USING_BUILTIN_IMU
+#endif
+
+#if defined(USING_UNIT_BMM350)
+// Not yet aggregated into M5UnitUnifiedIMU.hpp (planned for a later task); include directly.
+#include <unit/unit_bmm350.hpp>
 #endif
 
 namespace {
@@ -27,11 +34,13 @@ m5::unit::UnitUnified Units;
 
 #if defined(USING_UNIT_IMU_MINI)
 m5::unit::UnitIMUMini unit{};
+m5::imu::imu_convert_param_t param{};
+#elif defined(USING_UNIT_BMM350)
+m5::unit::UnitBMM350 unit{};
 #else
 #error Please choose unit!
 #endif
 
-m5::imu::imu_convert_param_t param{};
 }  // namespace
 
 void setup()
@@ -39,6 +48,7 @@ void setup()
     M5.begin();
 
     // UnitIMUMini: NessoN1 -> SoftwareI2C (M5HAL), NanoC6 / NanoH2 -> M5.Ex_I2C, others -> Wire
+    // UnitBMM350: GROVE (all boards)
     if (!m5::unit::wiring::addI2C(Units, unit, 400 * 1000U) || !Units.begin()) {
         M5_LOGE("Failed to begin");
         m5::unit::wiring::failStop();
@@ -46,8 +56,12 @@ void setup()
     M5_LOGI("M5UnitUnified initialized");
     M5_LOGI("%s", Units.debugInfo().c_str());
 
+#if defined(USING_UNIT_IMU_MINI)
     unit.imuConvertParam(param);
     M5.Log.printf("ax,ay,az,gx,gy,gz\n");
+#elif defined(USING_UNIT_BMM350)
+    M5.Log.printf("mx,my,mz\n");
+#endif
 }
 
 void loop()
@@ -56,9 +70,13 @@ void loop()
     Units.update();
     if (unit.updated()) {
         const auto d = unit.latest();
+#if defined(USING_UNIT_IMU_MINI)
         M5.Log.printf("%.3f,%.3f,%.3f,%.2f,%.2f,%.2f\n", d.accel_x() * param.accel_res, d.accel_y() * param.accel_res,
                       d.accel_z() * param.accel_res, d.gyro_x() * param.gyro_res, d.gyro_y() * param.gyro_res,
                       d.gyro_z() * param.gyro_res);
+#elif defined(USING_UNIT_BMM350)
+        M5.Log.printf("%.3f,%.3f,%.3f\n", d.x_ut(), d.y_ut(), d.z_ut());
+#endif
     }
 }
 

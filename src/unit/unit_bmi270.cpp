@@ -167,7 +167,7 @@ bool UnitBMI270::begin()
         // No BMM150 responded on the AUX interface (normal on boards without one):
         // disable the AUX interface and continue with 6-axis (accel/gyro/temp) only.
         writeRegister8(IF_CONF, 0x00);
-        M5_LIB_LOGI("No AUX BMM150 detected; continuing with 6-axis (accel/gyro/temp) only");
+        M5_LIB_LOGI("AUX BMM150 not available; continuing with 6-axis (accel/gyro/temp) only");
     }
 
     return _cfg.start_periodic ? startPeriodicMeasurement() : true;
