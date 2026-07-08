@@ -53,6 +53,10 @@ public:
       @brief Overwrite the current attitude estimate directly
       @details Not part of AhrsFilterBase; intended for seeding a known starting
       attitude (e.g. tests, or resuming from a previously stored orientation).
+      @param w W component of the quaternion
+      @param x X component of the quaternion
+      @param y Y component of the quaternion
+      @param z Z component of the quaternion
       @return False (and keeps the previous value) if the resulting quaternion is
       (near) zero
      */

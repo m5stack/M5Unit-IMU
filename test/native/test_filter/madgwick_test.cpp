@@ -127,12 +127,12 @@ TEST(MadgwickFilterTest, HigherBetaConvergesFaster)
     const m5::math::Quaternion q_offset = m5::math::Quaternion::fromEuler(40.0f, 0.0f, 0.0f);
 
     MadgwickFilter fast;
-    ASSERT_TRUE(fast.writeBeta(0.5f));
-    ASSERT_TRUE(fast.writeQuaternion(q_offset.w, q_offset.x, q_offset.y, q_offset.z));
+    EXPECT_TRUE(fast.writeBeta(0.5f));
+    EXPECT_TRUE(fast.writeQuaternion(q_offset.w, q_offset.x, q_offset.y, q_offset.z));
 
     MadgwickFilter slow;
-    ASSERT_TRUE(slow.writeBeta(0.05f));
-    ASSERT_TRUE(slow.writeQuaternion(q_offset.w, q_offset.x, q_offset.y, q_offset.z));
+    EXPECT_TRUE(slow.writeBeta(0.05f));
+    EXPECT_TRUE(slow.writeQuaternion(q_offset.w, q_offset.x, q_offset.y, q_offset.z));
 
     run_static(fast, 1.0f, TEST_DT);
     run_static(slow, 1.0f, TEST_DT);
