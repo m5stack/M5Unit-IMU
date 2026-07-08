@@ -1,0 +1,32 @@
+description: M5UnitUnified library for IMU series (UnitIMUMini, DoF6/DoF9/DoF10, BMM350, built-in IMUs)
+url: https://github.com/m5stack/M5Unit-IMU
+issues: https://github.com/m5stack/M5Unit-IMU/issues
+license: MIT
+version: "0.0.1"
+
+dependencies:
+  idf: ">=5.0"
+  # M5UnitUnified is not yet on the ESP Component Registry, so reference the main
+  # branch via git (switch to a version constraint after publish).
+  m5stack/M5UnitUnified:
+    git: https://github.com/m5stack/M5UnitUnified.git
+    version: main
+
+targets:
+  - esp32
+  - esp32s3
+  - esp32c3
+  - esp32c6
+  - esp32h2
+  - esp32p4
+
+files:
+  exclude:
+    - "docs/**"
+    - "examples/**"
+    - "test/**"
+    - "boards/**"
+    - ".clang-format"
+    - "platformio.ini"
+    - "library.json"
+    - "library.properties"

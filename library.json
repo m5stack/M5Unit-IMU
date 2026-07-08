@@ -1,0 +1,32 @@
+{
+    "$schema": "https://raw.githubusercontent.com/platformio/platformio-core/develop/platformio/assets/schema/library.json",
+    "name": "M5Unit-IMU",
+    "version": "0.0.1",
+    "description": "M5UnitUnified library for IMU series (MPU6886 / BMI270 / BMM150 / BMM350). Covers UnitIMUMini, Unit DoF6/DoF9/DoF10, Unit BMM350 and built-in IMUs",
+    "keywords": "M5Stack, M5Unit, IMU, MPU6886, BMI270, BMM150, BMM350, accelerometer, gyroscope, magnetometer, AHRS, M5UnitUnified",
+    "authors": {
+        "name": "M5Stack",
+        "url": "https://www.m5stack.com"
+    },
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/m5stack/M5Unit-IMU.git"
+    },
+    "dependencies": {
+        "m5stack/M5UnitUnified": ">=0.5.0"
+    },
+    "frameworks": [
+        "arduino",
+        "espidf"
+    ],
+    "platforms": [
+        "espressif32"
+    ],
+    "headers": "M5UnitUnifiedIMU.h",
+    "license": "MIT",
+    "export": {
+        "exclude": [
+            "docs/html"
+        ]
+    }
+}
