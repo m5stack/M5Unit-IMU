@@ -189,6 +189,16 @@ TEST(QuaternionTest, FromAxisAngleUnitNorm)
     EXPECT_NEAR(q.y, std::sin(45.0f * DEG2RAD * 0.5f), 1e-6f);
 }
 
+TEST(QuaternionTest, FromAxisAngleZeroAxisReturnsIdentity)
+{
+    // Regression test for zero axis + non-zero angle bug
+    const Quaternion q = Quaternion::fromAxisAngle(Vector3(0.0f, 0.0f, 0.0f), 90.0f * DEG2RAD);
+    EXPECT_FLOAT_EQ(q.w, 1.0f);
+    EXPECT_FLOAT_EQ(q.x, 0.0f);
+    EXPECT_FLOAT_EQ(q.y, 0.0f);
+    EXPECT_FLOAT_EQ(q.z, 0.0f);
+}
+
 TEST(QuaternionTest, EulerRoundTrip)
 {
     const float roll_in  = 30.0f;
@@ -218,6 +228,22 @@ TEST(QuaternionTest, NearGimbalLockDoesNotProduceNaN)
     EXPECT_FALSE(std::isnan(pitch));
     EXPECT_FALSE(std::isnan(yaw));
     EXPECT_NEAR(pitch, 89.9f, 0.5f);
+}
+
+TEST(QuaternionTest, ToEulerClampsSinPToPreventNaN)
+{
+    // Regression test for asin clamping: intentionally unnormalized quaternion
+    // where sinp = 2(w*y - z*x) exceeds 1.0
+    const Quaternion q(0.7072f, 0.0f, 0.7072f, 0.0f);
+    float roll{};
+    float pitch{};
+    float yaw{};
+    q.toEuler(roll, pitch, yaw);
+
+    EXPECT_FALSE(std::isnan(roll));
+    EXPECT_FALSE(std::isnan(pitch));
+    EXPECT_FALSE(std::isnan(yaw));
+    EXPECT_NEAR(pitch, 90.0f, 1.0f);
 }
 
 TEST(QuaternionTest, IntegrateConstantYawRateReachesExpectedYaw)

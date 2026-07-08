@@ -15,10 +15,8 @@
 namespace m5 {
 namespace math {
 
-namespace {
 //! @brief Vectors shorter than this are treated as zero length (normalize safety)
 constexpr float VECTOR3_ZERO_EPSILON{1e-9f};
-}  // namespace
 
 /*!
   @struct Vector3

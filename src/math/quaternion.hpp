@@ -17,12 +17,10 @@
 namespace m5 {
 namespace math {
 
-namespace {
 //! @brief Quaternions with a norm below this are treated as zero (normalize safety)
 constexpr float QUATERNION_ZERO_EPSILON{1e-9f};
 //! @brief PI (float)
 constexpr float QUATERNION_PI{3.14159265358979323846f};
-}  // namespace
 
 /*!
   @struct Quaternion
@@ -117,6 +115,9 @@ struct Quaternion {
      */
     static inline Quaternion fromAxisAngle(const Vector3& axis, const float angle_rad)
     {
+        if (axis.norm() < QUATERNION_ZERO_EPSILON) {
+            return identity();
+        }
         const Vector3 a  = axis.normalized();
         const float half = angle_rad * 0.5f;
         const float s    = std::sin(half);
