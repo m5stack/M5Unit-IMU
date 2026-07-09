@@ -22,9 +22,15 @@ bool core2(AhrsController& ahrs, m5::unit::UnitMPU6886& mpu6886)
 
 bool coreS3(AhrsController& ahrs, m5::unit::UnitBMI270& bmi270)
 {
-    // See presets.hpp @note: mag-only correction is not representable with the current
-    // per-source AxisOrder, so this source is left at the identity transform.
-    return ahrs.add(bmi270);
+    if (!ahrs.add(bmi270)) {
+        return false;
+    }
+    // accel/gyro stay at the default identity; only the AUX BMM150's Y/Z axes are inverted.
+    AxisOrder mag_order;
+    mag_order.invert_y = true;
+    mag_order.invert_z = true;
+    ahrs.writeMagAxisOrder(bmi270, mag_order);
+    return true;
 }
 
 bool atomS3R(AhrsController& ahrs, m5::unit::UnitBMI270& bmi270)
@@ -32,12 +38,17 @@ bool atomS3R(AhrsController& ahrs, m5::unit::UnitBMI270& bmi270)
     if (!ahrs.add(bmi270)) {
         return false;
     }
-    // Accel/gyro correction (see presets.hpp @note: mag would need a different, independent
-    // correction that AhrsController cannot currently express).
+    // Accel/gyro correction.
     AxisOrder order;
     order.permutation = AxisPermutation::YXZ;
     order.invert_y    = true;
     ahrs.writeAxisOrder(bmi270, order);
+
+    // Independent AUX BMM150 (mag) correction.
+    AxisOrder mag_order;
+    mag_order.invert_x = true;
+    mag_order.invert_z = true;
+    ahrs.writeMagAxisOrder(bmi270, mag_order);
     return true;
 }
 

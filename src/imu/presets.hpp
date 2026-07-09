@@ -13,24 +13,6 @@
   caller must have already begun the unit(s) (I2C bus ready) -- and none of them decide which
   board is running; callers pick which preset to call (e.g. via M5.getBoard()).
 
-  @note **Known limitation**: AhrsController::writeAxisOrder() (Task 9) stores one AxisOrder
-  per *source*, applied uniformly to every capability (accel/gyro/mag) that source provides
-  (see ahrs_controller.cpp). M5Unified's original internal_axisorder_t is per *capability*
-  instead (3 independent slots: sensor_index_accel/gyro/mag), because on some boards a
-  combo chip's AUX magnetometer die is mounted at a different orientation than its own
-  accel/gyro die. coreS3() and atomS3R() below both hit this: CoreS3 needs an
-  accel/gyro-identity + mag-only correction, and AtomS3R needs two genuinely different
-  corrections for accel/gyro vs. mag, from the *same* UnitBMI270 source. Neither is
-  representable with a single AxisOrder, so:
-  - coreS3() leaves the axis order at the default identity (correct for accel/gyro; mag Y/Z
-    sign is left uncorrected).
-  - atomS3R() applies the accel/gyro correction (needed for basic gravity-referenced
-    roll/pitch); mag ends up with the same (wrong) permutation/inversion instead of its own,
-    which mainly shows up as an incorrect magnetic yaw reference.
-  Fixing this properly needs AhrsController to grow a second, capability-scoped axis order
-  (e.g. a dedicated writeMagAxisOrder()) -- out of scope for this file; flagged here for a
-  follow-up task.
-
   @note Not covered by native tests: everything these functions touch (AhrsController /
   AxisOrder) already has native coverage from Task 9. The unit types used here
   (UnitMPU6886/UnitBMI270/UnitBMM150) pull in M5UnitUnified + Arduino/ESP-IDF headers and
@@ -70,10 +52,9 @@ bool core2(AhrsController& ahrs, m5::unit::UnitMPU6886& mpu6886);
   @return False if ahrs already holds the maximum number of sources (see AhrsController::add())
   @details M5Unified's IMU_Class::begin(): for board_M5StackCoreS3 / board_M5StackChan with
   the BMI270 at address 0x69, only the magnetometer's Y and Z axes are inverted
-  (accel/gyro are left as identity). See the file-level @note above: this function currently
-  cannot apply that mag-only correction (AhrsController only has one AxisOrder per source),
-  so it leaves the whole source at the identity transform -- accel/gyro come out correct,
-  mag Y/Z sign is not corrected.
+  (accel/gyro are left as identity). accel/gyro keep the default identity AxisOrder; only
+  the AUX BMM150's Mag samples get the Y/Z inversion, via
+  AhrsController::writeMagAxisOrder().
  */
 bool coreS3(AhrsController& ahrs, m5::unit::UnitBMI270& bmi270);
 
@@ -86,11 +67,10 @@ bool coreS3(AhrsController& ahrs, m5::unit::UnitBMI270& bmi270);
   @details M5Unified's IMU_Class::begin(): for board_M5AtomS3R / board_M5AtomS3RCam /
   board_M5AtomS3RExt, accel/gyro get X/Y swapped plus Y inverted (axis_order_yxz |
   axis_invert_y), while mag gets X and Z inverted instead (axis_invert_x | axis_invert_z) --
-  two different corrections from the same chip. See the file-level @note above: this
-  function applies the accel/gyro correction (AxisPermutation::YXZ, invert_y), which is what
-  AhrsController::writeAxisOrder() stores per-source; mag ends up remapped the same way
-  instead of its own invert_x|invert_z, which mainly shows up as an incorrect magnetic yaw
-  reference rather than broken roll/pitch.
+  two different corrections from the same chip. This function applies the accel/gyro
+  correction (AxisPermutation::YXZ, invert_y) via AhrsController::writeAxisOrder(), and the
+  independent mag correction (invert_x | invert_z) via
+  AhrsController::writeMagAxisOrder().
  */
 bool atomS3R(AhrsController& ahrs, m5::unit::UnitBMI270& bmi270);
 

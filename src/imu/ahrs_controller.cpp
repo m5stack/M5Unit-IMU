@@ -173,6 +173,27 @@ bool AhrsController::readAxisOrder(const IMUDataSource& src, AxisOrder& out) con
     return true;
 }
 
+bool AhrsController::writeMagAxisOrder(const IMUDataSource& src, const AxisOrder& order)
+{
+    size_t index{};
+    if (!find_source_index(src, index)) {
+        M5_LIB_LOGE("AhrsController::writeMagAxisOrder: source was never add()ed");
+        return false;
+    }
+    _mag_axis_orders[index] = order;
+    return true;
+}
+
+bool AhrsController::readMagAxisOrder(const IMUDataSource& src, AxisOrder& out) const
+{
+    size_t index{};
+    if (!find_source_index(src, index)) {
+        return false;
+    }
+    out = _mag_axis_orders[index];
+    return true;
+}
+
 void AhrsController::writeAutoCalibration(const uint8_t accel, const uint8_t gyro, const uint8_t mag)
 {
     _accel_cal.strength = accel;
@@ -433,6 +454,7 @@ Capability AhrsController::drain_and_fuse(const float dt)
         }
         const imu_convert_param_t& param = params[i];
         const AxisOrder& order           = _axis_orders[i];
+        const AxisOrder& mag_order       = _mag_axis_orders[i];
         imu_raw_data_t raw{};
         while (any(src->readImuRaw(raw))) {
             if (src == _accel_src) {
@@ -455,7 +477,7 @@ Capability AhrsController::drain_and_fuse(const float dt)
                         raw.mag[1] * param.mag_res,
                         raw.mag[2] * param.mag_res,
                     };
-                    order.apply(v);
+                    mag_order.apply(v);
                     apply_offset_and_calibrate(_mag_cal, v);
                     _latest.mag[0] = v[0];
                     _latest.mag[1] = v[1];
@@ -483,6 +505,7 @@ Capability AhrsController::drain_and_fuse(const float dt)
         }
         const imu_convert_param_t& gyro_param = params[gyro_index];
         const AxisOrder& gyro_order           = _axis_orders[gyro_index];
+        const AxisOrder& gyro_mag_order       = _mag_axis_orders[gyro_index];
 
         imu_raw_data_t gyro_buf[AHRS_MAX_DRAIN_SAMPLES]{};
         size_t gyro_count{};
@@ -543,7 +566,7 @@ Capability AhrsController::drain_and_fuse(const float dt)
                             sample.mag[1] * gyro_param.mag_res,
                             sample.mag[2] * gyro_param.mag_res,
                         };
-                        gyro_order.apply(mag_v);
+                        gyro_mag_order.apply(mag_v);
                         apply_offset_and_calibrate(_mag_cal, mag_v);
                         _latest.mag[0] = mag_v[0];
                         _latest.mag[1] = mag_v[1];

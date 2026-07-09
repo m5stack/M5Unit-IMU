@@ -81,24 +81,50 @@ public:
     bool add(IMUDataSource& src);
 
     /*!
-      @brief Set the chip-frame-to-body-frame axis remap applied to one source's samples
+      @brief Set the chip-frame-to-body-frame axis remap applied to one source's Accel/Gyro
+      (and Temp) samples
       @param src Source to configure (must already have been add()ed)
       @param order Permutation and per-axis sign flip to apply
       @return False if src was never add()ed to this controller
-      @details Applied every update() to whichever of accel/gyro/mag that source provides,
+      @details Applied every update() to whichever of Accel/Gyro/Temp that source provides,
       right after raw-to-physical conversion and before auto-calibration offsets are
-      subtracted (see writeAutoCalibration()). Defaults to the identity transform
-      (AxisPermutation::XYZ, no inversion) for every added source.
+      subtracted (see writeAutoCalibration()). Does **not** affect Mag -- accel and gyro
+      always share a single die and are therefore always co-oriented, but an auxiliary
+      magnetometer die (e.g. a BMM150 mounted as a BMI270 AUX chip) can be mounted at a
+      different orientation on the very same source; use writeMagAxisOrder() for that.
+      Defaults to the identity transform (AxisPermutation::XYZ, no inversion) for every
+      added source.
      */
     bool writeAxisOrder(const IMUDataSource& src, const AxisOrder& order);
 
     /*!
-      @brief Read back the axis remap currently configured for one source
+      @brief Read back the Accel/Gyro axis remap currently configured for one source
       @param src Source to query (must already have been add()ed)
       @param[out] out Destination for the current AxisOrder
       @return False (out left untouched) if src was never add()ed to this controller
      */
     bool readAxisOrder(const IMUDataSource& src, AxisOrder& out) const;
+
+    /*!
+      @brief Set the chip-frame-to-body-frame axis remap applied to one source's Mag samples
+      @param src Source to configure (must already have been add()ed)
+      @param order Permutation and per-axis sign flip to apply to Mag only
+      @return False if src was never add()ed to this controller
+      @details Applied every update() to the Mag capability of whichever source provides it,
+      right after raw-to-physical conversion and before auto-calibration offsets are
+      subtracted (see writeAutoCalibration()) -- independent of writeAxisOrder(), which only
+      covers Accel/Gyro/Temp. Defaults to the identity transform (AxisPermutation::XYZ, no
+      inversion) for every added source.
+     */
+    bool writeMagAxisOrder(const IMUDataSource& src, const AxisOrder& order);
+
+    /*!
+      @brief Read back the Mag-only axis remap currently configured for one source
+      @param src Source to query (must already have been add()ed)
+      @param[out] out Destination for the current AxisOrder
+      @return False (out left untouched) if src was never add()ed to this controller
+     */
+    bool readMagAxisOrder(const IMUDataSource& src, AxisOrder& out) const;
 
     /*!
       @brief Enable/disable continuous background auto-calibration per capability
@@ -266,7 +292,8 @@ private:
     bool end_gyro_collect();
 
     IMUDataSource* _sources[MAX_SOURCES]{};
-    AxisOrder _axis_orders[MAX_SOURCES]{};
+    AxisOrder _axis_orders[MAX_SOURCES]{};      // Applied to Accel/Gyro/Temp
+    AxisOrder _mag_axis_orders[MAX_SOURCES]{};  // Applied to Mag only (see writeMagAxisOrder())
     size_t _source_count{};
 
     IMUDataSource* _accel_src{};

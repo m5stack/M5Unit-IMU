@@ -66,6 +66,23 @@ public:
         d.mag[2] = mz;
         _samples.push_back(d);
     }
+    // Single 9-axis sample from one source (e.g. a BMI270 with its AUX BMM150 enabled),
+    // for exercising accel/gyro vs. mag axis remap independently on the same source.
+    void pushAccelGyroMag(const int16_t ax, const int16_t ay, const int16_t az, const int16_t gx, const int16_t gy,
+                          const int16_t gz, const int32_t mx, const int32_t my, const int32_t mz)
+    {
+        imu_raw_data_t d{};
+        d.accel[0] = ax;
+        d.accel[1] = ay;
+        d.accel[2] = az;
+        d.gyro[0]  = gx;
+        d.gyro[1]  = gy;
+        d.gyro[2]  = gz;
+        d.mag[0]   = mx;
+        d.mag[1]   = my;
+        d.mag[2]   = mz;
+        _samples.push_back(d);
+    }
 
     inline size_t remaining() const
     {
@@ -442,6 +459,101 @@ TEST(AhrsController, AxisOrderIsAppliedBeforeLatestAndFilter)
     EXPECT_FLOAT_EQ(latest.gyro[0], 5.0f);
     EXPECT_FLOAT_EQ(latest.gyro[1], 4.0f);
     EXPECT_FLOAT_EQ(latest.gyro[2], -6.0f);
+}
+
+TEST(AhrsController, MagAxisOrderRoundTripAndRejectsUnknownSource)
+{
+    MockSource ag(Capability::Accel | Capability::Gyro);
+    MockSource other(Capability::Mag);  // never added
+
+    AhrsController ahrs;
+    EXPECT_TRUE(ahrs.add(ag));
+
+    AxisOrder order;
+    order.invert_x = true;
+    order.invert_z = true;
+    EXPECT_TRUE(ahrs.writeMagAxisOrder(ag, order));
+
+    AxisOrder readback;
+    EXPECT_TRUE(ahrs.readMagAxisOrder(ag, readback));
+    EXPECT_EQ(readback.permutation, AxisPermutation::XYZ);
+    EXPECT_TRUE(readback.invert_x);
+    EXPECT_FALSE(readback.invert_y);
+    EXPECT_TRUE(readback.invert_z);
+
+    EXPECT_FALSE(ahrs.writeMagAxisOrder(other, order));
+    EXPECT_FALSE(ahrs.readMagAxisOrder(other, readback));
+}
+
+TEST(AhrsController, MagAxisOrderDefaultsToIdentityIndependentlyOfAccelGyroAxisOrder)
+{
+    // CoreS3-style setup: accel/gyro keep their own (non-identity) remap, mag on the very
+    // same source is left at the default identity because writeMagAxisOrder() was never
+    // called for it.
+    MockSource agm(Capability::Accel | Capability::Gyro | Capability::Mag);
+    agm.pushAccelGyroMag(1, 2, 3, 4, 5, 6, 7, 8, 9);
+
+    AhrsController ahrs;
+    EXPECT_TRUE(ahrs.add(agm));
+
+    AxisOrder order;
+    order.permutation = AxisPermutation::YXZ;  // output = (Y, X, Z)
+    order.invert_z    = true;
+    EXPECT_TRUE(ahrs.writeAxisOrder(agm, order));
+    EXPECT_TRUE(ahrs.begin());
+
+    ahrs.update(0.01f);
+
+    const imu_physical_data_t& latest = ahrs.latest();
+    // accel/gyro: YXZ + invert_z, same as AxisOrderIsAppliedBeforeLatestAndFilter above.
+    EXPECT_FLOAT_EQ(latest.accel[0], 2.0f);
+    EXPECT_FLOAT_EQ(latest.accel[1], 1.0f);
+    EXPECT_FLOAT_EQ(latest.accel[2], -3.0f);
+    EXPECT_FLOAT_EQ(latest.gyro[0], 5.0f);
+    EXPECT_FLOAT_EQ(latest.gyro[1], 4.0f);
+    EXPECT_FLOAT_EQ(latest.gyro[2], -6.0f);
+    // mag: no writeMagAxisOrder() call -> identity, untouched by the accel/gyro remap.
+    EXPECT_FLOAT_EQ(latest.mag[0], 7.0f);
+    EXPECT_FLOAT_EQ(latest.mag[1], 8.0f);
+    EXPECT_FLOAT_EQ(latest.mag[2], 9.0f);
+}
+
+TEST(AhrsController, MagAxisOrderAppliedIndependentlyOfAccelGyroAxisOrderOnSameSource)
+{
+    // AtomS3R-style setup: accel/gyro and mag come from the same 9-axis source but need two
+    // genuinely different corrections.
+    MockSource agm(Capability::Accel | Capability::Gyro | Capability::Mag);
+    agm.pushAccelGyroMag(1, 2, 3, 4, 5, 6, 7, 8, 9);
+
+    AhrsController ahrs;
+    EXPECT_TRUE(ahrs.add(agm));
+
+    AxisOrder ag_order;
+    ag_order.permutation = AxisPermutation::YXZ;
+    ag_order.invert_y    = true;
+    EXPECT_TRUE(ahrs.writeAxisOrder(agm, ag_order));
+
+    AxisOrder mag_order;
+    mag_order.invert_x = true;
+    mag_order.invert_z = true;
+    EXPECT_TRUE(ahrs.writeMagAxisOrder(agm, mag_order));
+
+    EXPECT_TRUE(ahrs.begin());
+    ahrs.update(0.01f);
+
+    const imu_physical_data_t& latest = ahrs.latest();
+    // accel/gyro: YXZ + invert_y -> (Y, -X, Z)
+    EXPECT_FLOAT_EQ(latest.accel[0], 2.0f);
+    EXPECT_FLOAT_EQ(latest.accel[1], -1.0f);
+    EXPECT_FLOAT_EQ(latest.accel[2], 3.0f);
+    EXPECT_FLOAT_EQ(latest.gyro[0], 5.0f);
+    EXPECT_FLOAT_EQ(latest.gyro[1], -4.0f);
+    EXPECT_FLOAT_EQ(latest.gyro[2], 6.0f);
+    // mag: identity permutation + invert_x/invert_z -> (-X, Y, -Z), a completely different
+    // transform from the one applied to accel/gyro above.
+    EXPECT_FLOAT_EQ(latest.mag[0], -7.0f);
+    EXPECT_FLOAT_EQ(latest.mag[1], 8.0f);
+    EXPECT_FLOAT_EQ(latest.mag[2], -9.0f);
 }
 
 // ---------------------------------------------------------------------------------------
