@@ -13,6 +13,7 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "axis_order.hpp"
 #include "filter/filter_base.hpp"
 #include "imu_data_source.hpp"
 #include "imu_types.hpp"
@@ -51,7 +52,20 @@ namespace imu {
  */
 class AhrsController {
 public:
-    AhrsController() = default;
+    /*!
+      @struct calibration_data_t
+      @brief Exportable/importable snapshot of every capability's auto-calibration offset
+      @details POD, versioned so a future layout change can be detected on import (see
+      readCalibration()/writeCalibration()).
+     */
+    struct calibration_data_t {
+        uint32_t version{1};      //!< @brief Struct layout version
+        float accel_offset[3]{};  //!< @brief Accelerometer offset (G), X/Y/Z
+        float gyro_offset[3]{};   //!< @brief Gyroscope offset (dps), X/Y/Z
+        float mag_offset[3]{};    //!< @brief Magnetometer offset (uT), X/Y/Z
+    };
+
+    AhrsController();
     ~AhrsController();
 
     AhrsController(const AhrsController&) = delete;
@@ -65,6 +79,88 @@ public:
       duplicate capabilities are simply ignored (the first source to report them wins).
      */
     bool add(IMUDataSource& src);
+
+    /*!
+      @brief Set the chip-frame-to-body-frame axis remap applied to one source's samples
+      @param src Source to configure (must already have been add()ed)
+      @param order Permutation and per-axis sign flip to apply
+      @return False if src was never add()ed to this controller
+      @details Applied every update() to whichever of accel/gyro/mag that source provides,
+      right after raw-to-physical conversion and before auto-calibration offsets are
+      subtracted (see writeAutoCalibration()). Defaults to the identity transform
+      (AxisPermutation::XYZ, no inversion) for every added source.
+     */
+    bool writeAxisOrder(const IMUDataSource& src, const AxisOrder& order);
+
+    /*!
+      @brief Read back the axis remap currently configured for one source
+      @param src Source to query (must already have been add()ed)
+      @param[out] out Destination for the current AxisOrder
+      @return False (out left untouched) if src was never add()ed to this controller
+     */
+    bool readAxisOrder(const IMUDataSource& src, AxisOrder& out) const;
+
+    /*!
+      @brief Enable/disable continuous background auto-calibration per capability
+      @param accel Accelerometer strength, 0 = off, 1-255 = adjustment speed (higher = faster)
+      @param gyro Gyroscope strength, 0 = off, 1-255 = adjustment speed
+      @param mag Magnetometer strength, 0 = off, 1-255 = adjustment speed
+      @details Ported from M5Unified's IMU_Class stillness/sphere-fit auto-offset algorithm
+      (see research/m5unified-port.md), rewritten to operate on physical-unit samples
+      instead of raw<<16 fixed point. Each capability tracks how "still" its recent samples
+      have been; once that stillness score exceeds a threshold, the offset is nudged toward
+      fitting the sample to the expected shape at rest (accel/mag: a sphere of a fixed
+      radius around the offset; gyro: the origin). The resulting offset is subtracted from
+      every subsequent sample of that capability regardless of strength -- setting strength
+      to 0 only stops further adjustment, it does not clear a previously-converged offset
+      (see writeCalibration()/clearing via calibration_data_t{}).
+     */
+    void writeAutoCalibration(const uint8_t accel, const uint8_t gyro, const uint8_t mag);
+
+    /*!
+      @brief Read back the current auto-calibration strengths
+      @param[out] accel Accelerometer strength
+      @param[out] gyro Gyroscope strength
+      @param[out] mag Magnetometer strength
+     */
+    void readAutoCalibration(uint8_t& accel, uint8_t& gyro, uint8_t& mag) const;
+
+    /*!
+      @brief Collect gyro samples for the given duration (real clock) and set the gyro
+      offset to their mean
+      @param duration_ms Collection duration, milliseconds
+      @return False if no source has claimed Gyro, or no sample was drained during that time
+      @details Intended for hardware use: repeatedly calls update() (real clock, via
+      m5::utility::millis()) for approximately duration_ms while the unit is held still,
+      then overwrites the gyro offset with the mean of every gyro sample seen. See
+      calibrateGyro(const uint32_t, const float) for the deterministic, explicit-dt sibling
+      used by native tests (drives the same sample-collection state machine through
+      update(const float dt) instead of the real clock, so tests do not depend on wall time).
+     */
+    bool calibrateGyro(const uint32_t duration_ms);
+
+    /*!
+      @brief Deterministic sibling of calibrateGyro(const uint32_t): explicit dt instead of
+      the real clock
+      @param update_count Number of update(dt) calls to run while collecting
+      @param dt Time step passed to each update(dt) call, seconds
+      @return False if no source has claimed Gyro, or no sample was drained during that time
+     */
+    bool calibrateGyro(const uint32_t update_count, const float dt);
+
+    /*!
+      @brief Snapshot every capability's current auto-calibration offset
+      @param[out] out Destination for the snapshot
+      @return Always true
+     */
+    bool readCalibration(calibration_data_t& out) const;
+
+    /*!
+      @brief Overwrite every capability's auto-calibration offset from a snapshot
+      @param data Snapshot to restore (see readCalibration())
+      @return False (offsets left untouched) if data.version is not the currently supported version
+     */
+    bool writeCalibration(const calibration_data_t& data);
 
     /*!
       @brief Prepare this controller for update()
@@ -142,12 +238,35 @@ public:
     }
 
 private:
+    // Per-capability auto-calibration state (M5Unified IMU_Class::offset_point_t, ported to
+    // physical-unit floats -- see ahrs_controller.cpp for update_stillness()/calibrate()).
+    struct axis_offset_state_t {
+        float offset[3]{};           // Current offset estimate, subtracted from every sample
+        float prev[3]{};             // Previous physical sample, for stillness diffing
+        float avg[3]{};              // Exponential moving average of recent samples
+        float radius{};              // Expected magnitude of (sample - offset) at rest
+        float tolerance{};           // Tolerance band around radius before nudging the offset
+        float noise{};               // Per-sample movement below which stillness accumulates
+        uint8_t average_shifter{1};  // avg update rate: avg += diff / (1 << average_shifter)
+        uint8_t stillness{};         // 0 = moving, saturates toward 255 while stationary
+        uint8_t strength{};          // 0 = auto-calibration off, 1-255 = adjustment speed
+
+        uint8_t update_stillness(const float sample[3]);
+        void calibrate();
+    };
+
     static constexpr size_t MAX_SOURCES{4};
 
     static bool is_mag_overflow(const int32_t mag[3]);
+    static void apply_offset_and_calibrate(axis_offset_state_t& cal, float v[3]);
+
+    bool find_source_index(const IMUDataSource& src, size_t& out_index) const;
     Capability drain_and_fuse(const float dt);
+    void begin_gyro_collect();
+    bool end_gyro_collect();
 
     IMUDataSource* _sources[MAX_SOURCES]{};
+    AxisOrder _axis_orders[MAX_SOURCES]{};
     size_t _source_count{};
 
     IMUDataSource* _accel_src{};
@@ -165,6 +284,14 @@ private:
     bool _has_last_micros{false};
     float _dt_ema{};
     bool _has_dt_ema{false};
+
+    axis_offset_state_t _accel_cal{};
+    axis_offset_state_t _gyro_cal{};
+    axis_offset_state_t _mag_cal{};
+
+    bool _gyro_collecting{false};
+    float _gyro_collect_sum[3]{};
+    uint32_t _gyro_collect_count{};
 };
 
 }  // namespace imu

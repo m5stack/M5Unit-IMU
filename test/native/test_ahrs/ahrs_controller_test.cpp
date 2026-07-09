@@ -5,6 +5,7 @@
  */
 #include <gtest/gtest.h>
 #include <imu/ahrs_controller.hpp>
+#include <imu/axis_order.hpp>
 #include <imu/imu_data_source.hpp>
 #include <imu/imu_types.hpp>
 #include <vector>
@@ -390,4 +391,196 @@ TEST(AhrsController, RealClockUpdateSkipsFirstCallThenDrains)
     const Capability second = ahrs.update();  // a previous timestamp now exists
     EXPECT_TRUE(any(second & Capability::Gyro));
     EXPECT_EQ(ag.popCount(), 1u);
+}
+
+// ---------------------------------------------------------------------------------------
+// Axis remap (Task 9)
+// ---------------------------------------------------------------------------------------
+
+TEST(AhrsController, AxisOrderRoundTripAndRejectsUnknownSource)
+{
+    MockSource ag(Capability::Accel | Capability::Gyro);
+    MockSource other(Capability::Mag);  // never added
+
+    AhrsController ahrs;
+    EXPECT_TRUE(ahrs.add(ag));
+
+    AxisOrder order;
+    order.permutation = AxisPermutation::YXZ;
+    order.invert_y    = true;
+    EXPECT_TRUE(ahrs.writeAxisOrder(ag, order));
+
+    AxisOrder readback;
+    EXPECT_TRUE(ahrs.readAxisOrder(ag, readback));
+    EXPECT_EQ(readback.permutation, AxisPermutation::YXZ);
+    EXPECT_TRUE(readback.invert_y);
+
+    EXPECT_FALSE(ahrs.writeAxisOrder(other, order));
+    EXPECT_FALSE(ahrs.readAxisOrder(other, readback));
+}
+
+TEST(AhrsController, AxisOrderIsAppliedBeforeLatestAndFilter)
+{
+    MockSource ag(Capability::Accel | Capability::Gyro);
+    ag.pushAccelGyro(1, 2, 3, 4, 5, 6);
+
+    AhrsController ahrs;
+    EXPECT_TRUE(ahrs.add(ag));
+
+    AxisOrder order;
+    order.permutation = AxisPermutation::YXZ;  // output = (Y, X, Z)
+    order.invert_z    = true;
+    EXPECT_TRUE(ahrs.writeAxisOrder(ag, order));
+    EXPECT_TRUE(ahrs.begin());
+
+    ahrs.update(0.01f);
+
+    const imu_physical_data_t& latest = ahrs.latest();
+    EXPECT_FLOAT_EQ(latest.accel[0], 2.0f);
+    EXPECT_FLOAT_EQ(latest.accel[1], 1.0f);
+    EXPECT_FLOAT_EQ(latest.accel[2], -3.0f);
+    EXPECT_FLOAT_EQ(latest.gyro[0], 5.0f);
+    EXPECT_FLOAT_EQ(latest.gyro[1], 4.0f);
+    EXPECT_FLOAT_EQ(latest.gyro[2], -6.0f);
+}
+
+// ---------------------------------------------------------------------------------------
+// Auto-calibration (Task 9)
+// ---------------------------------------------------------------------------------------
+
+TEST(AhrsController, AutoCalibrationReadWriteRoundTrip)
+{
+    AhrsController ahrs;
+    uint8_t accel{}, gyro{}, mag{};
+    ahrs.readAutoCalibration(accel, gyro, mag);
+    EXPECT_EQ(accel, 0);
+    EXPECT_EQ(gyro, 0);
+    EXPECT_EQ(mag, 0);
+
+    ahrs.writeAutoCalibration(10, 20, 30);
+    ahrs.readAutoCalibration(accel, gyro, mag);
+    EXPECT_EQ(accel, 10);
+    EXPECT_EQ(gyro, 20);
+    EXPECT_EQ(mag, 30);
+}
+
+TEST(AhrsController, AutoCalibrationConvergesGyroBias)
+{
+    MockSource ag(Capability::Accel | Capability::Gyro);
+
+    AhrsController ahrs;
+    EXPECT_TRUE(ahrs.add(ag));
+    EXPECT_TRUE(ahrs.begin());
+    ahrs.writeAutoCalibration(0, 128, 0);
+
+    // 30s of stationary data (dt = 0.01s) with a constant 2dps gyro bias, one sample per
+    // update() call so the controller's 32-sample-per-call drain cap never kicks in.
+    constexpr int SAMPLE_COUNT = 3000;
+    for (int i = 0; i < SAMPLE_COUNT; ++i) {
+        ag.pushAccelGyro(0, 0, 1, 0, 0, 2);
+        ahrs.update(0.01f);
+    }
+
+    EXPECT_NEAR(ahrs.latest().gyro[2], 0.0f, 0.3f);
+}
+
+TEST(AhrsController, AutoCalibrationOffWhenStrengthZero)
+{
+    MockSource ag(Capability::Accel | Capability::Gyro);
+
+    AhrsController ahrs;
+    EXPECT_TRUE(ahrs.add(ag));
+    EXPECT_TRUE(ahrs.begin());
+    // Auto-calibration strength defaults to 0 (off); no writeAutoCalibration() call.
+
+    for (int i = 0; i < 500; ++i) {
+        ag.pushAccelGyro(0, 0, 1, 0, 0, 2);
+        ahrs.update(0.01f);
+    }
+
+    EXPECT_NEAR(ahrs.latest().gyro[2], 2.0f, 1.0e-4f);  // bias left untouched
+}
+
+TEST(AhrsController, CalibrationExportImportRoundTrip)
+{
+    AhrsController ahrs;
+    AhrsController::calibration_data_t data{};
+    data.version         = 1;
+    data.accel_offset[0] = 0.01f;
+    data.accel_offset[1] = -0.02f;
+    data.accel_offset[2] = 0.03f;
+    data.gyro_offset[0]  = 1.0f;
+    data.gyro_offset[1]  = -0.5f;
+    data.gyro_offset[2]  = 2.0f;
+    data.mag_offset[0]   = 5.0f;
+    data.mag_offset[1]   = -5.0f;
+    data.mag_offset[2]   = 10.0f;
+
+    EXPECT_TRUE(ahrs.writeCalibration(data));
+
+    AhrsController::calibration_data_t readback{};
+    EXPECT_TRUE(ahrs.readCalibration(readback));
+    EXPECT_EQ(readback.version, 1u);
+    for (int i = 0; i < 3; ++i) {
+        EXPECT_FLOAT_EQ(readback.accel_offset[i], data.accel_offset[i]);
+        EXPECT_FLOAT_EQ(readback.gyro_offset[i], data.gyro_offset[i]);
+        EXPECT_FLOAT_EQ(readback.mag_offset[i], data.mag_offset[i]);
+    }
+}
+
+TEST(AhrsController, WriteCalibrationRejectsUnknownVersion)
+{
+    AhrsController ahrs;
+    AhrsController::calibration_data_t data{};
+    data.version = 999;
+    EXPECT_FALSE(ahrs.writeCalibration(data));
+}
+
+TEST(AhrsController, WrittenCalibrationOffsetIsSubtractedFromSamples)
+{
+    MockSource ag(Capability::Accel | Capability::Gyro);
+    ag.pushAccelGyro(0, 0, 1, 0, 0, 5);
+
+    AhrsController ahrs;
+    EXPECT_TRUE(ahrs.add(ag));
+    EXPECT_TRUE(ahrs.begin());
+
+    AhrsController::calibration_data_t data{};
+    data.version        = 1;
+    data.gyro_offset[2] = 2.0f;
+    EXPECT_TRUE(ahrs.writeCalibration(data));
+
+    ahrs.update(0.01f);
+    EXPECT_FLOAT_EQ(ahrs.latest().gyro[2], 3.0f);  // 5 - 2 offset, strength still 0
+}
+
+TEST(AhrsController, CalibrateGyroExplicitDtSetsOffsetToMean)
+{
+    MockSource ag(Capability::Accel | Capability::Gyro);
+    constexpr int SAMPLE_COUNT = 20;
+    for (int i = 0; i < SAMPLE_COUNT; ++i) {
+        ag.pushAccelGyro(0, 0, 1, 0, 0, 3);  // constant 3dps bias
+    }
+
+    AhrsController ahrs;
+    EXPECT_TRUE(ahrs.add(ag));
+    EXPECT_TRUE(ahrs.begin());
+
+    EXPECT_TRUE(ahrs.calibrateGyro(SAMPLE_COUNT, 0.01f));
+
+    AhrsController::calibration_data_t data{};
+    ahrs.readCalibration(data);
+    EXPECT_NEAR(data.gyro_offset[2], 3.0f, 1.0e-4f);
+
+    ag.pushAccelGyro(0, 0, 1, 0, 0, 3);
+    ahrs.update(0.01f);
+    EXPECT_NEAR(ahrs.latest().gyro[2], 0.0f, 1.0e-4f);
+}
+
+TEST(AhrsController, CalibrateGyroFailsWithoutGyroSource)
+{
+    MockSource mag(Capability::Mag);
+    AhrsController ahrs;
+    EXPECT_TRUE(ahrs.add(mag));
+    EXPECT_FALSE(ahrs.calibrateGyro(10, 0.01f));
 }
