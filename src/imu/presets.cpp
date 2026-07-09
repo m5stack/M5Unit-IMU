@@ -1,0 +1,72 @@
+/*
+ * SPDX-FileCopyrightText: 2026 M5Stack Technology CO LTD
+ *
+ * SPDX-License-Identifier: MIT
+ */
+/*!
+  @file presets.cpp
+  @brief Board-specific AhrsController setup for M5Stack products with a built-in IMU
+*/
+#include "presets.hpp"
+
+namespace m5 {
+namespace imu {
+namespace presets {
+
+bool core2(AhrsController& ahrs, m5::unit::UnitMPU6886& mpu6886)
+{
+    // See presets.hpp: board_M5StackCore2 has no axis correction in M5Unified, identity
+    // (AhrsController::add()'s default) is already correct.
+    return ahrs.add(mpu6886);
+}
+
+bool coreS3(AhrsController& ahrs, m5::unit::UnitBMI270& bmi270)
+{
+    // See presets.hpp @note: mag-only correction is not representable with the current
+    // per-source AxisOrder, so this source is left at the identity transform.
+    return ahrs.add(bmi270);
+}
+
+bool atomS3R(AhrsController& ahrs, m5::unit::UnitBMI270& bmi270)
+{
+    if (!ahrs.add(bmi270)) {
+        return false;
+    }
+    // Accel/gyro correction (see presets.hpp @note: mag would need a different, independent
+    // correction that AhrsController cannot currently express).
+    AxisOrder order;
+    order.permutation = AxisPermutation::YXZ;
+    order.invert_y    = true;
+    ahrs.writeAxisOrder(bmi270, order);
+    return true;
+}
+
+bool m5stackCoreFire(AhrsController& ahrs, m5::unit::UnitMPU6886& mpu6886, m5::unit::UnitBMM150& bmm150)
+{
+    const bool added_mpu6886 = ahrs.add(mpu6886);
+    const bool added_bmm150  = ahrs.add(bmm150);
+    if (!added_mpu6886 || !added_bmm150) {
+        return false;
+    }
+    AxisOrder mag_order;
+    mag_order.invert_x = true;
+    mag_order.invert_z = true;
+    ahrs.writeAxisOrder(bmm150, mag_order);
+    return true;
+}
+
+bool atomMatrix(AhrsController& ahrs, m5::unit::UnitMPU6886& mpu6886)
+{
+    if (!ahrs.add(mpu6886)) {
+        return false;
+    }
+    AxisOrder order;
+    order.invert_x = true;
+    order.invert_z = true;
+    ahrs.writeAxisOrder(mpu6886, order);
+    return true;
+}
+
+}  // namespace presets
+}  // namespace imu
+}  // namespace m5
