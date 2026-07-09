@@ -13,6 +13,10 @@ choice EXAMPLE_IMU_VARIANT
         bool "UnitIMUMini (MPU6886)"
     config EXAMPLE_USING_UNIT_BMM350
         bool "UnitBMM350 (U231)"
+    config EXAMPLE_USING_UNIT_IMU_MINI_WITH_BMM350
+        bool "UnitIMUMini + UnitBMM350, 9-axis GROVE (AhrsDemo only)"
+    config EXAMPLE_USING_BUILTIN_IMU
+        bool "Built-in IMU, M5.getBoard() auto-detect (AhrsDemo only)"
 endchoice
 
 endmenu

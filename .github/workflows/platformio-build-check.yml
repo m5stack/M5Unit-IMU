@@ -108,6 +108,19 @@ jobs:
             board: NessoN1
             framework: Arduino
             espressif32: latest
+          # AhrsDemo: own source (AhrsController + LCD gizmo), not the M5.getBoard()-agnostic
+          # PlotToSerial.cpp -- Core2 covers the GROVE USING_UNIT_IMU_MINI path, CoreS3 covers the
+          # USING_BUILTIN_IMU path (M5.In_I2C built-in BMI270).
+          - example: AhrsDemo
+            unit: UnitIMU
+            board: Core2
+            framework: Arduino
+            espressif32: latest
+          - example: AhrsDemo
+            unit: UnitIMU
+            board: CoreS3
+            framework: Arduino
+            espressif32: latest
 
     steps:
       - name: Checkout

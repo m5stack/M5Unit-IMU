@@ -52,8 +52,9 @@ concurrency:
 # into the chip-coverage job): variant coverage on a single representative target (esp32s3),
 # chip coverage on the other SoCs with the default variant (USING_UNIT_IMU_MINI).
 jobs:
-  # Variant coverage: every Kconfig variant (USING_UNIT_IMU_MINI / USING_UNIT_BMM350) on esp32s3
-  # (LCD-capable dual-core Xtensa with PSRAM).
+  # Variant coverage: every Kconfig variant, across both example sources (PlotToSerial /
+  # AhrsDemo), on esp32s3 (LCD-capable dual-core Xtensa with PSRAM -- also required by AhrsDemo's
+  # LCD gizmo and the built-in-IMU variant, which needs a board with an on-chip sensor).
   build-variants:
     name: ${{ matrix.idf }} esp32s3 ${{ matrix.example_config.label }}
     runs-on: ubuntu-latest
@@ -68,8 +69,19 @@ jobs:
         example_config:
           - label: PlotToSerial-UnitIMUMini
             variant: USING_UNIT_IMU_MINI
+            path: examples/UnitUnified/PlotToSerial
           - label: PlotToSerial-UnitBMM350
             variant: USING_UNIT_BMM350
+            path: examples/UnitUnified/PlotToSerial
+          - label: AhrsDemo-UnitIMUMini
+            variant: USING_UNIT_IMU_MINI
+            path: examples/UnitUnified/AhrsDemo
+          - label: AhrsDemo-UnitIMUMiniWithBMM350
+            variant: USING_UNIT_IMU_MINI_WITH_BMM350
+            path: examples/UnitUnified/AhrsDemo
+          - label: AhrsDemo-BuiltinIMU
+            variant: USING_BUILTIN_IMU
+            path: examples/UnitUnified/AhrsDemo
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -86,7 +98,7 @@ jobs:
         with:
           esp_idf_version: ${{ matrix.idf }}
           target: esp32s3
-          path: examples/UnitUnified/PlotToSerial
+          path: ${{ matrix.example_config.path }}
 
   # Chip coverage: PlotToSerial (UnitIMUMini / GROVE+onboard I2C) on every other supported SoC.
   # esp32 = classic Xtensa dual-core. esp32c6 (NanoC6) / esp32h2 (NanoH2) = RISC-V single-core,
