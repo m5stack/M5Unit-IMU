@@ -46,6 +46,7 @@ constexpr int32_t MAG_OVERFLOW_SENTINEL{-32768};
 // raw<<16 fixed point to physical units -- see research/m5unified-port.md). radius/tolerance
 // are the expected magnitude of (sample - offset) at rest and the tolerance band around it;
 // noise is the per-sample movement threshold below which stillness accumulates.
+//! @note accel/gyro thresholds below are moved from M5Unified as physical quantity values.
 constexpr float ACCEL_CAL_RADIUS_G{1.0f};
 constexpr float ACCEL_CAL_TOLERANCE_G{1.0f / 2048.0f};
 constexpr float ACCEL_CAL_NOISE_G{0.0625f};
@@ -56,6 +57,12 @@ constexpr float GYRO_CAL_TOLERANCE_DPS{0.0f};
 constexpr float GYRO_CAL_NOISE_DPS{2.0f};
 constexpr uint8_t GYRO_CAL_SHIFT{6};
 
+//! @note Mag calibration thresholds are retune values: M5Unified's raw-based constants
+//! (384/64/96) converted to physical units using this library's mag scale (16 LSB/µT).
+//! Conversion: 384×(1/16)=24µT, 64×(1/16)=4µT, 96×(1/16)=6µT.
+//! These values reasonably cover Earth's magnetic field range (25–65µT).
+//! WARNING: Unlike accel/gyro thresholds, these magnetometer values are NOT numerically
+//! verified during auto-calibration convergence testing (only accel/gyro are verified).
 constexpr float MAG_CAL_RADIUS_UT{24.0f};
 constexpr float MAG_CAL_TOLERANCE_UT{4.0f};
 constexpr float MAG_CAL_NOISE_UT{6.0f};
