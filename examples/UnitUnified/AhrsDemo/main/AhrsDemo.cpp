@@ -6,7 +6,7 @@
 /*
   Example using M5UnitUnified for UnitIMU series with AhrsDemo
   Output:
-   - Arduino IDE Serial Plotter format (roll,pitch,yaw)
+   - Serial: "[filter]: roll,pitch,yaw" (selected filter name prefixed to each line)
    - LCD-equipped boards additionally show a rotating 3D body-axis gizmo (X=red / Y=green /
      Z=blue) driven by the same AhrsController quaternion
 */
@@ -276,7 +276,7 @@ void setup()
     M5_LOGI("M5UnitUnified initialized");
     M5_LOGI("%s", Units.debugInfo().c_str());
     M5_LOGI("AHRS filter: %s (BtnA: switch)", filter_name(current_filter));
-    M5.Log.printf("roll,pitch,yaw\n");
+    M5.Log.printf("[filter]: roll,pitch,yaw\n");
 }
 
 void loop()
@@ -288,7 +288,7 @@ void loop()
     if (m5::imu::any(cap)) {
         float roll{}, pitch{}, yaw{};
         ahrs.euler(roll, pitch, yaw);
-        M5.Log.printf("%.2f,%.2f,%.2f\n", roll, pitch, yaw);
+        M5.Log.printf("[%s]: %.2f,%.2f,%.2f\n", filter_name(current_filter), roll, pitch, yaw);
 
         if (has_lcd) {
             const auto now = m5::utility::millis();
