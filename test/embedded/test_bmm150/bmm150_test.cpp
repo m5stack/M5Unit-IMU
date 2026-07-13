@@ -117,3 +117,62 @@ TEST_F(TestBMM150, ReadSettings)
     EXPECT_TRUE(unit->readPreset(preset));
     EXPECT_EQ(preset, Preset::Regular);
 }
+
+TEST_F(TestBMM150, ImuSpec)
+{
+    SCOPED_TRACE(ustr);
+
+    // Magnetometer-only chip: no Accel/Gyro/Temp output
+    const auto spec = unit->imuSpec();
+    EXPECT_TRUE(m5::imu::any(spec & m5::imu::Capability::Mag));
+    EXPECT_FALSE(m5::imu::any(spec & m5::imu::Capability::Accel));
+    EXPECT_FALSE(m5::imu::any(spec & m5::imu::Capability::Gyro));
+    EXPECT_FALSE(m5::imu::any(spec & m5::imu::Capability::Temp));
+    EXPECT_FALSE(m5::imu::any(spec & m5::imu::Capability::Baro));
+}
+
+TEST_F(TestBMM150, StopStartPeriodic)
+{
+    SCOPED_TRACE(ustr);
+
+    EXPECT_TRUE(unit->inPeriodic());
+    EXPECT_TRUE(unit->stopPeriodicMeasurement());
+    EXPECT_FALSE(unit->inPeriodic());
+
+    // No updates should occur while stopped
+    for (int i = 0; i < 10; ++i) {
+        unit->update();
+        EXPECT_FALSE(unit->updated());
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    EXPECT_TRUE(unit->startPeriodicMeasurement());
+    EXPECT_TRUE(unit->inPeriodic());
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    bool updated{};
+    for (int i = 0; i < 50; ++i) {
+        unit->update();
+        if (unit->updated()) {
+            updated = true;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    EXPECT_TRUE(updated);
+}
+
+TEST_F(TestBMM150, ConfigRoundTrip)
+{
+    SCOPED_TRACE(ustr);
+
+    auto cfg           = unit->config();
+    cfg.start_periodic = false;
+    cfg.preset         = Preset::EnhancedRegular;
+    cfg.rate           = DataRate::Rate10Hz;
+    unit->config(cfg);
+
+    const auto cfg2 = unit->config();
+    EXPECT_FALSE(cfg2.start_periodic);
+    EXPECT_EQ(cfg2.preset, cfg.preset);
+    EXPECT_EQ(cfg2.rate, cfg.rate);
+}

@@ -150,3 +150,90 @@ TEST_F(TestBMI270, AuxMagWhenPresent)
         EXPECT_FALSE(saw_nonzero_mag);
     }
 }
+
+TEST_F(TestBMI270, ImuSpec)
+{
+    SCOPED_TRACE(ustr);
+
+    // Accel/Gyro/Temp are always advertised; Mag depends on whether an AUX BMM150 was
+    // detected in begin() (board-dependent, see AuxMagWhenPresent above).
+    const auto spec = unit->imuSpec();
+    EXPECT_TRUE(m5::imu::any(spec & m5::imu::Capability::Accel));
+    EXPECT_TRUE(m5::imu::any(spec & m5::imu::Capability::Gyro));
+    EXPECT_TRUE(m5::imu::any(spec & m5::imu::Capability::Temp));
+    EXPECT_FALSE(m5::imu::any(spec & m5::imu::Capability::Baro));
+}
+
+TEST_F(TestBMI270, Temperature)
+{
+    SCOPED_TRACE(ustr);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    for (int i = 0; i < 10; ++i) {
+        unit->update();
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+
+    m5::imu::imu_convert_param_t param{};
+    unit->imuConvertParam(param);
+
+    m5::imu::imu_raw_data_t raw{};
+    int checked{};
+    while (m5::imu::any(unit->readImuRaw(raw))) {
+        const float celsius = raw.temp * param.temp_res + param.temp_offset;
+        EXPECT_TRUE(std::isfinite(celsius));
+        EXPECT_GT(celsius, 0.0f);
+        EXPECT_LT(celsius, 60.0f);
+        ++checked;
+    }
+    EXPECT_GT(checked, 0);
+}
+
+TEST_F(TestBMI270, StopStartPeriodic)
+{
+    SCOPED_TRACE(ustr);
+
+    EXPECT_TRUE(unit->inPeriodic());
+    EXPECT_TRUE(unit->stopPeriodicMeasurement());
+    EXPECT_FALSE(unit->inPeriodic());
+
+    // No updates should occur while stopped
+    for (int i = 0; i < 10; ++i) {
+        unit->update();
+        EXPECT_FALSE(unit->updated());
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+
+    EXPECT_TRUE(unit->startPeriodicMeasurement());
+    EXPECT_TRUE(unit->inPeriodic());
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    bool updated{};
+    for (int i = 0; i < 50; ++i) {
+        unit->update();
+        if (unit->updated()) {
+            updated = true;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    EXPECT_TRUE(updated);
+}
+
+TEST_F(TestBMI270, ConfigRoundTrip)
+{
+    SCOPED_TRACE(ustr);
+
+    auto cfg           = unit->config();
+    cfg.start_periodic = false;
+    cfg.accel_range    = AccelRange::G4;
+    cfg.gyro_range     = GyroRange::DPS500;
+    unit->config(cfg);
+
+    const auto cfg2 = unit->config();
+    EXPECT_FALSE(cfg2.start_periodic);
+    EXPECT_EQ(cfg2.accel_range, cfg.accel_range);
+    EXPECT_EQ(cfg2.gyro_range, cfg.gyro_range);
+    EXPECT_EQ(cfg2.accel_odr, cfg.accel_odr);
+    EXPECT_EQ(cfg2.gyro_odr, cfg.gyro_odr);
+    EXPECT_EQ(cfg2.enable_aux_bmm150, cfg.enable_aux_bmm150);
+}
