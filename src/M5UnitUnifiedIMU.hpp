@@ -18,6 +18,7 @@
 #include "imu/axis_order.hpp"
 #include "imu/ahrs_controller.hpp"
 #include "imu/presets.hpp"
+#include "imu/mag_detect.hpp"
 #include "imu/filter/filter_base.hpp"
 #include "imu/filter/complementary.hpp"
 #include "imu/filter/madgwick.hpp"
@@ -29,6 +30,7 @@
 #include "unit/unit_bmm150.hpp"
 #include "unit/unit_bmm350.hpp"
 #include "unit/unit_bmi270.hpp"
+#include "unit/unit_ak8963.hpp"
 
 /*!
   @namespace m5

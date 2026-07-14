@@ -26,6 +26,7 @@
 #include "../unit/unit_bmi270.hpp"
 #include "../unit/unit_bmm150.hpp"
 #include "../unit/unit_mpu6886.hpp"
+#include "../unit/unit_ak8963.hpp"
 #include "ahrs_controller.hpp"
 
 namespace m5 {
@@ -99,6 +100,19 @@ bool m5stackCoreFire(AhrsController& ahrs, m5::unit::UnitMPU6886& mpu6886, m5::u
   AhrsController::writeAxisOrder() (one AxisOrder for the whole source).
  */
 bool atomMatrix(AhrsController& ahrs, m5::unit::UnitMPU6886& mpu6886);
+
+/*!
+  @brief Original (MPU9250-based) classic M5Stack's built-in AK8963 magnetometer
+  @param ahrs Controller to register ak8963 with
+  @param ak8963 The MPU9250-internal AK8963 (must already be begin()'d; the MPU9250 bypass must
+  already be open -- see m5::unit::imu::enableAuxBypass)
+  @return False if ahrs already holds the maximum number of sources (see AhrsController::add())
+  @details M5Unified's IMU_Class::begin(): for an MPU9250-internal AK8963 (gated on the accel/gyro
+  being an MPU9250, not on board id), the magnetometer's X/Y axes are swapped and Z inverted
+  (axis_order_yxz | axis_invert_z). AK8963 is a pure-Mag source, so the correction is applied via
+  AhrsController::writeMagAxisOrder() (the mag remap path).
+ */
+bool mpu9250Ak8963(AhrsController& ahrs, m5::unit::UnitAK8963& ak8963);
 
 }  // namespace presets
 }  // namespace imu

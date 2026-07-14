@@ -80,6 +80,18 @@ bool atomMatrix(AhrsController& ahrs, m5::unit::UnitMPU6886& mpu6886)
     return true;
 }
 
+bool mpu9250Ak8963(AhrsController& ahrs, m5::unit::UnitAK8963& ak8963)
+{
+    if (!ahrs.add(ak8963)) {
+        return false;
+    }
+    AxisOrder mag_order;
+    mag_order.permutation = AxisPermutation::YXZ;
+    mag_order.invert_z    = true;
+    ahrs.writeMagAxisOrder(ak8963, mag_order);
+    return true;
+}
+
 }  // namespace presets
 }  // namespace imu
 }  // namespace m5
