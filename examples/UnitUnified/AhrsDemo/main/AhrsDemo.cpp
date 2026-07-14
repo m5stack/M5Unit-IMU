@@ -166,10 +166,27 @@ bool begin_builtin()
             // presets.hpp's core2()), so register mpu6886 directly.
             return ahrs.add(mpu6886);
 
+        case m5::board_t::board_M5AtomS3:
+        case m5::board_t::board_M5StickCPlus:
+        case m5::board_t::board_M5StickCPlus2:
+            // Built-in MPU6886 that M5Unified applies no axis correction to (identity, like Core2).
+            if (!Units.add(mpu6886, M5.In_I2C) || !Units.begin()) {
+                return false;
+            }
+            return ahrs.add(mpu6886);
+
+        case m5::board_t::board_M5StickS3:
+        case m5::board_t::board_M5PaperS3:
+            // Built-in BMI270 (6-axis, no AUX magnetometer); M5Unified applies no axis correction.
+            if (!Units.add(*bmi270, M5.In_I2C) || !Units.begin()) {
+                return false;
+            }
+            return ahrs.add(*bmi270);
+
         default:
             M5_LOGE("Unsupported board for USING_BUILTIN_IMU: 0x%02x", static_cast<int>(board));
-            M5_LOGE("Supported boards: Core2 / CoreS3(SE) / StackChan / AtomS3R(Cam/Ext) /");
-            M5_LOGE("                  AtomMatrix / M5Stack Core or Fire");
+            M5_LOGE("Supported boards: Core2 / CoreS3(SE) / StackChan / AtomS3R(Cam/Ext) / AtomMatrix /");
+            M5_LOGE("                  M5Stack Core or Fire / AtomS3 / StickCPlus / StickCPlus2 / StickS3 / PaperS3");
             return false;
     }
 }
