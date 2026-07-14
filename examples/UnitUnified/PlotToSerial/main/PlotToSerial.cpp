@@ -44,7 +44,26 @@ void setup()
 
     // UnitMiniIMU: NessoN1 -> SoftwareI2C (M5HAL), NanoC6 / NanoH2 -> M5.Ex_I2C, others -> Wire
     // UnitBMM350: GROVE (all boards)
-    if (!m5::unit::wiring::addI2C(Units, unit, 400 * 1000U) || !Units.begin()) {
+    bool ok{};
+#if defined(USING_UNIT_MINI_IMU)
+    // On classic M5Stack Core (board_M5Stack) GROVE Port A *is* the internal I2C bus, and Gray/Fire
+    // carry a built-in MPU6886 at 0x68 -- the same address as UnitMiniIMU. Route the external unit to
+    // GROVE Port C on a separate Wire1 bus there so it never collides with the built-in IMU (same
+    // handling as the AhrsDemo example). UnitBMM350 (0x14) does not collide, so it keeps addI2C.
+    if (M5.getBoard() == m5::board_t::board_M5Stack) {
+        // Grove maps connector pin1 -> SCL and pin2 -> SDA (same wires as UART RX/TX). M5Unified
+        // exposes Port C as port_c_pin1 (RXD) / port_c_pin2 (TXD), so SDA = pin2, SCL = pin1. The
+        // unit already carries its own 400kHz clock (set in UnitMPU6886's constructor), so reuse it.
+        const int sda = M5.getPin(m5::pin_name_t::port_c_pin2);
+        const int scl = M5.getPin(m5::pin_name_t::port_c_pin1);
+        ok            = m5::unit::wiring::i2cWire(Units, unit, Wire1, sda, scl, unit.component_config().clock);
+    } else {
+        ok = m5::unit::wiring::addI2C(Units, unit, 400 * 1000U);
+    }
+#else
+    ok = m5::unit::wiring::addI2C(Units, unit, 400 * 1000U);
+#endif
+    if (!ok || !Units.begin()) {
         M5_LOGE("Failed to begin");
         m5::unit::wiring::failStop();
     }
