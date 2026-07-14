@@ -9,7 +9,7 @@
    - Serial: "[filter]: roll,pitch,yaw" (selected filter name prefixed to each line)
    - LCD-equipped boards additionally show a rotating 3D body-axis gizmo (X=red / Y=green /
      Z=blue) driven by the same AhrsController quaternion
-   - Boards with WiFi also bring up a SoftAP "AhrsDemo" (password "AhrsDemo"); browse to
+   - Boards with WiFi also bring up a SoftAP "AhrsDemo" (password "ahrsdemo123"); browse to
      http://192.168.4.1 for the same gizmo live in a browser (works with or without an LCD)
 */
 #include <M5Unified.h>
@@ -101,6 +101,136 @@ void switch_filter()
     M5_LOGI("Filter switched to %s", filter_name(current_filter));
 }
 
+// -------- Diagnostic snapshot for the web viewer's /info panel (populated during setup) --------
+// Lets you compare, from a browser, which board/chip was detected and exactly which axis remap is
+// being applied -- handy when checking a board's orientation against docs/imu_orientation.
+struct DiagInfo {
+    m5::board_t board{};                             //!< M5.getBoard()
+    bool builtin{false};                             //!< true: built-in IMU; false: external Unit
+    m5::unit::imu::ImuKind imu{m5::unit::imu::ImuKind::None};  //!< probed accel/gyro chip (built-in)
+    uint8_t imu_addr{0x68};                          //!< accel/gyro I2C address
+    const char* unit_label{"?"};                     //!< source label when !builtin
+    const char* mag_label{"none"};                   //!< magnetometer description
+    m5::imu::IMUDataSource* accel_src{nullptr};      //!< source whose Accel/Gyro axis order to show
+    m5::imu::IMUDataSource* mag_src{nullptr};        //!< source whose Mag axis order to show (or null)
+};
+DiagInfo diag;
+
+#if __has_include(<WiFi.h>)  // the formatters below are used only by the web /info panel
+const char* imu_kind_name(const m5::unit::imu::ImuKind k)
+{
+    using K = m5::unit::imu::ImuKind;
+    switch (k) {
+        case K::MPU6050: return "MPU6050";
+        case K::MPU6886: return "MPU6886";
+        case K::MPU9250: return "MPU9250";
+        case K::BMI270:  return "BMI270";
+        case K::SH200Q:  return "SH200Q";
+        case K::None:
+        default:         return "none";
+    }
+}
+
+//! @brief Human-readable name for every m5::board_t (mirrors M5GFX lgfx/boards.hpp). Deprecated
+//! aliases (board_M5Atom, board_M5AtomEcho, board_M5AtomEchoS3R) share a value with their
+//! canonical entry and so are covered by it.
+const char* board_name(const m5::board_t b)
+{
+    using B = m5::board_t;
+    switch (b) {
+        // --- boards with a built-in display ---
+        case B::board_M5Stack:         return "M5Stack (Basic/Gray/Fire)";
+        case B::board_M5StackCore2:    return "Core2";
+        case B::board_M5StickC:        return "StickC";
+        case B::board_M5StickCPlus:    return "StickC Plus";
+        case B::board_M5StickCPlus2:   return "StickC Plus2";
+        case B::board_M5StackCoreInk:  return "Core Ink";
+        case B::board_M5Paper:         return "Paper";
+        case B::board_M5Tough:         return "Tough";
+        case B::board_M5Station:       return "Station";
+        case B::board_M5StackCoreS3:   return "CoreS3";
+        case B::board_M5AtomS3:        return "AtomS3";
+        case B::board_M5Dial:          return "Dial";
+        case B::board_M5DinMeter:      return "DinMeter";
+        case B::board_M5Cardputer:     return "Cardputer";
+        case B::board_M5AirQ:          return "AirQ";
+        case B::board_M5VAMeter:       return "VAMeter";
+        case B::board_M5StackCoreS3SE: return "CoreS3 SE";
+        case B::board_M5AtomS3R:       return "AtomS3R";
+        case B::board_M5PaperS3:       return "PaperS3";
+        case B::board_M5CoreMP135:     return "CoreMP135";
+        case B::board_M5StampPLC:      return "StampPLC";
+        case B::board_M5Tab5:          return "Tab5";
+        case B::board_ArduinoNessoN1:  return "Nesso N1";
+        case B::board_M5CardputerADV:  return "Cardputer ADV";
+        case B::board_M5UnitC6L:       return "UnitC6L";
+        case B::board_M5StickS3:       return "StickS3";
+        case B::board_M5StackChan:     return "StackChan";
+        case B::board_M5PaperColor:    return "Paper Color";
+        case B::board_M5PaperMono:     return "Paper Mono";
+        case B::board_M5StopWatch:     return "StopWatch";
+        // --- boards without a display ---
+        case B::board_M5AtomLite:      return "ATOM Lite";
+        case B::board_M5AtomPsram:     return "ATOM PSRAM";
+        case B::board_M5AtomU:         return "ATOM U";
+        case B::board_M5Camera:        return "Camera";
+        case B::board_M5TimerCam:      return "TimerCam";
+        case B::board_M5StampPico:     return "StampPico";
+        case B::board_M5StampC3:       return "StampC3";
+        case B::board_M5StampC3U:      return "StampC3U";
+        case B::board_M5StampS3:       return "StampS3";
+        case B::board_M5AtomS3Lite:    return "AtomS3 Lite";
+        case B::board_M5AtomS3U:       return "AtomS3 U";
+        case B::board_M5Capsule:       return "Capsule";
+        case B::board_M5NanoC6:        return "NanoC6";
+        case B::board_M5AtomMatrix:    return "ATOM Matrix";
+        case B::board_M5AtomVoice:     return "ATOM Echo/Voice";
+        case B::board_M5AtomS3RExt:    return "AtomS3R Ext";
+        case B::board_M5AtomS3RCam:    return "AtomS3R Cam";
+        case B::board_M5AtomVoiceS3R:  return "Atom Echo/Voice S3R";
+        case B::board_M5PowerHub:      return "PowerHub";
+        case B::board_M5DualKey:       return "DualKey";
+        case B::board_M5UnitPoEP4:     return "UnitPoE P4";
+        case B::board_M5StampS3Bat:    return "StampS3 Bat";
+        case B::board_M5StampP4:       return "StampP4";
+        case B::board_M5NanoH2:        return "NanoH2";
+        // --- external displays ---
+        case B::board_M5AtomDisplay:   return "AtomDisplay";
+        case B::board_M5UnitLCD:       return "UnitLCD";
+        case B::board_M5UnitOLED:      return "UnitOLED";
+        case B::board_M5UnitMiniOLED:  return "UnitMiniOLED";
+        case B::board_M5UnitGLASS:     return "UnitGLASS";
+        case B::board_M5UnitGLASS2:    return "UnitGLASS2";
+        case B::board_M5UnitRCA:       return "UnitRCA";
+        case B::board_M5ModuleDisplay: return "ModuleDisplay";
+        case B::board_M5ModuleRCA:     return "ModuleRCA";
+        case B::board_M5UnitPoEP4HDMI: return "UnitPoE P4 HDMI";
+        case B::board_FrameBuffer:     return "FrameBuffer";
+        case B::board_unknown:
+        default:                       return "unknown";
+    }
+}
+
+//! @brief Format an AxisOrder as e.g. "XYZ inv:XZ" / "YXZ inv:-" for the /info panel
+void axis_order_str(const m5::imu::AxisOrder& o, char* const buf, const size_t n)
+{
+    static const char* const PERM[] = {"XYZ", "XZY", "YXZ", "YZX", "ZXY", "ZYX"};
+    char inv[4] = {};
+    size_t k    = 0;
+    if (o.invert_x) {
+        inv[k++] = 'X';
+    }
+    if (o.invert_y) {
+        inv[k++] = 'Y';
+    }
+    if (o.invert_z) {
+        inv[k++] = 'Z';
+    }
+    inv[k] = '\0';
+    std::snprintf(buf, n, "%s inv:%s", PERM[static_cast<uint8_t>(o.permutation)], k ? inv : "-");
+}
+#endif  // __has_include(<WiFi.h>)
+
 #if defined(USING_BUILTIN_IMU)
 //! @brief Register a built-in MPU6886/MPU6050 with ahrs, applying this board's axis correction
 //! @details The accel/gyro chip has already been identified as an MPU6886-family part by
@@ -108,9 +238,29 @@ void switch_filter()
 //! orientation is a board property (see src/imu/presets.hpp).
 bool begin_builtin_mpu6886(const m5::board_t board)
 {
-    if (!Units.add(mpu6886, M5.In_I2C) || !Units.begin()) {
+    if (!Units.add(mpu6886, M5.In_I2C)) {
         return false;
     }
+    diag.accel_src = &mpu6886;
+
+    // board_M5Stack (classic Core/Fire) is the only built-in config with a *separate* discrete
+    // magnetometer: Fire has a BMM150, plain Core does not. Probe for it READ-ONLY here and add it
+    // up front so Units.begin() runs exactly once. (Calling Units.begin() a second time re-begins
+    // the already-running mpu6886; UnitMPU6886::begin() returns false when it is already periodic
+    // and its DEVICE_RESET stops measurement -- so a second begin silently kills the gyro clock and
+    // the AHRS filter never updates.)
+    const bool has_bmm150 =
+        (board == m5::board_t::board_M5Stack) &&
+        (m5::unit::imu::detectBuiltinMag([](uint8_t a, uint8_t reg, uint8_t& out) {
+             return M5.In_I2C.readRegister(a, reg, &out, 1, 400000);
+         }) == m5::unit::imu::MagKind::BMM150);
+    if (has_bmm150) {
+        Units.add(bmm150, M5.In_I2C);
+    }
+    if (!Units.begin()) {
+        return false;
+    }
+
     switch (board) {
         case m5::board_t::board_M5StackCore2:
             return m5::imu::presets::core2(ahrs, mpu6886);
@@ -119,10 +269,9 @@ bool begin_builtin_mpu6886(const m5::board_t board)
             return m5::imu::presets::atomMatrix(ahrs, mpu6886);
 
         case m5::board_t::board_M5Stack:
-            // Classic Core/Fire both report board_M5Stack; only Fire adds a discrete BMM150. Probe
-            // for it -- re-running Units.begin() re-begins mpu6886 too, which is harmless
-            // (UnitMPU6886::begin() is idempotent). Mirrors M5Unified's optional BMM150 probe.
-            if (Units.add(bmm150, M5.In_I2C) && Units.begin()) {
+            if (has_bmm150) {
+                diag.mag_src   = &bmm150;
+                diag.mag_label = "BMM150";
                 return m5::imu::presets::m5stackCoreFire(ahrs, mpu6886, bmm150);
             }
             // Plain Core (no discrete BMM150): identity is already correct.
@@ -149,6 +298,8 @@ bool begin_builtin_bmi270(const m5::board_t board)
     if (!Units.add(*bmi270, M5.In_I2C) || !Units.begin()) {
         return false;
     }
+    diag.accel_src = bmi270;
+    diag.imu_addr  = bmi_addr;
     switch (board) {
         case m5::board_t::board_M5StackCoreS3:
         case m5::board_t::board_M5StackCoreS3SE:
@@ -183,13 +334,21 @@ bool begin_builtin()
     const auto kind  = m5::unit::imu::detectBuiltinImu(
         [](uint8_t a, uint8_t reg, uint8_t& out) { return M5.In_I2C.readRegister(a, reg, &out, 1, 400000); });
 
+    diag.board = board;
+    diag.imu   = kind;
+
+    bool ok{};
     switch (kind) {
         case m5::unit::imu::ImuKind::MPU6886:
         case m5::unit::imu::ImuKind::MPU6050:
-            return begin_builtin_mpu6886(board);
+            diag.builtin = true;
+            ok           = begin_builtin_mpu6886(board);
+            break;
 
         case m5::unit::imu::ImuKind::BMI270:
-            return begin_builtin_bmi270(board);
+            diag.builtin = true;
+            ok           = begin_builtin_bmi270(board);
+            break;
 
         case m5::unit::imu::ImuKind::MPU9250:
             M5_LOGE("Detected an MPU9250 (original 9-axis generation). Its accel/gyro driver is not "
@@ -206,6 +365,14 @@ bool begin_builtin()
             M5_LOGE("No supported built-in accel/gyro IMU detected on the internal bus.");
             return false;
     }
+
+    // A BMI270 with an AUX BMM150 carries Mag on the accel source itself; surface it for /info.
+    if (ok && diag.accel_src && !diag.mag_src &&
+        m5::imu::any(diag.accel_src->imuSpec() & m5::imu::Capability::Mag)) {
+        diag.mag_src   = diag.accel_src;
+        diag.mag_label = "BMM150 (AUX)";
+    }
+    return ok;
 }
 #endif
 
@@ -286,11 +453,14 @@ void draw_gizmo(const float roll, const float pitch, const float yaw)
 }  // namespace
 
 // -------- Optional WiFi SoftAP + browser viewer (any board that has WiFi) --------
-// Brings up a SoftAP "AhrsDemo" (password "AhrsDemo") and serves a self-contained page at
+// Brings up a SoftAP "AhrsDemo" (password "ahrsdemo123") and serves a self-contained page at
 // http://192.168.4.1 that polls the AhrsController quaternion and renders a live 3D body-axis
 // gizmo (X=red / Y=green / Z=blue). Useful on headless boards, but runs on LCD boards too.
-// ESP32-H2 (NanoH2) has no WiFi radio, so the whole block compiles out there.
-#if defined(CONFIG_SOC_WIFI_SUPPORTED)
+// ESP32-H2 (NanoH2) ships no WiFi library, so <WiFi.h> is absent and the whole block compiles out
+// there (mirrors M5Unified's own examples, e.g. Basic/Rtc). ESP32 classic (AtomMatrix) and every
+// other WiFi-capable target keep it -- unlike CONFIG_SOC_WIFI_SUPPORTED, which is not defined on
+// some Arduino cores (ESP32 classic) and so wrongly compiled the viewer out there.
+#if __has_include(<WiFi.h>)
 #define AHRS_WEB_VIEWER 1
 #include <WiFi.h>
 #include <WebServer.h>
@@ -302,26 +472,42 @@ const char AHRS_INDEX_HTML[] PROGMEM =
     R"HTML(<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>AhrsDemo</title><style>
 body{margin:0;background:#111;color:#eee;font-family:sans-serif;text-align:center}
-#scene{width:220px;height:220px;margin:36px auto;perspective:600px}
-#giz{width:100%;height:100%;position:relative;transform-style:preserve-3d;transition:transform .05s linear}
-.ax{position:absolute;left:50%;top:50%;height:5px;width:90px;border-radius:3px;transform-origin:0 50%}
-.x{background:#f44}.y{background:#4f4;transform:rotateZ(-90deg)}.z{background:#48f;transform:rotateY(90deg)}
-#rpy{font-size:15px;letter-spacing:1px}</style></head><body><h3>AhrsDemo</h3>
-<div id="scene"><div id="giz"><div class="ax x"></div><div class="ax y"></div><div class="ax z"></div></div></div>
-<div id="rpy">--</div><script>
-var g=document.getElementById('giz'),r=document.getElementById('rpy'),d=57.29578;
-function mat(q){var w=q.w,x=q.x,y=q.y,z=q.z;
-return'matrix3d('+(1-2*(y*y+z*z))+','+(2*(x*y+w*z))+','+(2*(x*z-w*y))+',0,'+
-(2*(x*y-w*z))+','+(1-2*(x*x+z*z))+','+(2*(y*z+w*x))+',0,'+
-(2*(x*z+w*y))+','+(2*(y*z-w*x))+','+(1-2*(x*x+y*y))+',0,0,0,0,1)';}
+#gz{margin:24px auto;display:block}
+#rpy{font-size:15px;letter-spacing:1px}
+#inf{font-size:12px;line-height:1.7;color:#8cf;max-width:300px;margin:12px auto;text-align:left}
+#inf b{color:#eee}</style></head><body><h3>AhrsDemo</h3>
+<canvas id="gz" width="220" height="220"></canvas>
+<div id="rpy">--</div><div id="inf"></div><script>
+var cv=document.getElementById('gz'),ctx=cv.getContext('2d'),r=document.getElementById('rpy'),d=57.29578;
+ctx.font='bold 14px sans-serif';ctx.textBaseline='middle';
+// Rotate vector (x,y,z) by quaternion q -- the same active rotation the on-device gizmo uses.
+function rv(q,x,y,z){var w=q.w,a=q.x,b=q.y,c=q.z,
+tx=2*(b*z-c*y),ty=2*(c*x-a*z),tz=2*(a*y-b*x);
+return[x+w*tx+(b*tz-c*ty),y+w*ty+(c*tx-a*tz),z+w*tz+(a*ty-b*tx)];}
+// Same projection as draw_gizmo(): screen x=cx+rx*s, y=cy-ry*s (Y up), depth=rz; far axes dimmed.
+function draw(q){var W=cv.width,H=cv.height,cx=W/2,cy=H/2,s=W/2-20;
+ctx.clearRect(0,0,W,H);
+var A=[[1,0,0,'#f44','X'],[0,1,0,'#4f4','Y'],[0,0,1,'#48f','Z']];
+var p=A.map(function(a){var t=rv(q,a[0],a[1],a[2]);return{x:cx+t[0]*s,y:cy-t[1]*s,z:t[2],c:a[3],l:a[4]};});
+p.sort(function(m,n){return m.z-n.z;});
+ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(cx,cy,3,0,7);ctx.fill();
+ctx.lineWidth=4;ctx.lineCap='round';
+p.forEach(function(o){ctx.globalAlpha=o.z<0?0.4:1;ctx.strokeStyle=o.c;
+ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(o.x,o.y);ctx.stroke();
+ctx.fillStyle=o.c;ctx.fillText(o.l,o.x+4,o.y-4);ctx.globalAlpha=1;});}
 function tick(){fetch('/q').then(function(res){return res.json();}).then(function(q){
-g.style.transform=mat(q);
+draw(q);
 var rr=Math.atan2(2*(q.w*q.x+q.y*q.z),1-2*(q.x*q.x+q.y*q.y))*d;
 var pp=Math.asin(Math.max(-1,Math.min(1,2*(q.w*q.y-q.z*q.x))))*d;
 var yy=Math.atan2(2*(q.w*q.z+q.x*q.y),1-2*(q.y*q.y+q.z*q.z))*d;
-r.textContent='roll '+rr.toFixed(1)+'  pitch '+pp.toFixed(1)+'  yaw '+yy.toFixed(1);
+r.textContent='['+q.filter+']  roll '+rr.toFixed(1)+'  pitch '+pp.toFixed(1)+'  yaw '+yy.toFixed(1);
 }).catch(function(){}).then(function(){setTimeout(tick,50);});}
-tick();</script></body></html>)HTML";
+tick();
+fetch('/info').then(function(res){return res.json();}).then(function(o){
+document.getElementById('inf').innerHTML=
+'<b>board:</b> '+o.board+'<br><b>source:</b> '+o.source+'<br><b>mag:</b> '+o.mag+
+'<br><b>accel/gyro axis:</b> '+o.accel_axis+'<br><b>mag axis:</b> '+o.mag_axis;}).catch(function(){});
+</script></body></html>)HTML";
 
 void handle_root()
 {
@@ -332,23 +518,56 @@ void handle_quaternion()
 {
     float w{1.0f}, x{}, y{}, z{};
     ahrs.quaternion(w, x, y, z);
-    char buf[96];
-    std::snprintf(buf, sizeof(buf), "{\"w\":%.4f,\"x\":%.4f,\"y\":%.4f,\"z\":%.4f}", w, x, y, z);
+    char buf[128];
+    std::snprintf(buf, sizeof(buf), "{\"w\":%.4f,\"x\":%.4f,\"y\":%.4f,\"z\":%.4f,\"filter\":\"%s\"}", w, x, y, z,
+                  filter_name(current_filter));
+    web_server.send(200, "application/json", buf);
+}
+
+void handle_info()
+{
+    m5::imu::AxisOrder ao{}, mo{};
+    char aostr[24] = "-", mostr[24] = "-";
+    if (diag.accel_src && ahrs.readAxisOrder(*diag.accel_src, ao)) {
+        axis_order_str(ao, aostr, sizeof(aostr));
+    }
+    if (diag.mag_src && ahrs.readMagAxisOrder(*diag.mag_src, mo)) {
+        axis_order_str(mo, mostr, sizeof(mostr));
+    }
+    char source[56];
+    if (diag.builtin) {
+        std::snprintf(source, sizeof(source), "Built-in %s @0x%02X", imu_kind_name(diag.imu), diag.imu_addr);
+    } else {
+        std::snprintf(source, sizeof(source), "%s", diag.unit_label);
+    }
+    char buf[512];
+    std::snprintf(buf, sizeof(buf),
+                  "{\"board\":\"%s (0x%02X)\",\"source\":\"%s\",\"mag\":\"%s\",\"accel_axis\":\"%s\","
+                  "\"mag_axis\":\"%s\"}",
+                  board_name(diag.board), static_cast<int>(diag.board), source, diag.mag_label, aostr, mostr);
     web_server.send(200, "application/json", buf);
 }
 
 void start_web_viewer()
 {
+#if defined(CONFIG_IDF_TARGET_ESP32P4)
+    // Tab5 (ESP32-P4) has no on-die radio; route WiFi to its ESP32-C6 co-processor over SDIO
+    // (pins per M5Stack's Tab5 WiFi doc / M5Unified's Basic/Rtc example).
+    if (M5.getBoard() == m5::board_t::board_M5Tab5) {
+        WiFi.setPins(GPIO_NUM_12, GPIO_NUM_13, GPIO_NUM_11, GPIO_NUM_10, GPIO_NUM_9, GPIO_NUM_8, GPIO_NUM_15);
+    }
+#endif
     WiFi.mode(WIFI_AP);
-    WiFi.softAP("AhrsDemo", "AhrsDemo");
+    WiFi.softAP("AhrsDemo", "ahrsdemo123");
     web_server.on("/", handle_root);
     web_server.on("/q", handle_quaternion);
+    web_server.on("/info", handle_info);
     web_server.begin();
-    M5.Log.printf("Web viewer: join WiFi \"AhrsDemo\" (pass \"AhrsDemo\"), open http://%s\n",
+    M5.Log.printf("Web viewer: join WiFi \"AhrsDemo\" (pass \"ahrsdemo123\"), open http://%s\n",
                   WiFi.softAPIP().toString().c_str());
 }
 }  // namespace
-#endif  // CONFIG_SOC_WIFI_SUPPORTED
+#endif  // __has_include(<WiFi.h>)
 
 void setup()
 {
@@ -366,14 +585,37 @@ void setup()
         canvas.createSprite(lcd.width(), lcd.height());
     }
 
+    diag.board = M5.getBoard();  // host board (begin_builtin() also fills the built-in chip fields)
+
     bool ok{};
 #if defined(USING_UNIT_MINI_IMU)
-    // UnitMiniIMU: NessoN1 -> SoftwareI2C (M5HAL), NanoC6 / NanoH2 -> M5.Ex_I2C, others -> Wire
-    ok = m5::unit::wiring::addI2C(Units, unit, 400 * 1000U) && Units.begin() && ahrs.add(unit);
+    // UnitMiniIMU: NessoN1 -> SoftwareI2C (M5HAL), NanoC6 / NanoH2 -> M5.Ex_I2C, others -> Wire.
+    // Special case: on classic M5Stack Core (board_M5Stack) GROVE Port A *is* the internal I2C bus,
+    // and Gray/Fire carry a built-in MPU6886 at 0x68 -- the same address as UnitMiniIMU. Routing the
+    // external unit to the default port there would collide with (or silently read) the built-in
+    // IMU, so use GROVE Port C on a separate Wire1 bus instead. Every other board keeps addI2C().
+    if (M5.getBoard() == m5::board_t::board_M5Stack) {
+        // Grove maps connector pin1 -> SCL and pin2 -> SDA (same wires as UART RX/TX). M5Unified
+        // exposes Port C as port_c_pin1 (RXD) / port_c_pin2 (TXD), so SDA = pin2, SCL = pin1. The
+        // unit already carries its own 400kHz clock (set in UnitMPU6886's constructor), so reuse it.
+        const int sda = M5.getPin(m5::pin_name_t::port_c_pin2);
+        const int scl = M5.getPin(m5::pin_name_t::port_c_pin1);
+        ok = m5::unit::wiring::i2cWire(Units, unit, Wire1, sda, scl, unit.component_config().clock) &&
+             Units.begin() && ahrs.add(unit);
+        diag.unit_label = "UnitMiniIMU (GROVE Port C @0x68)";
+    } else {
+        ok              = m5::unit::wiring::addI2C(Units, unit, 400 * 1000U) && Units.begin() && ahrs.add(unit);
+        diag.unit_label = "UnitMiniIMU (MPU6886 @0x68)";
+    }
+    diag.accel_src = &unit;
 #elif defined(USING_UNIT_MINI_IMU_WITH_BMM350)
     // Both units share the same GROVE bus (0x68 + 0x14 coexist, no address conflict)
     ok = m5::unit::wiring::addI2C(Units, unit, 400 * 1000U) && m5::unit::wiring::addI2C(Units, mag_unit, 400 * 1000U) &&
          Units.begin() && ahrs.add(unit) && ahrs.add(mag_unit);
+    diag.unit_label = "UnitMiniIMU + UnitBMM350";
+    diag.accel_src  = &unit;
+    diag.mag_src    = &mag_unit;
+    diag.mag_label  = "BMM350";
 #elif defined(USING_BUILTIN_IMU)
     ok = begin_builtin();
 #endif
