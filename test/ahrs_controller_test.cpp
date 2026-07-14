@@ -35,6 +35,12 @@ public:
     Capability readImuRaw(imu_raw_data_t& out) override
     {
         if (_pos >= _samples.size()) {
+            // Fully drained: release consumed samples so long push/drain loops (e.g. the 3000-sample
+            // auto-calibration convergence test) keep the buffer flat instead of growing without
+            // bound -- unbounded growth exhausts DRAM on embedded targets (std::bad_alloc). Partial
+            // drains (the 32-sample-per-call cap) never reach here, so undrained samples are kept.
+            _samples.clear();
+            _pos = 0;
             return Capability::None;
         }
         out = _samples[_pos++];
