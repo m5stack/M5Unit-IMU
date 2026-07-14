@@ -144,7 +144,7 @@ TEST_F(TestMPU6886, Temperature)
         const float celsius = raw.temp * param.temp_res + param.temp_offset;
         EXPECT_TRUE(std::isfinite(celsius));
         EXPECT_GT(celsius, 0.0f);
-        EXPECT_LT(celsius, 60.0f);
+        EXPECT_LT(celsius, 100.0f);  // wide sanity ceiling: die self-heating in an enclosed host
         ++checked;
     }
     EXPECT_GT(checked, 0);
