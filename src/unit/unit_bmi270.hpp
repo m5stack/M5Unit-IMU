@@ -60,6 +60,25 @@ public:
     {
     }
 
+    //! @brief BMI270 chip identifier (value of register bmi270::command::REG_CHIP_ID)
+    static constexpr uint8_t CHIP_ID{0x24};
+
+    //! @brief Detect which I2C address a built-in BMI270 uses on a bus (0x68 or 0x69, board-dependent)
+    //! @details Probes both candidate addresses by reading CHIP_ID and reports the one where a
+    //! BMI270 answers. Framework-agnostic: the caller injects the bus read, so the unit library
+    //! stays free of M5Unified / Arduino Wire. Hand the detected address to the constructor:
+    //! @code
+    //! uint8_t a{};
+    //! if (UnitBMI270::detectAddress(read, a)) { UnitBMI270 unit{a}; }
+    //! @endcode
+    //! @tparam ReadReg Callable `bool(uint8_t addr, uint8_t reg, uint8_t& out)` reading one register
+    //!                 over the target bus and returning true on success (ACK)
+    //! @param  read     The read callable
+    //! @param[out] addr Detected address on success (unchanged on failure)
+    //! @return true if a BMI270 responded at 0x68 or 0x69
+    template <class ReadReg>
+    static bool detectAddress(ReadReg read, uint8_t& addr);
+
     //! @brief Begin the unit
     virtual bool begin() override;
     //! @brief Update the unit
@@ -211,6 +230,20 @@ constexpr uint8_t REG_BMM150_OP_MODE{0x4C};
 ///@endcond
 }  // namespace command
 }  // namespace bmi270
+
+// Out-of-class so the non-dependent bmi270::command::REG_CHIP_ID (declared above) is in scope.
+template <class ReadReg>
+bool UnitBMI270::detectAddress(ReadReg read, uint8_t& addr)
+{
+    for (const uint8_t candidate : {static_cast<uint8_t>(0x68), static_cast<uint8_t>(0x69)}) {
+        uint8_t id{};
+        if (read(candidate, bmi270::command::REG_CHIP_ID, id) && id == CHIP_ID) {
+            addr = candidate;
+            return true;
+        }
+    }
+    return false;
+}
 
 }  // namespace unit
 }  // namespace m5

@@ -40,8 +40,7 @@ constexpr uint32_t AUX_BUSY_POLL_RETRY{3};
 // BMM150 soft-reset settling time before it responds to AUX reads (datasheet 3.0ms)
 constexpr uint32_t AUX_RESET_DELAY_MS{3};
 
-// REG_CHIP_ID expected value / REG_CMD command value
-constexpr uint8_t CHIP_ID_VALUE{0x24};
+// REG_CMD command value (REG_CHIP_ID expected value is UnitBMI270::CHIP_ID, a public API constant)
 constexpr uint8_t CMD_SOFTRESET{0xB6};
 
 // REG_STATUS (0x03) bits
@@ -123,7 +122,11 @@ bool UnitBMI270::begin()
     _last_temp          = 0;
 
     uint8_t id{};
-    if (!readRegister8(REG_CHIP_ID, id, 0) || id != CHIP_ID_VALUE) {
+    // After power-up the BMI270 needs one dummy transaction to establish its I2C interface; the
+    // first register read may return stale data. Discard one read before validating CHIP_ID
+    // (mirrors M5Unified's BMI270_Class, which reads WhoAmI twice).
+    readRegister8(REG_CHIP_ID, id, 0);
+    if (!readRegister8(REG_CHIP_ID, id, 0) || id != CHIP_ID) {
         M5_LIB_LOGE("Not BMI270 %02X", id);
         return false;
     }
@@ -133,20 +136,19 @@ bool UnitBMI270::begin()
         return false;
     }
     {
-        uint8_t pwr_conf{1};
+        // The soft reset reboots the device (~2 ms) during which register reads NAK or return 0.
+        // Poll PWR_CONF, tolerating those transient failures, until it reads its non-zero reset
+        // default -- i.e. the interface is back (mirrors M5Unified's BMI270_Class::begin()).
+        uint8_t pwr_conf{};
         uint32_t retry = PWR_CONF_POLL_RETRY;
-        for (;;) {
+        do {
             m5::utility::delay(1);
             if (!readRegister8(REG_PWR_CONF, pwr_conf, 0)) {
-                M5_LIB_LOGE("Failed to read REG_PWR_CONF");
-                return false;
+                pwr_conf = 0;
             }
-            if (pwr_conf == 0 || --retry == 0) {
-                break;
-            }
-        }
-        if (pwr_conf != 0) {
-            M5_LIB_LOGE("REG_PWR_CONF did not clear after reset");
+        } while (pwr_conf == 0 && --retry);
+        if (pwr_conf == 0) {
+            M5_LIB_LOGE("BMI270 did not respond after soft reset");
             return false;
         }
     }
@@ -176,8 +178,7 @@ bool UnitBMI270::begin()
         for (;;) {
             m5::utility::delay(1);
             if (!readRegister8(REG_INTERNAL_STATUS, status, 0)) {
-                M5_LIB_LOGE("Failed to read REG_INTERNAL_STATUS");
-                return false;
+                status = 0;  // transient NAK while the device settles; keep polling
             }
             const uint8_t msg = status & INTERNAL_STATUS_MESSAGE_MASK;
             if (msg == INTERNAL_STATUS_INIT_OK) {
@@ -440,16 +441,10 @@ bool UnitBMI270::aux_read_trim(bmm150::trim_t& trim)
 
 bool UnitBMI270::read_measurement(bmi270::Data& d)
 {
-    uint8_t status{};
-    if (!readRegister8(REG_INT_STATUS_1, status, 0)) {
-        M5_LIB_LOGE("Failed to read REG_INT_STATUS_1");
-        return false;
-    }
-    constexpr uint8_t both_drdy{INT_STATUS_1_ACC_DRDY | INT_STATUS_1_GYR_DRDY};
-    if ((status & both_drdy) != both_drdy) {
-        return false;  // Not ready yet (normal case, no log)
-    }
-
+    // The BMI270 data registers always hold the most recent sample, so read them directly at the
+    // caller's cadence -- update() already rate-limits to the configured ODR. This mirrors
+    // M5Unified's BMI270_Class::getAccelAdc(), which likewise reads without a data-ready gate
+    // (INT_STATUS_1's drdy bits would require INT_MAP_DATA, and STATUS polling is unnecessary here).
     if (_aux_mag) {
         // AUX data mode auto-polls the BMM150 into REG_DATA_0..DATA_7 (mag+rhall) followed by
         // the usual accel/gyro at REG_DATA_8..DATA_19; one 20 byte burst covers all three.
