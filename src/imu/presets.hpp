@@ -102,6 +102,19 @@ bool m5stackCoreFire(AhrsController& ahrs, m5::unit::UnitMPU6886& mpu6886, m5::u
 bool atomMatrix(AhrsController& ahrs, m5::unit::UnitMPU6886& mpu6886);
 
 /*!
+  @brief ATOM Matrix v1.1's built-in BMI270 (the MPU6886 was replaced by a BMI270 at v1.1)
+  @param ahrs Controller to register bmi270 with
+  @param bmi270 ATOM Matrix v1.1's built-in BMI270 (6-axis, no AUX magnetometer; must already be
+  begin()'d)
+  @return False if ahrs already holds the maximum number of sources (see AhrsController::add())
+  @details M5Unified's IMU_Class::begin() gives the AtomMatrix BMI270 the same accel/gyro X/Z
+  inversion as the original MPU6886 AtomMatrix (the board orientation is unchanged across the chip
+  swap). Both capabilities come from the same source and need the identical correction, so this maps
+  onto a single AhrsController::writeAxisOrder().
+ */
+bool atomMatrix(AhrsController& ahrs, m5::unit::UnitBMI270& bmi270);
+
+/*!
   @brief Original (MPU9250-based) classic M5Stack's built-in AK8963 magnetometer
   @param ahrs Controller to register ak8963 with
   @param ak8963 The MPU9250-internal AK8963 (must already be begin()'d; the MPU9250 bypass must

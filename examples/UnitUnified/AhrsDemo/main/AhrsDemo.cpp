@@ -102,91 +102,108 @@ void switch_filter()
 }
 
 #if defined(USING_BUILTIN_IMU)
-//! @brief Register this board's built-in IMU (probed via M5.getBoard()) with ahrs
-//! @details Mirrors M5Unified's own IMU_Class::begin() board switch (see src/imu/presets.hpp).
-//! Wires the relevant unit(s) onto M5.In_I2C, begins them via Units, then hands them to the
-//! matching m5::imu::presets:: function for axis-remap + ahrs.add().
-bool begin_builtin()
+//! @brief Register a built-in MPU6886/MPU6050 with ahrs, applying this board's axis correction
+//! @details The accel/gyro chip has already been identified as an MPU6886-family part by
+//! begin_builtin(). M5.getBoard() then selects the axis-remap preset, since the mounting
+//! orientation is a board property (see src/imu/presets.hpp).
+bool begin_builtin_mpu6886(const m5::board_t board)
 {
-    const auto board = M5.getBoard();
+    if (!Units.add(mpu6886, M5.In_I2C) || !Units.begin()) {
+        return false;
+    }
+    switch (board) {
+        case m5::board_t::board_M5StackCore2:
+            return m5::imu::presets::core2(ahrs, mpu6886);
 
-    // The built-in BMI270 sits at a board-dependent address (0x68 or 0x69). Detect it on the
-    // internal bus and heap-construct the unit with the result; ahrs/Units keep it alive for the
-    // program's lifetime (this is an example singleton, so it is intentionally never deleted).
+        case m5::board_t::board_M5AtomMatrix:
+            return m5::imu::presets::atomMatrix(ahrs, mpu6886);
+
+        case m5::board_t::board_M5Stack:
+            // Classic Core/Fire both report board_M5Stack; only Fire adds a discrete BMM150. Probe
+            // for it -- re-running Units.begin() re-begins mpu6886 too, which is harmless
+            // (UnitMPU6886::begin() is idempotent). Mirrors M5Unified's optional BMM150 probe.
+            if (Units.add(bmm150, M5.In_I2C) && Units.begin()) {
+                return m5::imu::presets::m5stackCoreFire(ahrs, mpu6886, bmm150);
+            }
+            // Plain Core (no discrete BMM150): identity is already correct.
+            return ahrs.add(mpu6886);
+
+        default:
+            // AtomS3 / StickCPlus / StickCPlus2 and any other MPU6886 host: M5Unified applies no
+            // axis correction (identity), same as Core2.
+            return ahrs.add(mpu6886);
+    }
+}
+
+//! @brief Register a built-in BMI270 with ahrs, applying this board's axis correction
+//! @details The BMI270 sits at a board-dependent address (0x68 or 0x69); it is probed and the unit
+//! is heap-constructed with the result (ahrs/Units keep it alive for the program's lifetime -- an
+//! example singleton, intentionally never deleted). M5.getBoard() selects the axis-remap preset.
+bool begin_builtin_bmi270(const m5::board_t board)
+{
     uint8_t bmi_addr{0x68};
     m5::unit::bmi270::detectAddress(
         [](uint8_t a, uint8_t reg, uint8_t& out) { return M5.In_I2C.readRegister(a, reg, &out, 1, 400000); },
         bmi_addr);
     auto* bmi270 = new m5::unit::UnitBMI270(bmi_addr);
-
+    if (!Units.add(*bmi270, M5.In_I2C) || !Units.begin()) {
+        return false;
+    }
     switch (board) {
-        case m5::board_t::board_M5StackCore2:
-            if (!Units.add(mpu6886, M5.In_I2C) || !Units.begin()) {
-                return false;
-            }
-            return m5::imu::presets::core2(ahrs, mpu6886);
-
         case m5::board_t::board_M5StackCoreS3:
         case m5::board_t::board_M5StackCoreS3SE:
         case m5::board_t::board_M5StackChan:
-            if (!Units.add(*bmi270, M5.In_I2C) || !Units.begin()) {
-                return false;
-            }
             return m5::imu::presets::coreS3(ahrs, *bmi270);
 
         case m5::board_t::board_M5AtomS3R:
         case m5::board_t::board_M5AtomS3RCam:
         case m5::board_t::board_M5AtomS3RExt:
-            if (!Units.add(*bmi270, M5.In_I2C) || !Units.begin()) {
-                return false;
-            }
             return m5::imu::presets::atomS3R(ahrs, *bmi270);
 
         case m5::board_t::board_M5AtomMatrix:
-            if (!Units.add(mpu6886, M5.In_I2C) || !Units.begin()) {
-                return false;
-            }
-            return m5::imu::presets::atomMatrix(ahrs, mpu6886);
-
-        case m5::board_t::board_M5Stack:
-            // Classic Core/Fire both report board_M5Stack; only Fire has a discrete BMM150
-            // magnetometer. mpu6886 must begin first and on its own so a missing BMM150 cannot
-            // mask an mpu6886 failure (Units::begin() is all-or-nothing across every added unit).
-            if (!Units.add(mpu6886, M5.In_I2C) || !Units.begin()) {
-                return false;
-            }
-            // Probe for the discrete BMM150 (Fire only). Re-running Units.begin() here also
-            // re-begins mpu6886, which is harmless -- UnitMPU6886::begin() is idempotent
-            // (WHO_AM_I check + register reset/reconfigure). Mirrors M5Unified's own
-            // IMU_Class::begin(), which does the same optional probe-and-discard for BMM150.
-            if (Units.add(bmm150, M5.In_I2C) && Units.begin()) {
-                return m5::imu::presets::m5stackCoreFire(ahrs, mpu6886, bmm150);
-            }
-            // Plain Core (no discrete BMM150): identity transform is already correct (see
-            // presets.hpp's core2()), so register mpu6886 directly.
-            return ahrs.add(mpu6886);
-
-        case m5::board_t::board_M5AtomS3:
-        case m5::board_t::board_M5StickCPlus:
-        case m5::board_t::board_M5StickCPlus2:
-            // Built-in MPU6886 that M5Unified applies no axis correction to (identity, like Core2).
-            if (!Units.add(mpu6886, M5.In_I2C) || !Units.begin()) {
-                return false;
-            }
-            return ahrs.add(mpu6886);
-
-        case m5::board_t::board_M5StickS3:
-        case m5::board_t::board_M5PaperS3:
-            // Built-in BMI270 (6-axis, no AUX magnetometer); M5Unified applies no axis correction.
-            if (!Units.add(*bmi270, M5.In_I2C) || !Units.begin()) {
-                return false;
-            }
-            return ahrs.add(*bmi270);
+            // ATOM Matrix v1.1 replaced the MPU6886 with a BMI270 at the same orientation.
+            return m5::imu::presets::atomMatrix(ahrs, *bmi270);
 
         default:
-            M5_LOGE("Unsupported board for USING_BUILTIN_IMU: 0x%02x", static_cast<int>(board));
-            M5_LOGE("Supported boards: Core2 / CoreS3(SE) / StackChan / AtomS3R(Cam/Ext) / AtomMatrix /");
-            M5_LOGE("                  M5Stack Core or Fire / AtomS3 / StickCPlus / StickCPlus2 / StickS3 / PaperS3");
+            // Core2 v1.3 / StickS3 / PaperS3 and other BMI270 hosts: M5Unified applies no axis
+            // correction (identity).
+            return ahrs.add(*bmi270);
+    }
+}
+
+//! @brief Register this board's built-in IMU with ahrs, choosing the driver by probing the bus
+//! @details M5.getBoard() cannot distinguish IMU generations (Core2 v1.1 MPU6886 vs v1.3 BMI270,
+//! ATOM Matrix MPU6886 vs v1.1 BMI270 -- both report the same board id), so the accel/gyro chip is
+//! detected on the internal bus (m5::unit::imu::detectBuiltinImu) to pick which driver to
+//! construct, while M5.getBoard() still selects the axis-correction preset (the mounting
+//! orientation is a board property). Mirrors M5Unified's IMU_Class::begin() chip switch.
+bool begin_builtin()
+{
+    const auto board = M5.getBoard();
+    const auto kind  = m5::unit::imu::detectBuiltinImu(
+        [](uint8_t a, uint8_t reg, uint8_t& out) { return M5.In_I2C.readRegister(a, reg, &out, 1, 400000); });
+
+    switch (kind) {
+        case m5::unit::imu::ImuKind::MPU6886:
+        case m5::unit::imu::ImuKind::MPU6050:
+            return begin_builtin_mpu6886(board);
+
+        case m5::unit::imu::ImuKind::BMI270:
+            return begin_builtin_bmi270(board);
+
+        case m5::unit::imu::ImuKind::MPU9250:
+            M5_LOGE("Detected an MPU9250 (original 9-axis generation). Its accel/gyro driver is not "
+                    "yet implemented in M5Unit-IMU; cannot start the built-in IMU.");
+            return false;
+
+        case m5::unit::imu::ImuKind::SH200Q:
+            M5_LOGE("Detected an SH200Q (2019 generation). Its accel/gyro driver is not yet "
+                    "implemented in M5Unit-IMU; cannot start the built-in IMU.");
+            return false;
+
+        case m5::unit::imu::ImuKind::None:
+        default:
+            M5_LOGE("No supported built-in accel/gyro IMU detected on the internal bus.");
             return false;
     }
 }

@@ -19,6 +19,7 @@
 #include "imu/ahrs_controller.hpp"
 #include "imu/presets.hpp"
 #include "imu/mag_detect.hpp"
+#include "imu/imu_detect.hpp"
 #include "imu/filter/filter_base.hpp"
 #include "imu/filter/complementary.hpp"
 #include "imu/filter/madgwick.hpp"
