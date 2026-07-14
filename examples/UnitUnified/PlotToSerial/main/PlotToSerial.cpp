@@ -72,9 +72,6 @@ void setup()
 
 #if defined(USING_UNIT_MINI_IMU)
     unit.imuConvertParam(param);
-    M5.Log.printf("ax,ay,az,gx,gy,gz\n");
-#elif defined(USING_UNIT_BMM350)
-    M5.Log.printf("mx,my,mz\n");
 #endif
 }
 
@@ -85,11 +82,12 @@ void loop()
     if (unit.updated()) {
         const auto d = unit.latest();
 #if defined(USING_UNIT_MINI_IMU)
-        M5.Log.printf("%.3f,%.3f,%.3f,%.2f,%.2f,%.2f\n", d.accel_x() * param.accel_res, d.accel_y() * param.accel_res,
-                      d.accel_z() * param.accel_res, d.gyro_x() * param.gyro_res, d.gyro_y() * param.gyro_res,
-                      d.gyro_z() * param.gyro_res);
+        // Teleplot format (https://github.com/nesnes/teleplot): one ">name:value" per line.
+        M5.Log.printf(">ax:%.3f\n>ay:%.3f\n>az:%.3f\n>gx:%.2f\n>gy:%.2f\n>gz:%.2f\n", d.accel_x() * param.accel_res,
+                      d.accel_y() * param.accel_res, d.accel_z() * param.accel_res, d.gyro_x() * param.gyro_res,
+                      d.gyro_y() * param.gyro_res, d.gyro_z() * param.gyro_res);
 #elif defined(USING_UNIT_BMM350)
-        M5.Log.printf("%.3f,%.3f,%.3f\n", d.x_ut(), d.y_ut(), d.z_ut());
+        M5.Log.printf(">mx:%.3f\n>my:%.3f\n>mz:%.3f\n", d.x_ut(), d.y_ut(), d.z_ut());
 #endif
     }
 }
