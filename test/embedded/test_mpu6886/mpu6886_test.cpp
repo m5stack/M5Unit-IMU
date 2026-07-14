@@ -32,6 +32,15 @@ protected:
         }
         return ptr;
     }
+
+#if defined(TEST_BUILTIN)
+    // With -DTEST_BUILTIN the board's built-in MPU6886 (0x68) is exercised over the internal
+    // I2C bus instead of the external Grove port.
+    bool begin() override
+    {
+        return Units.add(*unit, M5.In_I2C) && Units.begin();
+    }
+#endif
 };
 
 TEST_F(TestMPU6886, BeginStartsPeriodic)

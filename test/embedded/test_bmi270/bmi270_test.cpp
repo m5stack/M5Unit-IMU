@@ -6,14 +6,13 @@
 /*
   UnitTest for UnitBMI270
 
-  BMI270 実機は CoreS3/AtomS3R 内蔵 (M5.In_I2C 経由)。本 test は
-  I2CComponentTestBase の既定 wiring (GROVE / 標準 I2C) で記述しており、
-  内蔵バスで実行する場合は M5Unit-CRYPTO/test/embedded/test_id/id_test.cpp の
-  `#if defined(USING_M5CORE2_AWS_BUILTIN)` で `Units.add(*unit, M5.In_I2C)` に
-  差し替える TestID::begin() オーバーライドパターンを参照し、
-  `USING_M5CORES3_BUILTIN` / `USING_M5ATOMS3R_BUILTIN` 相当のガードを追加する
-  想定 (M5Unit-IMU/test/embedded/test_bmm150/bmm150_test.cpp と同様、本 Task
-  では未実装、要フォローアップ)。
+  Default (no TEST_BUILTIN): external wiring via I2CComponentTestBase (GROVE / standard I2C),
+  e.g. a UnitDoF6/DoF9 plugged into a host's Grove port.
+
+  With -DTEST_BUILTIN: the board's built-in BMI270 is exercised over M5.In_I2C. The built-in
+  BMI270 sits at either 0x68 or 0x69 depending on the board (CoreS3/CoreS3SE: 0x69;
+  AtomS3R/StickS3/PaperS3: 0x68), so get_instance() probes both addresses via CHIP_ID (mirrors
+  M5Unified IMU_Class::begin()) and begin() wires the unit onto M5.In_I2C.
 */
 #include <gtest/gtest.h>
 #include <Wire.h>
@@ -34,13 +33,34 @@ class TestBMI270 : public I2CComponentTestBase<UnitBMI270> {
 protected:
     virtual UnitBMI270* get_instance() override
     {
+#if defined(TEST_BUILTIN)
+        // The built-in BMI270 sits at a board-dependent address (0x68 or 0x69). Detect it on the
+        // internal bus and construct with the result -- no build-time address, and a Capsule
+        // (indistinguishable from a bare StampS3 via M5.getBoard()) is handled like any other board.
+        uint8_t addr{0x68};
+        m5::unit::UnitBMI270::detectAddress(
+            [](uint8_t a, uint8_t reg, uint8_t& out) {
+                return M5.In_I2C.readRegister(a, reg, &out, 1, 400000);
+            },
+            addr);
+        auto ptr = new m5::unit::UnitBMI270(addr);
+#else
         auto ptr = new m5::unit::UnitBMI270();
+#endif
         if (ptr) {
             auto ccfg = ptr->component_config();
             ptr->component_config(ccfg);
         }
         return ptr;
     }
+
+#if defined(TEST_BUILTIN)
+    // Built-in IMU lives on the internal I2C bus, not the external Grove port.
+    bool begin() override
+    {
+        return Units.add(*unit, M5.In_I2C) && Units.begin();
+    }
+#endif
 };
 
 TEST_F(TestBMI270, BeginStartsPeriodic)

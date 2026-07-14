@@ -6,23 +6,12 @@
 /*
   UnitTest for UnitBMM150
 
-  BMM150 単体の GROVE unit は存在しないため、この test env 群は GROVE 接続前提の
-  wiring (I2CComponentTestBase の既定 begin()) のまま用意している。実機での
-  BMM150 実行は built-in (chip がボードに直結された) 構成が必要になる:
-    - 古い M5Stack Core/Fire (MPU6886 + BMM150 構成、m5::board_t::board_M5Stack) は
-      M5Unified 内蔵 IMU として BMM150 を M5.In_I2C 経由で保持している
-      (M5Unified/src/utility/IMU_Class.cpp:123, :130 の board_M5Stack 分岐/
-      M5Unified/src/utility/imu/BMM150_Class.cpp)
-    - CoreS3 / AtomS3R は BMI270 の AUX インタフェース経由 (Task 6, UnitBMI270 側で対応)
-  内蔵バスでの実行方法の前例は、M5Unit-ENV の
-  examples/UnitUnified/Paper/main/Paper.cpp (M5Paper 内蔵 SHT30 を
-  `M5.getBoard() == m5::board_t::board_M5Paper` で判定し `Units.add(sht30, M5.In_I2C)`
-  で束ねる、ただし example であり test ではない) と、実際の embedded *test* での
-  同パターンの適用例である M5Unit-CRYPTO/test/embedded/test_id/id_test.cpp
-  (`#if defined(USING_M5CORE2_AWS_BUILTIN)` で `Units.add(*unit, M5.In_I2C)` に
-  差し替える TestID::begin() オーバーライド) を参照。BMM150 を built-in 構成の
-  実機で回す場合は、同様に `USING_M5STACK_BUILTIN_BMM150` 相当のガードと
-  `M5.In_I2C` への差し替えを追加する想定 (本 Task では未実装、要フォローアップ)。
+  There is no standalone BMM150 Grove unit, so by default this test targets an external BMM150
+  reachable over the standard I2C wiring (I2CComponentTestBase's default begin()).
+
+  With -DTEST_BUILTIN the discrete built-in BMM150 (0x10) found on classic M5Stack Core/Fire
+  (board_M5Stack) is exercised over M5.In_I2C. Note CoreS3/AtomS3R expose their magnetometer via
+  the BMI270 AUX interface instead, which is covered by test_bmi270's AuxMagWhenPresent.
 */
 #include <gtest/gtest.h>
 #include <Wire.h>
@@ -50,6 +39,15 @@ protected:
         }
         return ptr;
     }
+
+#if defined(TEST_BUILTIN)
+    // With -DTEST_BUILTIN the board's discrete built-in BMM150 (0x10, e.g. classic Core/Fire) is
+    // exercised over the internal I2C bus instead of the external Grove port.
+    bool begin() override
+    {
+        return Units.add(*unit, M5.In_I2C) && Units.begin();
+    }
+#endif
 };
 
 TEST_F(TestBMM150, BeginStartsPeriodic)

@@ -30,7 +30,13 @@ void test()
 
 void setup()
 {
-    M5.begin();
+    auto cfg = M5.config();
+    // These tests drive every sensor directly through M5UnitUnified. Keep M5Unified's own M5.Imu
+    // from claiming and initializing the on-board IMU: with -DTEST_BUILTIN the unit under test
+    // shares the internal I2C bus with it, and a second owner leaves the device mid-transaction
+    // (reads NO_ACK). Harmless for external-wiring tests, which never touch M5.Imu.
+    cfg.internal_imu = false;
+    M5.begin(cfg);
 
     M5_LOGI("CPP %ld", __cplusplus);
     M5_LOGI("ESP-IDF Version %d.%d.%d", (ESP_IDF_VERSION >> 16) & 0xFF, (ESP_IDF_VERSION >> 8) & 0xFF,

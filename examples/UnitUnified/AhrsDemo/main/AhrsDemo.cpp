@@ -42,7 +42,7 @@ m5::unit::UnitIMUMini unit{};
 m5::unit::UnitBMM350 mag_unit{};
 #elif defined(USING_BUILTIN_IMU)
 m5::unit::UnitMPU6886 mpu6886{};
-m5::unit::UnitBMI270 bmi270{};
+// bmi270 is constructed inside begin_builtin() once its board-dependent I2C address is probed.
 m5::unit::UnitBMM150 bmm150{};
 #else
 #error Please choose unit!
@@ -107,6 +107,16 @@ void switch_filter()
 bool begin_builtin()
 {
     const auto board = M5.getBoard();
+
+    // The built-in BMI270 sits at a board-dependent address (0x68 or 0x69). Detect it on the
+    // internal bus and heap-construct the unit with the result; ahrs/Units keep it alive for the
+    // program's lifetime (this is an example singleton, so it is intentionally never deleted).
+    uint8_t bmi_addr{0x68};
+    m5::unit::UnitBMI270::detectAddress(
+        [](uint8_t a, uint8_t reg, uint8_t& out) { return M5.In_I2C.readRegister(a, reg, &out, 1, 400000); },
+        bmi_addr);
+    auto* bmi270 = new m5::unit::UnitBMI270(bmi_addr);
+
     switch (board) {
         case m5::board_t::board_M5StackCore2:
             if (!Units.add(mpu6886, M5.In_I2C) || !Units.begin()) {
@@ -117,18 +127,18 @@ bool begin_builtin()
         case m5::board_t::board_M5StackCoreS3:
         case m5::board_t::board_M5StackCoreS3SE:
         case m5::board_t::board_M5StackChan:
-            if (!Units.add(bmi270, M5.In_I2C) || !Units.begin()) {
+            if (!Units.add(*bmi270, M5.In_I2C) || !Units.begin()) {
                 return false;
             }
-            return m5::imu::presets::coreS3(ahrs, bmi270);
+            return m5::imu::presets::coreS3(ahrs, *bmi270);
 
         case m5::board_t::board_M5AtomS3R:
         case m5::board_t::board_M5AtomS3RCam:
         case m5::board_t::board_M5AtomS3RExt:
-            if (!Units.add(bmi270, M5.In_I2C) || !Units.begin()) {
+            if (!Units.add(*bmi270, M5.In_I2C) || !Units.begin()) {
                 return false;
             }
-            return m5::imu::presets::atomS3R(ahrs, bmi270);
+            return m5::imu::presets::atomS3R(ahrs, *bmi270);
 
         case m5::board_t::board_M5AtomMatrix:
             if (!Units.add(mpu6886, M5.In_I2C) || !Units.begin()) {
