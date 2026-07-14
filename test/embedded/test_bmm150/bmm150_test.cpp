@@ -73,15 +73,59 @@ TEST_F(TestBMM150, PeriodicMeasurement)
     EXPECT_GT(updated, 0);
     EXPECT_FALSE(unit->empty());
 
-    const auto d = unit->latest();
+    // Reject the overflow sentinel: comp_x()/comp_y()/comp_z() return bmm150::OVERFLOW_OUTPUT (-32768)
+    // for a not-ready or invalid read, which would otherwise leak -2048uT per axis into the norm (the
+    // source of the earlier flaky ~2049uT reading). Poll for a fully valid sample and assert on that.
+    float norm     = 0.0f;
+    bool got_valid = false;
+    for (int i = 0; i < 50 && !got_valid; ++i) {
+        const auto d = unit->latest();
+        if (d.comp_x() != OVERFLOW_OUTPUT && d.comp_y() != OVERFLOW_OUTPUT && d.comp_z() != OVERFLOW_OUTPUT) {
+            const float mx = d.comp_x() / 16.0f;
+            const float my = d.comp_y() / 16.0f;
+            const float mz = d.comp_z() / 16.0f;
+            norm           = std::sqrt(mx * mx + my * my + mz * mz);
+            got_valid      = true;
+            break;
+        }
+        unit->update();
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    EXPECT_TRUE(got_valid);
+    EXPECT_TRUE(std::isfinite(norm));
+#if defined(TEST_BUILTIN)
+    // A built-in magnetometer sits next to the host's speaker/battery magnet, so allow a wider ceiling
+    // for mild hard-iron offset (measured ~97uT on Gray) than the clean external geomagnetic range.
+    EXPECT_GT(norm, 10.0f);
+    EXPECT_LT(norm, 200.0f);
+#else
     // 補償後の磁場 (16 LSB/uT) を uT に戻し、地磁気の常識的な範囲 (10-100uT) に収まることを確認
-    const float mx   = d.comp_x() / 16.0f;
-    const float my   = d.comp_y() / 16.0f;
-    const float mz   = d.comp_z() / 16.0f;
-    const float norm = std::sqrt(mx * mx + my * my + mz * mz);
     EXPECT_GT(norm, 10.0f);
     EXPECT_LT(norm, 100.0f);
+#endif
 }
+
+#if defined(TEST_BUILTIN)
+// Built-in regression: the factory trim is only read from a real chip in this path (the native oracle
+// test injects trim directly), so verify read_trim() over the internal bus returns the non-zero
+// radius-hall coefficients the X/Y/Z compensation divides by. A zero dig_xyz1/dig_z1 (failed trim
+// read) is the classic cause of wildly inflated output. The full trim+compensation chain was
+// cross-checked against the BMM150 oracle on Gray (comp x=-1158 y=-973 z=359 for a captured sample).
+TEST_F(TestBMM150, BuiltInTrimReadNonZero)
+{
+    SCOPED_TRACE(ustr);
+
+    // The 0x68 burst (parsed as in UnitBMM150::read_trim) carries dig_z1 and dig_xyz1; read it directly
+    // over the internal bus (trim is OTP/stable, so this matches what begin() loaded).
+    uint8_t b2[10]{};
+    ASSERT_TRUE(M5.In_I2C.readRegister(0x10, 0x68, b2, sizeof(b2), 400000));
+    const unsigned dig_z1   = static_cast<uint16_t>((b2[3] << 8) | b2[2]);
+    const unsigned dig_xyz1 = static_cast<uint16_t>(((b2[5] << 8) | b2[4]) & 0x3FFF);
+
+    EXPECT_GT(dig_xyz1, 0u);
+    EXPECT_GT(dig_z1, 0u);
+}
+#endif
 
 TEST_F(TestBMM150, ReadImuRawPopSemantics)
 {
