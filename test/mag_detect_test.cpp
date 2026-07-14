@@ -63,6 +63,14 @@ TEST(MagDetect, FindsAk8963ByWhoAmI)
               MagKind::AK8963);
 }
 
+TEST(MagDetect, FindsMag3110ByWhoAmI)
+{
+    FakeBus bus;
+    bus.mem[{0x0E, 0x07}] = 0xC4;  // MAG3110 present
+    EXPECT_EQ(detectBuiltinMag([&](uint8_t a, uint8_t r, uint8_t& o) { return bus.read(a, r, o); }),
+              MagKind::MAG3110);
+}
+
 TEST(MagDetect, NoneWhenBusEmpty)
 {
     FakeBus bus;

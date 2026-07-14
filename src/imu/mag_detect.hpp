@@ -25,9 +25,10 @@ namespace imu {
 
 //! @brief Which built-in magnetometer a classic M5Stack host carries
 enum class MagKind : uint8_t {
-    None,    //!< @brief No magnetometer responded (e.g. an IMU-less M5Stack Basic)
-    BMM150,  //!< @brief Bosch BMM150 at 0x10
-    AK8963,  //!< @brief AKM AK8963 (MPU9250-internal) at 0x0C
+    None,     //!< @brief No magnetometer responded (e.g. an IMU-less M5Stack Basic)
+    BMM150,   //!< @brief Bosch BMM150 at 0x10
+    AK8963,   //!< @brief AKM AK8963 (MPU9250-internal) at 0x0C
+    MAG3110,  //!< @brief NXP MAG3110 at 0x0E (original 2017 M5Stack Gray, paired with an MPU6050)
 };
 
 /*!
@@ -35,11 +36,12 @@ enum class MagKind : uint8_t {
   @tparam ReadReg Callable `bool(uint8_t addr, uint8_t reg, uint8_t& out)` returning true on ACK
   @param read The bus read callable
   @return The detected magnetometer kind
-  @details AK8963 is checked first by its WHO_AM_I (0x48, readable any time). BMM150 is then
-  detected by presence at 0x10: its CHIP_ID reads 0x00 while the chip is suspended (power-on
-  default), so an ACK at 0x10 is treated as BMM150 (UnitBMM150::begin() does the authoritative
-  CHIP_ID check after powering the chip). For AK8963 to be visible at 0x0C behind an MPU9250,
-  call enableAuxBypass() first.
+  @details AK8963 (0x0C) and MAG3110 (0x0E) are checked first by their definitive WHO_AM_I ids
+  (0x48 / 0xC4, readable any time; distinct addresses so no conflict). BMM150 is then detected by
+  presence at 0x10: its CHIP_ID reads 0x00 while the chip is suspended (power-on default), so an ACK
+  at 0x10 is treated as BMM150 (UnitBMM150::begin() does the authoritative CHIP_ID check after
+  powering the chip). MAG3110 sits directly on the bus (no bypass); for AK8963 to be visible at 0x0C
+  behind an MPU9250, call enableAuxBypass() first.
  */
 template <class ReadReg>
 MagKind detectBuiltinMag(ReadReg read)
@@ -47,6 +49,9 @@ MagKind detectBuiltinMag(ReadReg read)
     uint8_t id{};
     if (read(static_cast<uint8_t>(0x0C), static_cast<uint8_t>(0x00), id) && id == 0x48) {
         return MagKind::AK8963;
+    }
+    if (read(static_cast<uint8_t>(0x0E), static_cast<uint8_t>(0x07), id) && id == 0xC4) {
+        return MagKind::MAG3110;
     }
     if (read(static_cast<uint8_t>(0x10), static_cast<uint8_t>(0x40), id)) {
         return MagKind::BMM150;
