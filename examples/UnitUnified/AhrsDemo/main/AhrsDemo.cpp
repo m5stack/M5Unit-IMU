@@ -414,6 +414,8 @@ void draw_gizmo(const float roll, const float pitch, const float yaw)
     canvas.printf("Filter: %s", filter_name(current_filter));
     canvas.setCursor(4, 14);
     canvas.printf("R:%7.2f P:%7.2f Y:%7.2f", roll, pitch, yaw);
+    canvas.setCursor(4, 26);
+    canvas.printf("Temp:%6.2f C", ahrs.latest().temp);
 
     const int w       = canvas.width();
     const int h       = canvas.height();
@@ -500,7 +502,7 @@ draw(q);
 var rr=Math.atan2(2*(q.w*q.x+q.y*q.z),1-2*(q.x*q.x+q.y*q.y))*d;
 var pp=Math.asin(Math.max(-1,Math.min(1,2*(q.w*q.y-q.z*q.x))))*d;
 var yy=Math.atan2(2*(q.w*q.z+q.x*q.y),1-2*(q.y*q.y+q.z*q.z))*d;
-r.textContent='['+q.filter+']  roll '+rr.toFixed(1)+'  pitch '+pp.toFixed(1)+'  yaw '+yy.toFixed(1);
+r.textContent='['+q.filter+']  roll '+rr.toFixed(1)+'  pitch '+pp.toFixed(1)+'  yaw '+yy.toFixed(1)+'  temp '+q.temp.toFixed(1)+'C';
 }).catch(function(){}).then(function(){setTimeout(tick,50);});}
 tick();
 fetch('/info').then(function(res){return res.json();}).then(function(o){
@@ -518,9 +520,10 @@ void handle_quaternion()
 {
     float w{1.0f}, x{}, y{}, z{};
     ahrs.quaternion(w, x, y, z);
-    char buf[128];
-    std::snprintf(buf, sizeof(buf), "{\"w\":%.4f,\"x\":%.4f,\"y\":%.4f,\"z\":%.4f,\"filter\":\"%s\"}", w, x, y, z,
-                  filter_name(current_filter));
+    char buf[160];
+    std::snprintf(buf, sizeof(buf),
+                  "{\"w\":%.4f,\"x\":%.4f,\"y\":%.4f,\"z\":%.4f,\"filter\":\"%s\",\"temp\":%.1f}", w, x, y, z,
+                  filter_name(current_filter), ahrs.latest().temp);
     web_server.send(200, "application/json", buf);
 }
 
@@ -649,7 +652,8 @@ void loop()
     if (m5::imu::any(cap)) {
         float roll{}, pitch{}, yaw{};
         ahrs.euler(roll, pitch, yaw);
-        M5.Log.printf("[%s]: %.2f,%.2f,%.2f\n", filter_name(current_filter), roll, pitch, yaw);
+        M5.Log.printf("[%s]: %.2f,%.2f,%.2f  temp:%.1f\n", filter_name(current_filter), roll, pitch, yaw,
+                      ahrs.latest().temp);
 
         if (has_lcd) {
             const auto now = m5::utility::millis();

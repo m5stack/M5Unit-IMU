@@ -83,9 +83,10 @@ void loop()
         const auto d = unit.latest();
 #if defined(USING_UNIT_MINI_IMU)
         // Teleplot format (https://github.com/nesnes/teleplot): one ">name:value" per line.
-        M5.Log.printf(">ax:%.3f\n>ay:%.3f\n>az:%.3f\n>gx:%.2f\n>gy:%.2f\n>gz:%.2f\n", d.accel_x() * param.accel_res,
-                      d.accel_y() * param.accel_res, d.accel_z() * param.accel_res, d.gyro_x() * param.gyro_res,
-                      d.gyro_y() * param.gyro_res, d.gyro_z() * param.gyro_res);
+        M5.Log.printf(">ax:%.3f\n>ay:%.3f\n>az:%.3f\n>gx:%.2f\n>gy:%.2f\n>gz:%.2f\n>temp:%.2f\n",
+                      d.accel_x() * param.accel_res, d.accel_y() * param.accel_res, d.accel_z() * param.accel_res,
+                      d.gyro_x() * param.gyro_res, d.gyro_y() * param.gyro_res, d.gyro_z() * param.gyro_res,
+                      d.temp_adc() * param.temp_res + param.temp_offset);
 #elif defined(USING_UNIT_BMM350)
         M5.Log.printf(">mx:%.3f\n>my:%.3f\n>mz:%.3f\n", d.x_ut(), d.y_ut(), d.z_ut());
 #endif
