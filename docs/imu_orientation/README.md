@@ -6,6 +6,10 @@ remap (`ahrs.writeAxisOrder` / `m5::imu::presets::*`).
 
 Notes:
 - Gray and Fire share the same MPU6886 + BMM150 axis diagram (identical layout).
+- Some hosts changed their IMU chip across hardware revisions without changing what M5.getBoard()
+  reports (Core2 v1.1 MPU6886 → v1.3 BMI270; ATOM Matrix → v1.1 BMI270). AhrsDemo probes the
+  internal bus (`m5::unit::imu::detectBuiltinImu`) to pick the accel/gyro driver, while the axis
+  remap is still selected by board (the mounting orientation is a board property).
 - Images are © M5Stack, reproduced here for development reference. Some were converted to JPEG
   (UnitMiniIMU and Gray/Fire were originally .webp).
 
@@ -75,11 +79,16 @@ v2.6 page has no orientation image, so the v2.7 diagram applies to both).
 
 [Source](https://docs.m5stack.com/en/core/gray)
 
-## AtomMatrix — MPU6886 (0x68)
+## AtomMatrix — MPU6886 (0x68); v1.1 — BMI270 (0x68)
+
+Note: ATOM Matrix v1.1 switched the IMU from MPU6886 to a 6-axis BMI270 (still no magnetometer, same
+0x68 address and same mounting orientation, so the axis remap is unchanged across the swap). Because
+M5.getBoard() cannot tell the generations apart, AhrsDemo probes the chip on the internal bus
+(`m5::unit::imu::detectBuiltinImu`) to construct the right driver.
 
 <img src="imu-atom-matrix.jpg" width="480" alt="AtomMatrix IMU orientation">
 
-[Source](https://docs.m5stack.com/en/core/ATOM%20Matrix)
+[Source](https://docs.m5stack.com/en/core/ATOM%20Matrix) · [v1.1](https://docs.m5stack.com/en/core/Atom-Matrix_v1.1)
 
 ## AtomS3 — MPU6886 (0x68)
 
@@ -122,3 +131,19 @@ v2.6 page has no orientation image, so the v2.7 diagram applies to both).
 <img src="imu-papers3.jpg" width="480" alt="PaperS3 IMU orientation">
 
 [Source](https://docs.m5stack.com/en/core/papers3)
+
+## Nesso N1 (Arduino) — BMI270 (0x68)
+
+ESP32-C6 host; 6-axis BMI270 on the internal system bus (no magnetometer). M5Unified applies no axis
+correction on the C6, so AhrsDemo uses the identity remap (the BMI270 default path). The product
+page has no dedicated IMU-orientation diagram.
+
+[Source](https://docs.m5stack.com/en/core/Arduino_Nesso_N1)
+
+## Tab5 — BMI270 (0x68)
+
+ESP32-P4 host; 6-axis BMI270 on the internal system bus (no magnetometer). M5Unified applies no axis
+correction on the P4, so AhrsDemo uses the identity remap. The product page has no dedicated
+IMU-orientation diagram.
+
+[Source](https://docs.m5stack.com/en/core/Tab5)
