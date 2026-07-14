@@ -40,7 +40,7 @@ constexpr uint32_t AUX_BUSY_POLL_RETRY{3};
 // BMM150 soft-reset settling time before it responds to AUX reads (datasheet 3.0ms)
 constexpr uint32_t AUX_RESET_DELAY_MS{3};
 
-// REG_CMD command value (REG_CHIP_ID expected value is UnitBMI270::CHIP_ID, a public API constant)
+// REG_CMD command value (REG_CHIP_ID expected value is bmi270::CHIP_ID, a namespace-scope constant)
 constexpr uint8_t CMD_SOFTRESET{0xB6};
 
 // REG_STATUS (0x03) bits

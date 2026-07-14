@@ -114,7 +114,7 @@ bool begin_builtin()
     // internal bus and heap-construct the unit with the result; ahrs/Units keep it alive for the
     // program's lifetime (this is an example singleton, so it is intentionally never deleted).
     uint8_t bmi_addr{0x68};
-    m5::unit::UnitBMI270::detectAddress(
+    m5::unit::bmi270::detectAddress(
         [](uint8_t a, uint8_t reg, uint8_t& out) { return M5.In_I2C.readRegister(a, reg, &out, 1, 400000); },
         bmi_addr);
     auto* bmi270 = new m5::unit::UnitBMI270(bmi_addr);
