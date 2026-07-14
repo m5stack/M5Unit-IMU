@@ -21,7 +21,7 @@ namespace unit {
 
 /*!
   @class UnitMPU6886
-  @brief 6-axis (accel + gyro) IMU unit. UnitIMUMini and Core2/StickC built-in
+  @brief 6-axis (accel + gyro) IMU unit. UnitMiniIMU and Core2/StickC built-in
  */
 class UnitMPU6886 : public Component,
                     public PeriodicMeasurementAdapter<UnitMPU6886, mpu6886::Data>,

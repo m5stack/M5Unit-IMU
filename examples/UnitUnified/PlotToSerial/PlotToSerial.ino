@@ -9,9 +9,9 @@
 // *************************************************************
 // Choose one define symbol to match the unit you are using
 // *************************************************************
-#if !defined(USING_UNIT_IMU_MINI) && !defined(USING_UNIT_BMM350)
-// For UnitIMUMini (SKU: TBD)
-#define USING_UNIT_IMU_MINI
+#if !defined(USING_UNIT_MINI_IMU) && !defined(USING_UNIT_BMM350)
+// For UnitMiniIMU (SKU: TBD)
+// #define USING_UNIT_MINI_IMU
 // For UnitBMM350 (U231)
 // #define USING_UNIT_BMM350
 // Following devices will be supported in later plans:

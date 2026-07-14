@@ -6,7 +6,7 @@
 /*
   UnitTest for AhrsController (real hardware)
 
-  UnitIMUMini (UnitMPU6886, GROVE) is used as the IMU source, matching
+  UnitMiniIMU (UnitMPU6886, GROVE) is used as the IMU source, matching
   test_mpu6886/mpu6886_test.cpp's fixture (default I2CComponentTestBase<UnitMPU6886>
   wiring). The unit is assumed static and level on the bench, as in
   TestMPU6886::PeriodicMeasurement.

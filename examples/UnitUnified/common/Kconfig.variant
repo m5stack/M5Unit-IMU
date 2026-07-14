@@ -5,16 +5,16 @@ menu "M5Unit-IMU example"
 
 choice EXAMPLE_IMU_VARIANT
     prompt "Target device"
-    default EXAMPLE_USING_UNIT_IMU_MINI
+    default EXAMPLE_USING_UNIT_MINI_IMU
     help
         Which IMU unit/device this example drives.
 
-    config EXAMPLE_USING_UNIT_IMU_MINI
-        bool "UnitIMUMini (MPU6886)"
+    config EXAMPLE_USING_UNIT_MINI_IMU
+        bool "UnitMiniIMU (MPU6886)"
     config EXAMPLE_USING_UNIT_BMM350
         bool "UnitBMM350 (U231)"
-    config EXAMPLE_USING_UNIT_IMU_MINI_WITH_BMM350
-        bool "UnitIMUMini + UnitBMM350, 9-axis GROVE (AhrsDemo only)"
+    config EXAMPLE_USING_UNIT_MINI_IMU_WITH_BMM350
+        bool "UnitMiniIMU + UnitBMM350, 9-axis GROVE (AhrsDemo only)"
     config EXAMPLE_USING_BUILTIN_IMU
         bool "Built-in IMU, M5.getBoard() auto-detect (AhrsDemo only)"
 endchoice
