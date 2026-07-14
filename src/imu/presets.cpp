@@ -59,10 +59,12 @@ bool m5stackCoreFire(AhrsController& ahrs, m5::unit::UnitMPU6886& mpu6886, m5::u
     if (!added_mpu6886 || !added_bmm150) {
         return false;
     }
+    // BMM150 is a pure-Mag source; the mag remap path uses the mag axis order (see
+    // ahrs_controller.cpp), so the X/Z inversion must be written via writeMagAxisOrder.
     AxisOrder mag_order;
     mag_order.invert_x = true;
     mag_order.invert_z = true;
-    ahrs.writeAxisOrder(bmm150, mag_order);
+    ahrs.writeMagAxisOrder(bmm150, mag_order);
     return true;
 }
 
