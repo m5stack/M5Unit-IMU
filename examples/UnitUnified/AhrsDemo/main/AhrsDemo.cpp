@@ -596,14 +596,15 @@ void setup()
     // Special case: on classic M5Stack Core (board_M5Stack) GROVE Port A *is* the internal I2C bus,
     // and Gray/Fire carry a built-in MPU6886 at 0x68 -- the same address as UnitMiniIMU. Routing the
     // external unit to the default port there would collide with (or silently read) the built-in
-    // IMU, so use GROVE Port C on a separate Wire1 bus instead. Every other board keeps addI2C().
+    // IMU, so use GROVE Port C on the free Arduino Wire bus (M5Unified uses In_I2C/Ex_I2C, not Wire)
+    // instead. Every other board keeps addI2C().
     if (M5.getBoard() == m5::board_t::board_M5Stack) {
         // Grove maps connector pin1 -> SCL and pin2 -> SDA (same wires as UART RX/TX). M5Unified
         // exposes Port C as port_c_pin1 (RXD) / port_c_pin2 (TXD), so SDA = pin2, SCL = pin1. The
         // unit already carries its own 400kHz clock (set in UnitMPU6886's constructor), so reuse it.
         const int sda = M5.getPin(m5::pin_name_t::port_c_pin2);
         const int scl = M5.getPin(m5::pin_name_t::port_c_pin1);
-        ok = m5::unit::wiring::i2cWire(Units, unit, Wire1, sda, scl, unit.component_config().clock) &&
+        ok = m5::unit::wiring::i2cWire(Units, unit, Wire, sda, scl, unit.component_config().clock) &&
              Units.begin() && ahrs.add(unit);
         diag.unit_label = "UnitMiniIMU (GROVE Port C @0x68)";
     } else {
