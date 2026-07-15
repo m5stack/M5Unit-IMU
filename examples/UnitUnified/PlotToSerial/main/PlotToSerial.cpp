@@ -5,7 +5,9 @@
  */
 /*
   Example using M5UnitUnified for UnitIMU series with PlotToSerial
-  Output: Arduino IDE Serial Plotter format
+  Output:
+   - Serial: Arduino IDE Serial Plotter format (Teleplot)
+   - LCD-equipped boards additionally show the same latest sensor values on-screen
 */
 #include <M5Unified.h>
 #include <M5UnitUnified.h>
@@ -38,6 +40,7 @@
 #endif
 
 namespace {
+auto& lcd = M5.Display;
 m5::unit::UnitUnified Units;
 
 #if defined(USING_UNIT_MINI_IMU)
@@ -63,11 +66,142 @@ m5::imu::imu_convert_param_t param{};
 #error Please choose unit!
 #endif
 
+M5Canvas canvas(&lcd);
+bool has_lcd{};
+constexpr uint32_t LCD_INTERVAL_MS{33};  // ~30fps
+uint32_t last_lcd_ms{};
+
+//! @brief Draw the latest sensor values on the LCD (flicker-free: draws off-screen, blits once)
+//! @details Layout adapts to the sprite height so it stays readable from small square panels
+//! (e.g. AtomS3 128x128) up to large ones (e.g. Tab5).
+void draw_lcd()
+{
+    if (!has_lcd) {
+        return;
+    }
+
+    canvas.fillScreen(TFT_BLACK);
+    canvas.setTextColor(TFT_WHITE, TFT_BLACK);
+
+    const int ts          = (canvas.height() >= 240) ? (canvas.height() / 120) : 1;
+    const int line_height = 8 * ts + 2;
+    int line              = 0;
+    canvas.setTextSize(ts);
+
+#if defined(USING_UNIT_MINI_IMU)
+    canvas.setCursor(4, 2 + line++ * line_height);
+    canvas.print("MiniIMU");
+    const auto d = unit.latest();
+    // One axis per line: at full scale (+-16g / +-2000dps) a combined line would overflow a 128px panel
+    canvas.setCursor(4, 2 + line++ * line_height);
+    canvas.printf("Ax:%+.2f", d.accel_x() * param.accel_res);
+    canvas.setCursor(4, 2 + line++ * line_height);
+    canvas.printf("Ay:%+.2f", d.accel_y() * param.accel_res);
+    canvas.setCursor(4, 2 + line++ * line_height);
+    canvas.printf("Az:%+.2f", d.accel_z() * param.accel_res);
+    canvas.setCursor(4, 2 + line++ * line_height);
+    canvas.printf("Gx:%+.1f", d.gyro_x() * param.gyro_res);
+    canvas.setCursor(4, 2 + line++ * line_height);
+    canvas.printf("Gy:%+.1f", d.gyro_y() * param.gyro_res);
+    canvas.setCursor(4, 2 + line++ * line_height);
+    canvas.printf("Gz:%+.1f", d.gyro_z() * param.gyro_res);
+    canvas.setCursor(4, 2 + line++ * line_height);
+    canvas.printf("T:%.1fC", d.temp_adc() * param.temp_res + param.temp_offset);
+#elif defined(USING_UNIT_BMM350)
+    canvas.setCursor(4, 2 + line++ * line_height);
+    canvas.print("BMM350");
+    const auto d = unit.latest();
+    canvas.setCursor(4, 2 + line++ * line_height);
+    // Integer uT keeps the line within ~16 chars so it fits a 128px panel at text size 1
+    canvas.printf("M:%+.0f %+.0f %+.0f", d.x_ut(), d.y_ut(), d.z_ut());
+#elif defined(USING_UNIT_DOF6)
+    canvas.setCursor(4, 2 + line++ * line_height);
+    canvas.print("DoF6");
+    const auto d = unit.latest();
+    // One axis per line: at full scale (+-16g / +-2000dps) a combined line would overflow a 128px panel
+    canvas.setCursor(4, 2 + line++ * line_height);
+    canvas.printf("Ax:%+.2f", d.accel_x() * param.accel_res);
+    canvas.setCursor(4, 2 + line++ * line_height);
+    canvas.printf("Ay:%+.2f", d.accel_y() * param.accel_res);
+    canvas.setCursor(4, 2 + line++ * line_height);
+    canvas.printf("Az:%+.2f", d.accel_z() * param.accel_res);
+    canvas.setCursor(4, 2 + line++ * line_height);
+    canvas.printf("Gx:%+.1f", d.gyro_x() * param.gyro_res);
+    canvas.setCursor(4, 2 + line++ * line_height);
+    canvas.printf("Gy:%+.1f", d.gyro_y() * param.gyro_res);
+    canvas.setCursor(4, 2 + line++ * line_height);
+    canvas.printf("Gz:%+.1f", d.gyro_z() * param.gyro_res);
+#elif defined(USING_UNIT_DOF9)
+    canvas.setCursor(4, 2 + line++ * line_height);
+    canvas.print("DoF9");
+    const auto a = unit.imu().latest();
+    // One axis per line: at full scale (+-16g / +-2000dps) a combined line would overflow a 128px panel
+    canvas.setCursor(4, 2 + line++ * line_height);
+    canvas.printf("Ax:%+.2f", a.accel_x() * param.accel_res);
+    canvas.setCursor(4, 2 + line++ * line_height);
+    canvas.printf("Ay:%+.2f", a.accel_y() * param.accel_res);
+    canvas.setCursor(4, 2 + line++ * line_height);
+    canvas.printf("Az:%+.2f", a.accel_z() * param.accel_res);
+    canvas.setCursor(4, 2 + line++ * line_height);
+    canvas.printf("Gx:%+.1f", a.gyro_x() * param.gyro_res);
+    canvas.setCursor(4, 2 + line++ * line_height);
+    canvas.printf("Gy:%+.1f", a.gyro_y() * param.gyro_res);
+    canvas.setCursor(4, 2 + line++ * line_height);
+    canvas.printf("Gz:%+.1f", a.gyro_z() * param.gyro_res);
+    const auto m = unit.mag().latest();
+    canvas.setCursor(4, 2 + line++ * line_height);
+    // Integer uT keeps the line within ~16 chars so it fits a 128px panel at text size 1
+    canvas.printf("M:%+.0f %+.0f %+.0f", m.x_ut(), m.y_ut(), m.z_ut());
+#elif defined(USING_UNIT_DOF10)
+    canvas.setCursor(4, 2 + line++ * line_height);
+    canvas.print("DoF10");
+    const auto a = unit.imu().latest();
+    // One axis per line: at full scale (+-16g / +-2000dps) a combined line would overflow a 128px panel
+    canvas.setCursor(4, 2 + line++ * line_height);
+    canvas.printf("Ax:%+.2f", a.accel_x() * param.accel_res);
+    canvas.setCursor(4, 2 + line++ * line_height);
+    canvas.printf("Ay:%+.2f", a.accel_y() * param.accel_res);
+    canvas.setCursor(4, 2 + line++ * line_height);
+    canvas.printf("Az:%+.2f", a.accel_z() * param.accel_res);
+    canvas.setCursor(4, 2 + line++ * line_height);
+    canvas.printf("Gx:%+.1f", a.gyro_x() * param.gyro_res);
+    canvas.setCursor(4, 2 + line++ * line_height);
+    canvas.printf("Gy:%+.1f", a.gyro_y() * param.gyro_res);
+    canvas.setCursor(4, 2 + line++ * line_height);
+    canvas.printf("Gz:%+.1f", a.gyro_z() * param.gyro_res);
+    const auto m = unit.mag().latest();
+    canvas.setCursor(4, 2 + line++ * line_height);
+    // Integer uT keeps the line within ~16 chars so it fits a 128px panel at text size 1
+    canvas.printf("M:%+.0f %+.0f %+.0f", m.x_ut(), m.y_ut(), m.z_ut());
+    canvas.setCursor(4, 2 + line++ * line_height);
+    canvas.printf("P:%.1fhPa", unit.baro().pressure());
+    canvas.setCursor(4, 2 + line++ * line_height);
+    canvas.printf("Alt:%.1fm bT:%.1fC", unit.baro().altitude(), unit.baro().temperature());
+#endif
+
+    canvas.pushSprite(0, 0);
+}
+
 }  // namespace
 
 void setup()
 {
     M5.begin();
+
+    M5.setTouchButtonHeightByRatio(100);
+    // The screen shall be in landscape mode
+    if (lcd.height() > lcd.width()) {
+        lcd.setRotation(1);
+    }
+    has_lcd = lcd.width() >= 80;  // treat the 5x5 ATOM Matrix LED "display" as no-LCD
+    if (has_lcd) {
+        // White-on-black text only -> a 1-bit palette sprite is enough. This keeps the full-screen
+        // sprite in internal RAM even on large panels (Tab5 1280x720: 1bit=115KB vs 8bit=921KB, which
+        // would not fit) and cuts the pushSprite transfer to 1/8.
+        canvas.setColorDepth(1);
+        canvas.setPsram(false);
+        canvas.createSprite(lcd.width(), lcd.height());
+    }
 
     // UnitMiniIMU / UnitDoF6 / UnitDoF9 / UnitDoF10: NessoN1 -> SoftwareI2C (M5HAL), NanoC6 / NanoH2 ->
     //                                                M5.Ex_I2C, others -> Wire
@@ -152,6 +286,15 @@ void loop()
 {
     M5.update();
     Units.update();
+
+    if (has_lcd) {
+        const auto now = m5::utility::millis();
+        if (now - last_lcd_ms >= LCD_INTERVAL_MS) {
+            last_lcd_ms = now;
+            draw_lcd();
+        }
+    }
+
 #if defined(USING_UNIT_DOF9)
     // UnitDoF9 is a composite with no measurement of its own; gate on its sub-units instead.
     if (unit.imu().updated() || unit.mag().updated()) {
