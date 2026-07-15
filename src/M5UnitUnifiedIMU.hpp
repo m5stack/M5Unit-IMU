@@ -37,6 +37,7 @@
 #include "unit/unit_bmi270.hpp"
 #include "unit/unit_ak8963.hpp"
 #include "unit/unit_mag3110.hpp"
+#include "unit/unit_dof9.hpp"
 
 /*!
   @namespace m5
@@ -52,7 +53,9 @@ namespace unit {
 
 //! @brief Alias for UnitMiniIMU (MPU6886)
 using UnitMiniIMU = m5::unit::UnitMPU6886;
-// Add product-name aliases here as needed (e.g. UnitDoF6, UnitDoF9, UnitDoF10)
+//! @brief Unit DoF6 (U228): 6-axis BMI270
+using UnitDoF6 = m5::unit::UnitBMI270;
+// Add product-name aliases here as needed (e.g. UnitDoF10)
 
 }  // namespace unit
 }  // namespace m5
