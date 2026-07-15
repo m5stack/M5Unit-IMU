@@ -6,6 +6,10 @@ remap (`ahrs.writeAxisOrder` / `m5::imu::presets::*`).
 
 Notes:
 - Gray and Fire share the same MPU6886 + BMM150 axis diagram (identical layout).
+- Several classic hosts (Gray, Fire, the original StickC) shipped **earlier IMU generations**
+  (MPU6050 + MAG3110, MPU9250 + AK8963, SH200Q + BMM150) that the current product pages no longer
+  illustrate. Those revisions are listed below **text-only** (no orientation image); their axis remap
+  must be confirmed on the original hardware before a preset is committed.
 - Some hosts changed their IMU chip across hardware revisions without changing what M5.getBoard()
   reports (Core2 v1.1 MPU6886 → v1.3 BMI270; ATOM Matrix → v1.1 BMI270). AhrsDemo probes the
   internal bus (`m5::unit::imu::detectBuiltinImu`) to pick the accel/gyro driver, while the axis
@@ -73,11 +77,38 @@ v2.6 page has no orientation image, so the v2.7 diagram applies to both).
 
 [Source](https://docs.m5stack.com/en/core/fire_v2.7)
 
+## Fire — early revisions (no orientation image)
+
+The diagrams above cover the 2019.8+ MPU6886 generation. Earlier Fire hardware used different chips
+and the current product page carries no orientation diagram for them:
+
+- **original (≤ 2019.6)** — MPU9250 (0x68, WHO_AM_I 0x71) + internal **AK8963** (0x0C, reached via the
+  MPU9250 aux bypass). Driver: `UnitMPU9250` composite (its `mag()` is the AK8963). Same generation as
+  the 2017.12–2019.6 Gray.
+- **2019.7** — **SH200Q** (0x6C) + BMM150 (0x10). Driver: `UnitSH200Q` (not yet implemented) +
+  `UnitBMM150`.
+
+Axis remap for both is unverified (no image, no M5Unified reference table); confirm on original
+hardware before committing a preset.
+
 ## Gray — MPU6886 (0x68) + BMM150 (0x10)
 
 <img src="imu-gray.jpg" width="480" alt="Gray IMU orientation">
 
 [Source](https://docs.m5stack.com/en/core/gray)
+
+## Gray — early revisions (no orientation image)
+
+The diagram above is the 2019.6+ MPU6886 + BMM150 layout. Per the
+[Gray update history](https://docs.m5stack.com/en/core/gray), earlier Gray hardware used different
+chips, for which the current product page carries no orientation diagram:
+
+- **2017 (original)** — MPU6050 (0x68) + **MAG3110** (0x0E). Two separate chips on the internal bus
+  (no aux bypass). Driver: `UnitMPU6050` + `UnitMAG3110`.
+- **2017.12 – 2019.6** — MPU9250 (0x68, WHO_AM_I 0x71) + internal **AK8963** (0x0C via the MPU9250 aux
+  bypass). Driver: `UnitMPU9250` composite. Same generation as the original Fire.
+
+Axis remap for both is unverified; confirm on original hardware before committing a preset.
 
 ## AtomMatrix — MPU6886 (0x68); v1.1 — BMI270 (0x68)
 
@@ -101,6 +132,17 @@ M5.getBoard() cannot tell the generations apart, AhrsDemo probes the chip on the
 <img src="imu-atoms3r.jpg" width="480" alt="AtomS3R IMU orientation">
 
 [Source](https://docs.m5stack.com/en/core/AtomS3R)
+
+## StickC (original) — SH200Q (0x6C) → MPU6886 (0x68) (no orientation image)
+
+The original M5StickC changed its IMU across production runs; the current product page shows no
+per-generation orientation diagram:
+
+- **2019.3** — **SH200Q** (0x6C). Driver: `UnitSH200Q` (not yet implemented).
+- **2019.8+** — MPU6886 (0x68). Driver: `UnitMPU6886`.
+
+Axis remap for the SH200Q generation is unverified. (StickC-Plus / StickC-Plus2 below are MPU6886
+throughout.)
 
 ## StickC-Plus — MPU6886 (0x68)
 
