@@ -38,6 +38,7 @@
 #include "unit/unit_ak8963.hpp"
 #include "unit/unit_mag3110.hpp"
 #include "unit/unit_dof9.hpp"
+#include "unit/unit_spa06.hpp"
 
 /*!
   @namespace m5
