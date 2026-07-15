@@ -13,10 +13,25 @@ choice EXAMPLE_IMU_VARIANT
         bool "UnitMiniIMU (MPU6886)"
     config EXAMPLE_USING_UNIT_BMM350
         bool "UnitBMM350 (U231)"
+    config EXAMPLE_USING_UNIT_DOF6
+        bool "UnitDoF6 (U228, PlotToSerial only)"
+    config EXAMPLE_USING_UNIT_DOF9
+        bool "UnitDoF9 (U229, PlotToSerial only)"
+    config EXAMPLE_USING_UNIT_DOF10
+        bool "UnitDoF10 (U230, PlotToSerial only)"
     config EXAMPLE_USING_UNIT_MINI_IMU_WITH_BMM350
         bool "UnitMiniIMU + UnitBMM350, 9-axis GROVE (AhrsDemo only)"
     config EXAMPLE_USING_BUILTIN_IMU
         bool "Built-in IMU, M5.getBoard() auto-detect (AhrsDemo only)"
 endchoice
+
+config EXAMPLE_DOF_BMI270_ADDRESS
+    hex "DoF BMI270 I2C address (SW1 switch)"
+    depends on EXAMPLE_USING_UNIT_DOF6 || EXAMPLE_USING_UNIT_DOF9 || EXAMPLE_USING_UNIT_DOF10
+    range 0x68 0x69
+    default 0x68
+    help
+        The DoF board's SW1 switch selects the BMI270 I2C address: 0x68 (default) or 0x69.
+        Set this to match the physical switch position.
 
 endmenu
