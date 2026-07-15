@@ -25,6 +25,21 @@ Notes:
 
 [Source](https://docs.m5stack.com/en/unit/imu)
 
+## Unit DoF6 (U228) — BMI270 (0x68/0x69) (no orientation image)
+
+Text-only (no orientation image yet). 6-axis BMI270; SW1 selects I2C address 0x68 (default) / 0x69.
+Axis remap for a shipped preset must be confirmed on hardware / a product IMU-axis image.
+
+## Unit DoF9 (U229) — BMI270 (0x68/0x69) + BMM350 (0x14) (no orientation image)
+
+Text-only. Adds a BMM350 magnetometer at 0x14 on the same bus (directly, not via the BMI270 AUX
+interface). Axis remap unverified.
+
+## Unit DoF10 (U230) — BMI270 (0x68/0x69) + BMM350 (0x14) + SPA06-003 (0x76) (no orientation image)
+
+Text-only. Adds an SPA06-003 barometer at 0x76. Pressure/altitude is read directly via
+`UnitDoF10::baro()` (not part of the attitude AHRS). Axis remap unverified.
+
 # Built-in hosts
 
 ## Core2 — MPU6886 (0x68)
