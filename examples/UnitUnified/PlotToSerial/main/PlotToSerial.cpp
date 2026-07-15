@@ -111,9 +111,13 @@ void draw_lcd()
     canvas.setCursor(4, 2 + line++ * line_height);
     canvas.print("BMM350");
     const auto d = unit.latest();
+    // One axis per line so the values always fit a 128px panel at text size 1
     canvas.setCursor(4, 2 + line++ * line_height);
-    // Integer uT keeps the line within ~16 chars so it fits a 128px panel at text size 1
-    canvas.printf("M:%+.0f %+.0f %+.0f", d.x_ut(), d.y_ut(), d.z_ut());
+    canvas.printf("Mx:%+.1f", d.x_ut());
+    canvas.setCursor(4, 2 + line++ * line_height);
+    canvas.printf("My:%+.1f", d.y_ut());
+    canvas.setCursor(4, 2 + line++ * line_height);
+    canvas.printf("Mz:%+.1f", d.z_ut());
 #elif defined(USING_UNIT_DOF6)
     canvas.setCursor(4, 2 + line++ * line_height);
     canvas.print("DoF6");
@@ -150,8 +154,11 @@ void draw_lcd()
     canvas.printf("Gz:%+.1f", a.gyro_z() * param.gyro_res);
     const auto m = unit.mag().latest();
     canvas.setCursor(4, 2 + line++ * line_height);
-    // Integer uT keeps the line within ~16 chars so it fits a 128px panel at text size 1
-    canvas.printf("M:%+.0f %+.0f %+.0f", m.x_ut(), m.y_ut(), m.z_ut());
+    canvas.printf("Mx:%+.1f", m.x_ut());
+    canvas.setCursor(4, 2 + line++ * line_height);
+    canvas.printf("My:%+.1f", m.y_ut());
+    canvas.setCursor(4, 2 + line++ * line_height);
+    canvas.printf("Mz:%+.1f", m.z_ut());
 #elif defined(USING_UNIT_DOF10)
     canvas.setCursor(4, 2 + line++ * line_height);
     canvas.print("DoF10");
@@ -171,8 +178,11 @@ void draw_lcd()
     canvas.printf("Gz:%+.1f", a.gyro_z() * param.gyro_res);
     const auto m = unit.mag().latest();
     canvas.setCursor(4, 2 + line++ * line_height);
-    // Integer uT keeps the line within ~16 chars so it fits a 128px panel at text size 1
-    canvas.printf("M:%+.0f %+.0f %+.0f", m.x_ut(), m.y_ut(), m.z_ut());
+    canvas.printf("Mx:%+.1f", m.x_ut());
+    canvas.setCursor(4, 2 + line++ * line_height);
+    canvas.printf("My:%+.1f", m.y_ut());
+    canvas.setCursor(4, 2 + line++ * line_height);
+    canvas.printf("Mz:%+.1f", m.z_ut());
     canvas.setCursor(4, 2 + line++ * line_height);
     canvas.printf("P:%.1fhPa", unit.baro().pressure());
     canvas.setCursor(4, 2 + line++ * line_height);
