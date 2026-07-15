@@ -11,6 +11,9 @@
      Z=blue) driven by the same AhrsController quaternion
    - Boards with WiFi also bring up a SoftAP "AhrsDemo" (password "ahrsdemo123"); browse to
      http://192.168.4.1 for the same gizmo live in a browser (works with or without an LCD)
+  Controls:
+   - BtnA click (short press): switch AHRS filter
+   - BtnA hold (long press): toggle magnetometer auto-calibration (sphere-fit hard-iron) ON/OFF
 */
 #include <M5Unified.h>
 #include <M5UnitUnified.h>
@@ -23,13 +26,26 @@
 // *************************************************************
 // Choose one define symbol to match the unit you are using
 // *************************************************************
-#if !defined(USING_UNIT_MINI_IMU) && !defined(USING_UNIT_MINI_IMU_WITH_BMM350) && !defined(USING_BUILTIN_IMU)
+#if !defined(USING_UNIT_MINI_IMU) && !defined(USING_UNIT_MINI_IMU_WITH_BMM350) && !defined(USING_BUILTIN_IMU) && \
+    !defined(USING_UNIT_DOF6) && !defined(USING_UNIT_DOF9) && !defined(USING_UNIT_DOF10)
 // For UnitMiniIMU (SKU: TBD) - 6-axis, GROVE
 #define USING_UNIT_MINI_IMU
 // For UnitMiniIMU + UnitBMM350 (U231) - 9-axis on GROVE (0x68 + 0x14 coexist)
 // #define USING_UNIT_MINI_IMU_WITH_BMM350
 // For built-in IMU (Core2 / CoreS3 / AtomS3R / M5Stack Core/Fire)
 // #define USING_BUILTIN_IMU
+// For UnitDoF6 (U228) -- 6-axis BMI270
+// #define USING_UNIT_DOF6
+// For UnitDoF9 (U229) -- 9-axis BMI270 + BMM350
+// #define USING_UNIT_DOF9
+// For UnitDoF10 (U230) -- 10-axis BMI270 + BMM350 + SPA06 barometer
+// #define USING_UNIT_DOF10
+#endif
+
+// Unit DoF BMI270 I2C address, selected by the board's SW1 switch (0x68 default / 0x69). Set this to
+// match your switch -- ArduinoIDE: edit below; PlatformIO: add -D DOF_BMI270_ADDRESS=0x69 to build_flags.
+#ifndef DOF_BMI270_ADDRESS
+#define DOF_BMI270_ADDRESS 0x68
 #endif
 
 namespace {
@@ -46,6 +62,17 @@ m5::unit::UnitBMM350 mag_unit{};
 m5::unit::UnitMPU6886 mpu6886{};
 // bmi270 is constructed inside begin_builtin() once its board-dependent I2C address is probed.
 m5::unit::UnitBMM150 bmm150{};
+#elif defined(USING_UNIT_DOF6)
+// UnitDoF6 is a plain alias of UnitBMI270. The BMI270 address (0x68/0x69) follows the DoF board's SW1
+// switch; build with DOF_BMI270_ADDRESS to match it (see the #define above).
+m5::unit::UnitDoF6 unit{DOF_BMI270_ADDRESS};
+#elif defined(USING_UNIT_DOF9)
+// BMI270 address (0x68/0x69) follows the DoF board's SW1 switch via DOF_BMI270_ADDRESS; BMM350 is 0x14.
+m5::unit::UnitDoF9 unit{DOF_BMI270_ADDRESS};
+#elif defined(USING_UNIT_DOF10)
+// BMI270 address (0x68/0x69) follows the DoF board's SW1 switch via DOF_BMI270_ADDRESS; BMM350 is 0x14,
+// SPA06 barometer is 0x76.
+m5::unit::UnitDoF10 unit{DOF_BMI270_ADDRESS};
 #else
 #error Please choose unit!
 #endif
@@ -53,6 +80,7 @@ m5::unit::UnitBMM150 bmm150{};
 M5Canvas canvas(&lcd);
 bool has_lcd{};
 m5::imu::FilterType current_filter{m5::imu::FilterType::Madgwick};
+bool auto_cal_enabled{};  // magnetometer auto-calibration state (BtnA hold); default OFF
 constexpr uint32_t GIZMO_INTERVAL_MS{33};  // ~30fps
 uint32_t last_gizmo_ms{};
 
@@ -404,6 +432,8 @@ struct ProjectedAxis {
 //! @brief Draw the filter name / roll-pitch-yaw header plus the rotating 3D axis gizmo
 void draw_gizmo(const float roll, const float pitch, const float yaw)
 {
+    const bool compact = canvas.width() < 160;  // small panels (e.g. AtomS3 128x128) need a tighter header
+
     float qw{1.0f}, qx{}, qy{}, qz{};
     ahrs.quaternion(qw, qx, qy, qz);
     const m5::math::Quaternion q(qw, qx, qy, qz);
@@ -411,11 +441,31 @@ void draw_gizmo(const float roll, const float pitch, const float yaw)
     canvas.fillScreen(TFT_BLACK);
     canvas.setTextColor(TFT_WHITE, TFT_BLACK);
     canvas.setCursor(4, 2);
-    canvas.printf("Filter: %s", filter_name(current_filter));
+    if (compact) {
+        canvas.printf("%s %s", filter_name(current_filter), auto_cal_enabled ? "Cal:ON" : "Cal:--");
+    } else {
+        canvas.printf("Filter: %s", filter_name(current_filter));
+    }
     canvas.setCursor(4, 14);
-    canvas.printf("R:%7.2f P:%7.2f Y:%7.2f", roll, pitch, yaw);
+    if (compact) {
+        canvas.printf("R:%-4.0f P:%-4.0f Y:%-4.0f", roll, pitch, yaw);
+    } else {
+        canvas.printf("R:%7.2f P:%7.2f Y:%7.2f", roll, pitch, yaw);
+    }
     canvas.setCursor(4, 26);
-    canvas.printf("Temp:%6.2f C", ahrs.latest().temp);
+    if (compact) {
+        canvas.printf("T:%.1fC", ahrs.latest().temp);
+    } else {
+        canvas.printf("Temp:%6.2f C %s", ahrs.latest().temp, auto_cal_enabled ? "Cal:ON" : "Cal:--");
+    }
+#if defined(USING_UNIT_DOF10)
+    canvas.setCursor(4, 38);
+    if (compact) {
+        canvas.printf("P:%.0f A:%.0fm", unit.baro().pressure(), unit.baro().altitude());
+    } else {
+        canvas.printf("P:%.1fhPa Alt:%.1fm", unit.baro().pressure(), unit.baro().altitude());
+    }
+#endif
 
     const int w       = canvas.width();
     const int h       = canvas.height();
@@ -502,7 +552,7 @@ draw(q);
 var rr=Math.atan2(2*(q.w*q.x+q.y*q.z),1-2*(q.x*q.x+q.y*q.y))*d;
 var pp=Math.asin(Math.max(-1,Math.min(1,2*(q.w*q.y-q.z*q.x))))*d;
 var yy=Math.atan2(2*(q.w*q.z+q.x*q.y),1-2*(q.y*q.y+q.z*q.z))*d;
-r.textContent='['+q.filter+']  roll '+rr.toFixed(1)+'  pitch '+pp.toFixed(1)+'  yaw '+yy.toFixed(1)+'  temp '+q.temp.toFixed(1)+'C';
+r.textContent='['+q.filter+']  roll '+rr.toFixed(1)+'  pitch '+pp.toFixed(1)+'  yaw '+yy.toFixed(1)+'  temp '+q.temp.toFixed(1)+'C'+(q.cal?'  Cal ON':'')+(q.press!==undefined?('  P '+q.press.toFixed(1)+'hPa Alt '+q.alt.toFixed(1)+'m'):'');
 }).catch(function(){}).then(function(){setTimeout(tick,50);});}
 tick();
 fetch('/info').then(function(res){return res.json();}).then(function(o){
@@ -520,10 +570,19 @@ void handle_quaternion()
 {
     float w{1.0f}, x{}, y{}, z{};
     ahrs.quaternion(w, x, y, z);
-    char buf[160];
+#if defined(USING_UNIT_DOF10)
+    char buf[220];
     std::snprintf(buf, sizeof(buf),
-                  "{\"w\":%.4f,\"x\":%.4f,\"y\":%.4f,\"z\":%.4f,\"filter\":\"%s\",\"temp\":%.1f}", w, x, y, z,
-                  filter_name(current_filter), ahrs.latest().temp);
+                  "{\"w\":%.4f,\"x\":%.4f,\"y\":%.4f,\"z\":%.4f,\"filter\":\"%s\",\"temp\":%.1f,\"press\":%.1f,"
+                  "\"alt\":%.1f,\"cal\":%s}",
+                  w, x, y, z, filter_name(current_filter), ahrs.latest().temp, unit.baro().pressure(),
+                  unit.baro().altitude(), auto_cal_enabled ? "true" : "false");
+#else
+    char buf[180];
+    std::snprintf(buf, sizeof(buf),
+                  "{\"w\":%.4f,\"x\":%.4f,\"y\":%.4f,\"z\":%.4f,\"filter\":\"%s\",\"temp\":%.1f,\"cal\":%s}", w, x,
+                  y, z, filter_name(current_filter), ahrs.latest().temp, auto_cal_enabled ? "true" : "false");
+#endif
     web_server.send(200, "application/json", buf);
 }
 
@@ -584,8 +643,17 @@ void setup()
     has_lcd = lcd.width() > 0;
     if (has_lcd) {
         canvas.setColorDepth(8);
-        canvas.setPsram(false);
-        canvas.createSprite(lcd.width(), lcd.height());
+        // The gizmo needs colors, so 8-bit is the minimum (a 1/4-bit palette would need index-based
+        // drawing). A full-screen 8-bit sprite on a large panel (e.g. Tab5 1280x720 = 921KB) exceeds
+        // the internal SRAM, so place big sprites in PSRAM; small ones stay internal for speed.
+        constexpr uint32_t INTERNAL_SPRITE_LIMIT{120 * 1024};  // bytes; 320x240x8bit=76.8KB stays internal
+        const uint32_t sprite_bytes = static_cast<uint32_t>(lcd.width()) * lcd.height();
+        canvas.setPsram(sprite_bytes > INTERNAL_SPRITE_LIMIT);
+        if (!canvas.createSprite(lcd.width(), lcd.height())) {
+            // Internal allocation failed (no PSRAM board with a big panel): retry in PSRAM anyway.
+            canvas.setPsram(true);
+            canvas.createSprite(lcd.width(), lcd.height());
+        }
     }
 
     diag.board = M5.getBoard();  // host board (begin_builtin() also fills the built-in chip fields)
@@ -620,6 +688,103 @@ void setup()
     diag.accel_src  = &unit;
     diag.mag_src    = &mag_unit;
     diag.mag_label  = "BMM350";
+#elif defined(USING_UNIT_DOF6)
+    // UnitDoF6 (BMI270 @0x68/0x69): same Port-C-vs-addI2C branching as UnitMiniIMU -- the DoF BMI270
+    // collides with classic-Core Gray/Fire's built-in MPU6886/BMI270 at the same 0x68 address.
+    if (M5.getBoard() == m5::board_t::board_M5Stack) {
+        const int sda = M5.getPin(m5::pin_name_t::port_c_pin2);
+        const int scl = M5.getPin(m5::pin_name_t::port_c_pin1);
+        ok            = m5::unit::wiring::i2cWire(Units, unit, Wire, sda, scl, unit.component_config().clock);
+    } else {
+        ok = m5::unit::wiring::addI2C(Units, unit, 400 * 1000U);
+    }
+    // The DoF BMI270 address is SW1-selectable (0x68 default / 0x69) and fixed at compile time via
+    // DOF_BMI270_ADDRESS. Now that the bus above is connected (addI2C()/i2cWire() have called
+    // Wire.begin() whenever their backend is Wire), probe both candidates as a diagnostic and warn if
+    // the address actually present differs from the one this build targets.
+    {
+        uint8_t detected{DOF_BMI270_ADDRESS};
+        m5::unit::bmi270::detectAddress(
+            [](const uint8_t addr, const uint8_t reg, uint8_t& out) {
+                Wire.beginTransmission(addr);
+                Wire.write(reg);
+                if (Wire.endTransmission(false) != 0) {
+                    return false;
+                }
+                if (Wire.requestFrom(addr, static_cast<size_t>(1)) != 1) {
+                    return false;
+                }
+                out = static_cast<uint8_t>(Wire.read());
+                return true;
+            },
+            detected);
+        if (detected != DOF_BMI270_ADDRESS) {
+            M5_LOGW(
+                "DoF BMI270 detected at 0x%02X but this build targets 0x%02X; rebuild with "
+                "-D DOF_BMI270_ADDRESS=0x%02X",
+                detected, DOF_BMI270_ADDRESS, detected);
+        } else {
+            M5_LOGI("DoF BMI270 at 0x%02X", DOF_BMI270_ADDRESS);
+        }
+    }
+    // DoF6 is a 6-axis BMI270 with no magnetometer -> skip the AUX BMM150 probe (silences a harmless
+    // begin() error).
+    {
+        auto c              = unit.config();
+        c.enable_aux_bmm150 = false;
+        unit.config(c);
+    }
+    ok               = ok && Units.begin() && ahrs.add(unit);
+    diag.unit_label  = "UnitDoF6 (BMI270)";
+    diag.accel_src   = &unit;
+#elif defined(USING_UNIT_DOF9) || defined(USING_UNIT_DOF10)
+    // UnitDoF9/UnitDoF10 (BMI270 @0x68/0x69 + BMM350 @0x14[+ SPA06 @0x76]): same Port-C-vs-addI2C
+    // branching as UnitMiniIMU/UnitDoF6 for the composite unit's shared bus.
+    if (M5.getBoard() == m5::board_t::board_M5Stack) {
+        const int sda = M5.getPin(m5::pin_name_t::port_c_pin2);
+        const int scl = M5.getPin(m5::pin_name_t::port_c_pin1);
+        ok            = m5::unit::wiring::i2cWire(Units, unit, Wire, sda, scl, unit.component_config().clock);
+    } else {
+        ok = m5::unit::wiring::addI2C(Units, unit, 400 * 1000U);
+    }
+    // The DoF BMI270 address is SW1-selectable (0x68 default / 0x69) and fixed at compile time via
+    // DOF_BMI270_ADDRESS. Now that the bus above is connected (addI2C()/i2cWire() have called
+    // Wire.begin() whenever their backend is Wire), probe both candidates as a diagnostic and warn if
+    // the address actually present differs from the one this build targets.
+    {
+        uint8_t detected{DOF_BMI270_ADDRESS};
+        m5::unit::bmi270::detectAddress(
+            [](const uint8_t addr, const uint8_t reg, uint8_t& out) {
+                Wire.beginTransmission(addr);
+                Wire.write(reg);
+                if (Wire.endTransmission(false) != 0) {
+                    return false;
+                }
+                if (Wire.requestFrom(addr, static_cast<size_t>(1)) != 1) {
+                    return false;
+                }
+                out = static_cast<uint8_t>(Wire.read());
+                return true;
+            },
+            detected);
+        if (detected != DOF_BMI270_ADDRESS) {
+            M5_LOGW(
+                "DoF BMI270 detected at 0x%02X but this build targets 0x%02X; rebuild with "
+                "-D DOF_BMI270_ADDRESS=0x%02X",
+                detected, DOF_BMI270_ADDRESS, detected);
+        } else {
+            M5_LOGI("DoF BMI270 at 0x%02X", DOF_BMI270_ADDRESS);
+        }
+    }
+    ok = ok && Units.begin() && ahrs.add(unit.imu()) && ahrs.add(unit.mag());
+#if defined(USING_UNIT_DOF10)
+    diag.unit_label = "UnitDoF10 (BMI270+BMM350+SPA06)";
+#else
+    diag.unit_label = "UnitDoF9 (BMI270+BMM350)";
+#endif
+    diag.accel_src = &unit.imu();
+    diag.mag_src   = &unit.mag();
+    diag.mag_label = "BMM350 (0x14)";
 #elif defined(USING_BUILTIN_IMU)
     ok = begin_builtin();
 #endif
@@ -665,8 +830,14 @@ void loop()
         }
     }
 
-    if (M5.BtnA.wasPressed()) {
+    if (M5.BtnA.wasClicked()) {  // short press (released before hold threshold): switch filter
         switch_filter();
+    }
+    if (M5.BtnA.wasHold()) {  // long press: toggle mag auto-calibration (sphere-fit hard-iron)
+        auto_cal_enabled = !auto_cal_enabled;
+        ahrs.writeAutoCalibration(0, 0, auto_cal_enabled ? 64 : 0);
+        M5_LOGI("Mag auto-calibration %s%s", auto_cal_enabled ? "ON" : "OFF",
+                auto_cal_enabled ? " (wave the device in a figure-eight to converge)" : " (converged offset kept)");
     }
 }
 

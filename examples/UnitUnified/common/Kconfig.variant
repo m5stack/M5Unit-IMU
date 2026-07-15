@@ -14,11 +14,11 @@ choice EXAMPLE_IMU_VARIANT
     config EXAMPLE_USING_UNIT_BMM350
         bool "UnitBMM350 (U231)"
     config EXAMPLE_USING_UNIT_DOF6
-        bool "UnitDoF6 (U228, PlotToSerial only)"
+        bool "UnitDoF6 (U228)"
     config EXAMPLE_USING_UNIT_DOF9
-        bool "UnitDoF9 (U229, PlotToSerial only)"
+        bool "UnitDoF9 (U229)"
     config EXAMPLE_USING_UNIT_DOF10
-        bool "UnitDoF10 (U230, PlotToSerial only)"
+        bool "UnitDoF10 (U230)"
     config EXAMPLE_USING_UNIT_MINI_IMU_WITH_BMM350
         bool "UnitMiniIMU + UnitBMM350, 9-axis GROVE (AhrsDemo only)"
     config EXAMPLE_USING_BUILTIN_IMU
