@@ -81,7 +81,6 @@ responds. All chips below have drivers in this library.
 | AtomS3 | | MPU6886 (0x68) | none |
 | AtomS3R | | BMI270 (0x68) | BMM150 (via BMI270 AUX) |
 | Capsule | | BMI270 (0x69) | none |
-| Tough / Station | | MPU6886 (0x68) | none |
 | PaperS3 | | BMI270 (0x68) | none |
 | Tab5 | | BMI270 (0x68) | none |
 | Nesso N1 | | BMI270 (0x68) | none |
