@@ -101,6 +101,58 @@ bool auto_cal_enabled{};  // magnetometer auto-calibration state (BtnA hold); de
 constexpr uint32_t GIZMO_INTERVAL_MS{33};  // ~30fps
 uint32_t last_gizmo_ms{};
 
+// -------- Post-select settle boost for Madgwick/Mahony --------
+// Both start from identity after (re)selection and pull toward the mag heading with their
+// paper-default gains (beta 0.1 / Kp 1.0) -- taking tens of seconds to settle, which looks like a
+// filter-dependent heading error next to the faster filters. Temporarily raising the gain right
+// after selection is the initialization strategy Madgwick's own report recommends (large beta
+// until converged, then the operational value) and what the Fusion library bakes in as its
+// 3-second startup ramp; this mirrors that for the two filters without a built-in ramp. The
+// steady-state gains stay at the paper defaults.
+constexpr uint32_t SETTLE_BOOST_MS{3000};
+constexpr float MADGWICK_BETA_BOOST{2.5f};  // initialization value suggested in Madgwick's report
+constexpr float MADGWICK_BETA_DEFAULT{0.1f};
+constexpr float MAHONY_KP_BOOST{5.0f};
+constexpr float MAHONY_KP_DEFAULT{1.0f};
+uint32_t settle_until_ms{};  // 0: no boost active
+
+//! @brief Start the settle boost if the just-selected filter needs one (call right after selectFilter())
+void begin_settle_boost()
+{
+    settle_until_ms = 0;
+    switch (current_filter) {
+        case m5::imu::FilterType::Madgwick:
+            static_cast<m5::imu::MadgwickFilter*>(ahrs.filter())->writeBeta(MADGWICK_BETA_BOOST);
+            settle_until_ms = m5::utility::millis() + SETTLE_BOOST_MS;
+            break;
+        case m5::imu::FilterType::Mahony:
+            static_cast<m5::imu::MahonyFilter*>(ahrs.filter())->writeKp(MAHONY_KP_BOOST);
+            settle_until_ms = m5::utility::millis() + SETTLE_BOOST_MS;
+            break;
+        default:
+            break;  // The other filters converge fast (or ramp internally, like Fusion)
+    }
+}
+
+//! @brief Restore the paper-default gain once the boost window has elapsed (call from loop())
+void end_settle_boost_if_due()
+{
+    if (!settle_until_ms || m5::utility::millis() < settle_until_ms) {
+        return;
+    }
+    settle_until_ms = 0;
+    switch (current_filter) {
+        case m5::imu::FilterType::Madgwick:
+            static_cast<m5::imu::MadgwickFilter*>(ahrs.filter())->writeBeta(MADGWICK_BETA_DEFAULT);
+            break;
+        case m5::imu::FilterType::Mahony:
+            static_cast<m5::imu::MahonyFilter*>(ahrs.filter())->writeKp(MAHONY_KP_DEFAULT);
+            break;
+        default:
+            break;
+    }
+}
+
 const char* filter_name(const m5::imu::FilterType type)
 {
     switch (type) {
@@ -147,6 +199,7 @@ void switch_filter()
     // the OLD filter's heading would keep rotating the fresh estimate by a now-meaningless
     // offset (it looks like a filter-dependent axis shift). Drop it; double-click re-tares.
     ahrs.clearYawTare();
+    begin_settle_boost();
     M5_LOGI("Filter switched to %s", filter_name(current_filter));
 }
 
@@ -694,7 +747,7 @@ draw(q);
 var rr=Math.atan2(2*(q.w*q.x+q.y*q.z),1-2*(q.x*q.x+q.y*q.y))*d;
 var pp=Math.asin(Math.max(-1,Math.min(1,2*(q.w*q.y-q.z*q.x))))*d;
 var yy=Math.atan2(2*(q.w*q.z+q.x*q.y),1-2*(q.y*q.y+q.z*q.z))*d;
-r.textContent='['+q.filter+']  roll '+rr.toFixed(1)+'  pitch '+pp.toFixed(1)+'  yaw '+yy.toFixed(1)+'  temp '+q.temp.toFixed(1)+'C'+(q.cal?'  Cal ON':'')+(q.press!==undefined?('  P '+q.press.toFixed(1)+'hPa Alt '+q.alt.toFixed(1)+'m'):'');
+r.textContent='['+q.filter+']  roll '+rr.toFixed(1)+'  pitch '+pp.toFixed(1)+'  yaw '+yy.toFixed(1)+'  temp '+q.temp.toFixed(1)+'C  Cal '+(q.cal?'ON':'OFF')+(q.press!==undefined?('  P '+q.press.toFixed(1)+'hPa Alt '+q.alt.toFixed(1)+'m'):'');
 }).catch(function(){}).then(function(){setTimeout(tick,50);});}
 tick();
 fetch('/info').then(function(res){return res.json();}).then(function(o){
@@ -979,6 +1032,7 @@ void setup()
         M5_LOGW("%s", Units.debugInfo().c_str());
     } else {
         ahrs.selectFilter(current_filter);  // FilterType::Madgwick
+        begin_settle_boost();               // the boot-time convergence benefits the same way
 
         M5_LOGI("M5UnitUnified initialized");
         M5_LOGI("%s", Units.debugInfo().c_str());
@@ -1023,6 +1077,8 @@ void loop()
 #if defined(AHRS_WEB_VIEWER)
     web_server.handleClient();
 #endif
+
+    end_settle_boost_if_due();
 
     const auto cap = ahrs.update();
     if (m5::imu::any(cap)) {
