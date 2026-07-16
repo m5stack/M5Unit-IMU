@@ -13,6 +13,7 @@
 #include <M5UnitUnified.h>
 #include <M5UnitUnifiedIMU.h>
 #include <wiring/m5_unit_unified_wiring.hpp>  // Board-aware connection helpers (include last)
+#include <wiring/m5_unit_imu_wiring.hpp>      // This library: classic Core Port C helper
 
 // *************************************************************
 // Choose one define symbol to match the unit you are using
@@ -37,14 +38,6 @@
 // match your switch -- ArduinoIDE: edit below; PlatformIO: add -D DOF_BMI270_ADDRESS=0x69 to build_flags.
 #ifndef DOF_BMI270_ADDRESS
 #define DOF_BMI270_ADDRESS 0x68
-#endif
-
-// HP (high-performance) I2C port count: IDF >= 5.2 splits HP/LP counts (SOC_HP_I2C_NUM); older
-// cores (e.g. Arduino core 2.x on IDF 4.4) only define SOC_I2C_NUM, which IS the HP count there.
-#if defined(SOC_HP_I2C_NUM)
-#define EXAMPLE_HP_I2C_NUM SOC_HP_I2C_NUM
-#else
-#define EXAMPLE_HP_I2C_NUM SOC_I2C_NUM
 #endif
 
 namespace {
@@ -230,27 +223,10 @@ void setup()
     // carry a built-in MPU6886 or BMI270 at 0x68 -- the same address as UnitMiniIMU/UnitDoF6/UnitDoF9/
     // UnitDoF10's BMI270. Route the external unit to GROVE Port C on a bus of its own so it never
     // collides with the built-in IMU (same handling as the AhrsDemo example). UnitBMM350 (0x14) does
-    // not collide, so it keeps addI2C. Grove maps connector pin1 -> SCL and pin2 -> SDA (same wires
-    // as UART RX/TX); M5Unified exposes Port C as port_c_pin1 (RXD) / port_c_pin2 (TXD).
+    // not collide, so it keeps addI2C.
     if (M5.getBoard() == m5::board_t::board_M5Stack) {
-        const int sda = M5.getPin(m5::pin_name_t::port_c_pin2);
-        const int scl = M5.getPin(m5::pin_name_t::port_c_pin1);
-#if EXAMPLE_HP_I2C_NUM >= 2
-        // On classic Core BOTH HP I2C ports sit with the lgfx i2c layer on the internal pins:
-        // In_I2C holds port 0 (the LIVE internal bus -- M5Unified keeps polling the IP5306 power IC
-        // there, and on Arduino the `Wire` object is that same port 0, so using Wire here would
-        // fight In_I2C over one peripheral with different pins -> NACKs). M5GFX's autodetect probe
-        // holds port 1, which is idle afterwards (display is SPI, backlight is PWM, no touch on
-        // this family). So rebind port 1 to the Port C pins through the same lgfx-backed
-        // m5::I2C_Class -- identical mechanism on Arduino and ESP-IDF (any IDF 5.x).
-        // (Single-HP-I2C SoCs like ESP32-C6/H2 do not define I2C_NUM_1 and are never a classic
-        // Core, so this path is compile-only there -- see the #else.)
-        static m5::I2C_Class port_c_i2c;
-        ok = port_c_i2c.begin(I2C_NUM_1, sda, scl) && m5::unit::wiring::i2cClass(Units, unit, port_c_i2c);
-#else
-        // Single-HP-I2C SoC (never a classic Core): Port C routing is not wired up here.
-        ok = false;
-#endif
+        // Route to GROVE Port C on the idle lgfx I2C port (see i2cPortC in m5_unit_imu_wiring.hpp).
+        ok = m5::unit::imu::wiring::i2cPortC(Units, unit);
     } else {
         ok = m5::unit::wiring::addI2C(Units, unit, 400 * 1000U);
     }
