@@ -22,7 +22,8 @@ namespace unit {
 /*!
   @class UnitSH200Q
   @brief Senodia SH200Q 6-axis IMU (accel + gyro + temp). No standalone GROVE unit exists; it is
-  the built-in IMU of the earliest (2019) M5StickC, on the internal I2C bus at 0x6C.
+  the built-in IMU of the earliest (2019.3) M5StickC and of the 2019.7 M5Stack Fire (there paired
+  with a discrete BMM150 magnetometer), on the internal I2C bus at 0x6C.
   @warning Field reports (and the chip's EOL status) suggest the gyroscope output is of poor
   quality (large per-axis zero offsets) and that the accel and gyro axis systems may not even
   agree with each other or with the datasheet -- verify the orientation on hardware and expect to

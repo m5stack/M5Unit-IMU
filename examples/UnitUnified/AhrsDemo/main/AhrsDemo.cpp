@@ -66,7 +66,10 @@ m5::unit::UnitBMM350 mag_unit{};
 m5::unit::UnitMPU6886 mpu6886{};
 // bmi270 is constructed inside begin_builtin() once its board-dependent I2C address is probed.
 m5::unit::UnitBMM150 bmm150{};
-m5::unit::UnitSH200Q sh200q{};  // earliest (2019) M5StickC only
+m5::unit::UnitSH200Q sh200q{};  // 2019.3 M5StickC / 2019.7 Fire (there paired with the BMM150)
+m5::unit::UnitMPU6050 mpu6050{};  // 2017 Gray (paired with the MAG3110)
+m5::unit::UnitMAG3110 mag3110{};  // 2017 Gray's discrete magnetometer
+m5::unit::UnitMPU9250 mpu9250{};  // original Fire / 2017.12 Gray / some early Basic (internal AK8963)
 #elif defined(USING_UNIT_DOF6)
 // UnitDoF6 is a plain alias of UnitBMI270. The BMI270 address (0x68/0x69) follows the DoF board's SW1
 // switch; build with DOF_BMI270_ADDRESS to match it (see the #define above).
@@ -281,10 +284,10 @@ void axis_order_str(const m5::imu::AxisOrder& o, char* const buf, const size_t n
 #endif  // __has_include(<WiFi.h>) && !ESP32H2
 
 #if defined(USING_BUILTIN_IMU)
-//! @brief Register a built-in MPU6886/MPU6050 with ahrs, applying this board's axis correction
-//! @details The accel/gyro chip has already been identified as an MPU6886-family part by
-//! begin_builtin(). M5.getBoard() then selects the axis-remap preset, since the mounting
-//! orientation is a board property (see src/imu/presets.hpp).
+//! @brief Register a built-in MPU6886 with ahrs, applying this board's axis correction
+//! @details The accel/gyro chip has already been identified as an MPU6886 by begin_builtin().
+//! M5.getBoard() then selects the axis-remap preset, since the mounting orientation is a board
+//! property (see src/imu/presets.hpp).
 bool begin_builtin_mpu6886(const m5::board_t board)
 {
     if (!Units.add(mpu6886, M5.In_I2C)) {
@@ -371,17 +374,91 @@ bool begin_builtin_bmi270(const m5::board_t board)
     }
 }
 
-//! @brief Register a built-in SH200Q with ahrs (the earliest 2019 M5StickC only)
-//! @details No axis-remap preset is applied yet: field reports suggest the SH200Q's accel and gyro
-//! axis systems may not agree with each other (or the datasheet), so identity is used until the
-//! orientation is confirmed on hardware (docs/imu_orientation). Expect a large gyro zero offset.
-bool begin_builtin_sh200q()
+//! @brief Register a built-in MPU6050 with ahrs (the 2017 original Gray, paired with a MAG3110)
+//! @details The MPU6050 (WHO_AM_I 0x68) needs its own driver instance -- UnitMPU6886 rejects its
+//! id. Its only built-in host is the 2017 Gray, where a discrete MAG3110 sits at 0x0E; it is probed
+//! and added up front so Units.begin() runs exactly once (same constraint as
+//! begin_builtin_mpu6886()). No axis-remap preset exists for this generation (M5Unified has no
+//! reference table), so both sources stay at identity until confirmed on 2017 hardware
+//! (docs/imu_orientation).
+bool begin_builtin_mpu6050(const m5::board_t board)
 {
-    if (!Units.add(sh200q, M5.In_I2C) || !Units.begin()) {
+    if (!Units.add(mpu6050, M5.In_I2C)) {
+        return false;
+    }
+    diag.accel_src = &mpu6050;
+
+    const bool has_mag3110 =
+        (board == m5::board_t::board_M5Stack) &&
+        (m5::unit::imu::detectBuiltinMag([](uint8_t a, uint8_t reg, uint8_t& out) {
+             return M5.In_I2C.readRegister(a, reg, &out, 1, 400000);
+         }) == m5::unit::imu::MagKind::MAG3110);
+    if (has_mag3110) {
+        Units.add(mag3110, M5.In_I2C);
+    }
+    if (!Units.begin()) {
+        return false;
+    }
+
+    if (!ahrs.add(mpu6050)) {
+        return false;
+    }
+    if (has_mag3110) {
+        diag.mag_src   = &mag3110;
+        diag.mag_label = "MAG3110";
+        return ahrs.add(mag3110);  // identity mag remap (unverified generation)
+    }
+    return true;
+}
+
+//! @brief Register a built-in MPU9250 (accel/gyro + internal AK8963 mag) with ahrs
+//! @details The original Fire, the 2017.12-2019.6 Gray, and some early Basic lots carry the
+//! MPU9250. UnitMPU9250 is a composite: the unit itself is the accel/gyro die, its AK8963 mag die
+//! is a framework child begun automatically by Units.begin(). The AK8963's YXZ + Z-inversion mag
+//! remap is gated on the accel chip being an MPU9250 (mirrors M5Unified), not on the board; the
+//! accel/gyro stay at identity on board_M5Stack.
+bool begin_builtin_mpu9250()
+{
+    if (!Units.add(mpu9250, M5.In_I2C) || !Units.begin()) {
+        return false;
+    }
+    diag.accel_src = &mpu9250;
+    diag.mag_src   = &mpu9250.mag();
+    diag.mag_label = "AK8963";
+    return ahrs.add(mpu9250) && m5::imu::presets::mpu9250Ak8963(ahrs, mpu9250.mag());
+}
+
+//! @brief Register a built-in SH200Q with ahrs (2019.3 M5StickC, or a 2019.7 Fire with a BMM150)
+//! @details No accel/gyro axis-remap preset is applied yet: field reports suggest the SH200Q's
+//! accel and gyro axis systems may not agree with each other (or the datasheet), so identity is
+//! used until the orientation is confirmed on hardware (docs/imu_orientation). Expect a large gyro
+//! zero offset. On board_M5Stack (Fire 2019.7) the discrete BMM150 is probed and added up front so
+//! Units.begin() runs exactly once (same constraint as begin_builtin_mpu6886()).
+bool begin_builtin_sh200q(const m5::board_t board)
+{
+    if (!Units.add(sh200q, M5.In_I2C)) {
         return false;
     }
     diag.accel_src = &sh200q;
     diag.imu_addr  = 0x6C;
+
+    const bool has_bmm150 =
+        (board == m5::board_t::board_M5Stack) &&
+        (m5::unit::imu::detectBuiltinMag([](uint8_t a, uint8_t reg, uint8_t& out) {
+             return M5.In_I2C.readRegister(a, reg, &out, 1, 400000);
+         }) == m5::unit::imu::MagKind::BMM150);
+    if (has_bmm150) {
+        Units.add(bmm150, M5.In_I2C);
+    }
+    if (!Units.begin()) {
+        return false;
+    }
+
+    if (has_bmm150) {
+        diag.mag_src   = &bmm150;
+        diag.mag_label = "BMM150";
+        return m5::imu::presets::m5stackCoreFire(ahrs, sh200q, bmm150);
+    }
     return ahrs.add(sh200q);
 }
 
@@ -403,9 +480,13 @@ bool begin_builtin()
     bool ok{};
     switch (kind) {
         case m5::unit::imu::ImuKind::MPU6886:
-        case m5::unit::imu::ImuKind::MPU6050:
             diag.builtin = true;
             ok           = begin_builtin_mpu6886(board);
+            break;
+
+        case m5::unit::imu::ImuKind::MPU6050:
+            diag.builtin = true;
+            ok           = begin_builtin_mpu6050(board);
             break;
 
         case m5::unit::imu::ImuKind::BMI270:
@@ -414,15 +495,13 @@ bool begin_builtin()
             break;
 
         case m5::unit::imu::ImuKind::MPU9250:
-            M5_LOGE("Detected an MPU9250 (original 9-axis generation). Its accel/gyro driver is not "
-                    "yet implemented in M5Unit-IMU; cannot start the built-in IMU.");
-            fail_reason     = "MPU9250 detected: driver not supported";
-            diag.unit_label = fail_reason;  // /info "source" reports the reason
-            return false;
+            diag.builtin = true;
+            ok           = begin_builtin_mpu9250();
+            break;
 
         case m5::unit::imu::ImuKind::SH200Q:
             diag.builtin = true;
-            ok           = begin_builtin_sh200q();
+            ok           = begin_builtin_sh200q(board);
             break;
 
         case m5::unit::imu::ImuKind::None:
@@ -440,9 +519,8 @@ bool begin_builtin()
         diag.mag_label = "BMM150 (AUX)";
     }
     if (!ok && !fail_reason) {
-        // Kind was MPU6886/MPU6050/BMI270 (recognized chip), but begin_builtin_mpu6886()/
-        // begin_builtin_bmi270() itself failed (e.g. a bus error) -- distinct from "no supported
-        // chip" above.
+        // Kind was a recognized chip, but its begin_builtin_*() helper itself failed (e.g. a bus
+        // error) -- distinct from "no supported chip" above.
         fail_reason     = "Built-in IMU begin failed";
         diag.unit_label = fail_reason;  // /info "source" reports the reason
     }

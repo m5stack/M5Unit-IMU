@@ -27,6 +27,7 @@
 #include "../unit/unit_bmm150.hpp"
 #include "../unit/unit_mpu6886.hpp"
 #include "../unit/unit_ak8963.hpp"
+#include "../unit/unit_sh200q.hpp"
 #include "ahrs_controller.hpp"
 
 namespace m5 {
@@ -88,6 +89,20 @@ bool atomS3R(AhrsController& ahrs, m5::unit::UnitBMI270& bmi270);
   the correction.
  */
 bool m5stackCoreFire(AhrsController& ahrs, m5::unit::UnitMPU6886& mpu6886, m5::unit::UnitBMM150& bmm150);
+
+/*!
+  @brief Fire 2019.7's built-in SH200Q + discrete BMM150 magnetometer
+  @param ahrs Controller to register sh200q and bmm150 with
+  @param sh200q The board's built-in SH200Q (must already be begin()'d)
+  @param bmm150 The board's built-in, separately-wired BMM150 (must already be begin()'d)
+  @return False if either add() call fails (see AhrsController::add())
+  @details The BMM150's X/Z inversion is a board-mounting property of board_M5Stack (M5Unified
+  gates it on the board, not on the accel chip), so the same mag correction as the MPU6886
+  generation applies. The SH200Q accel/gyro stay at identity: no M5Unified reference table exists
+  for it and field reports suggest its accel and gyro axis systems may disagree -- confirm on 2019.7
+  hardware before committing a correction (see docs/imu_orientation).
+ */
+bool m5stackCoreFire(AhrsController& ahrs, m5::unit::UnitSH200Q& sh200q, m5::unit::UnitBMM150& bmm150);
 
 /*!
   @brief AtomMatrix's built-in MPU6886

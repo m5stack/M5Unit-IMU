@@ -68,6 +68,23 @@ bool m5stackCoreFire(AhrsController& ahrs, m5::unit::UnitMPU6886& mpu6886, m5::u
     return true;
 }
 
+bool m5stackCoreFire(AhrsController& ahrs, m5::unit::UnitSH200Q& sh200q, m5::unit::UnitBMM150& bmm150)
+{
+    const bool added_sh200q = ahrs.add(sh200q);
+    const bool added_bmm150 = ahrs.add(bmm150);
+    if (!added_sh200q || !added_bmm150) {
+        return false;
+    }
+    // The BMM150 mounting (and thus its X/Z inversion) is a board property of board_M5Stack,
+    // identical to the MPU6886 generation. The SH200Q accel/gyro stay at identity until the
+    // 2019.7 orientation is confirmed on hardware (see presets.hpp).
+    AxisOrder mag_order;
+    mag_order.invert_x = true;
+    mag_order.invert_z = true;
+    ahrs.writeMagAxisOrder(bmm150, mag_order);
+    return true;
+}
+
 bool atomMatrix(AhrsController& ahrs, m5::unit::UnitMPU6886& mpu6886)
 {
     if (!ahrs.add(mpu6886)) {

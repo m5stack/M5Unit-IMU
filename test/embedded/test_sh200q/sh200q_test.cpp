@@ -6,10 +6,10 @@
 /*
   UnitTest for UnitSH200Q
 
-  With -DTEST_BUILTIN the SH200Q on the earliest (2019) M5StickC is exercised over M5.In_I2C at
-  0x6C. Later StickC revisions carry an MPU6886 instead, so this env only passes on the original
-  2019 hardware. The gyro check is deliberately loose: the SH200Q gyro is known to have large
-  per-axis zero offsets.
+  With -DTEST_BUILTIN the SH200Q on the earliest (2019.3) M5StickC -- or on a 2019.7 M5Stack Fire
+  -- is exercised over M5.In_I2C at 0x6C. Other revisions of both boards carry different chips, so
+  the SH200Q envs only pass on those original lots. The gyro check is deliberately loose: the
+  SH200Q gyro is known to have large per-axis zero offsets.
 */
 #include <gtest/gtest.h>
 #include <Wire.h>
