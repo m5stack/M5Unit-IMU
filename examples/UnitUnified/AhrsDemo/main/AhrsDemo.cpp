@@ -66,7 +66,7 @@ m5::unit::UnitBMM350 mag_unit{};
 m5::unit::UnitMPU6886 mpu6886{};
 // bmi270 is constructed inside begin_builtin() once its board-dependent I2C address is probed.
 m5::unit::UnitBMM150 bmm150{};
-m5::unit::UnitSH200Q sh200q{};  // 2019.3 M5StickC / 2019.7 Fire (there paired with the BMM150)
+m5::unit::UnitSH200Q sh200q{};    // 2019.3 M5StickC / 2019.7 Fire (there paired with the BMM150)
 m5::unit::UnitMPU6050 mpu6050{};  // 2017 Gray (paired with the MAG3110)
 m5::unit::UnitMAG3110 mag3110{};  // 2017 Gray's discrete magnetometer
 m5::unit::UnitMPU9250 mpu9250{};  // original Fire / 2017.12 Gray / some early Basic (internal AK8963)
@@ -85,8 +85,8 @@ m5::unit::UnitDoF10 unit{DOF_BMI270_ADDRESS};
 #error Please choose unit!
 #endif
 
-M5Canvas text_canvas(&lcd);   // 1-bit header strip (text is white-on-black only)
-M5Canvas gizmo_canvas(&lcd);  // 2-bit palette square for the colored 3D axis gizmo
+M5Canvas text_canvas(&lcd);      // 1-bit header strip (text is white-on-black only)
+M5Canvas gizmo_canvas(&lcd);     // 2-bit palette square for the colored 3D axis gizmo
 constexpr int32_t HEADER_H{50};  // covers the 4 header text lines (y = 2/14/26/38)
 
 // gizmo_canvas palette indices (a palette sprite interprets color arguments as indices)
@@ -97,7 +97,7 @@ constexpr uint8_t PAL_BLUE{3};
 
 bool has_lcd{};
 m5::imu::FilterType current_filter{m5::imu::FilterType::Madgwick};
-bool auto_cal_enabled{};  // magnetometer auto-calibration state (BtnA hold); default OFF
+bool auto_cal_enabled{};                   // magnetometer auto-calibration state (BtnA hold); default OFF
 constexpr uint32_t GIZMO_INTERVAL_MS{33};  // ~30fps
 uint32_t last_gizmo_ms{};
 
@@ -207,14 +207,14 @@ void switch_filter()
 // Lets you compare, from a browser, which board/chip was detected and exactly which axis remap is
 // being applied -- handy when checking a board's orientation against docs/imu_orientation.
 struct DiagInfo {
-    m5::board_t board{};                             //!< M5.getBoard()
-    bool builtin{false};                             //!< true: built-in IMU; false: external Unit
+    m5::board_t board{};                                       //!< M5.getBoard()
+    bool builtin{false};                                       //!< true: built-in IMU; false: external Unit
     m5::unit::imu::ImuKind imu{m5::unit::imu::ImuKind::None};  //!< probed accel/gyro chip (built-in)
-    uint8_t imu_addr{0x68};                          //!< accel/gyro I2C address
-    const char* unit_label{"?"};                     //!< source label when !builtin
-    const char* mag_label{"none"};                   //!< magnetometer description
-    m5::imu::IMUDataSource* accel_src{nullptr};      //!< source whose Accel/Gyro axis order to show
-    m5::imu::IMUDataSource* mag_src{nullptr};        //!< source whose Mag axis order to show (or null)
+    uint8_t imu_addr{0x68};                                    //!< accel/gyro I2C address
+    const char* unit_label{"?"};                               //!< source label when !builtin
+    const char* mag_label{"none"};                             //!< magnetometer description
+    m5::imu::IMUDataSource* accel_src{nullptr};                //!< source whose Accel/Gyro axis order to show
+    m5::imu::IMUDataSource* mag_src{nullptr};                  //!< source whose Mag axis order to show (or null)
 };
 DiagInfo diag;
 
@@ -233,75 +233,141 @@ const char* board_name(const m5::board_t b)
     using B = m5::board_t;
     switch (b) {
         // --- boards with a built-in display ---
-        case B::board_M5Stack:         return "M5Stack (Basic/Gray/Fire)";
-        case B::board_M5StackCore2:    return "Core2";
-        case B::board_M5StickC:        return "StickC";
-        case B::board_M5StickCPlus:    return "StickC Plus";
-        case B::board_M5StickCPlus2:   return "StickC Plus2";
-        case B::board_M5StackCoreInk:  return "Core Ink";
-        case B::board_M5Paper:         return "Paper";
-        case B::board_M5Tough:         return "Tough";
-        case B::board_M5Station:       return "Station";
-        case B::board_M5StackCoreS3:   return "CoreS3";
-        case B::board_M5AtomS3:        return "AtomS3";
-        case B::board_M5Dial:          return "Dial";
-        case B::board_M5DinMeter:      return "DinMeter";
-        case B::board_M5Cardputer:     return "Cardputer";
-        case B::board_M5AirQ:          return "AirQ";
-        case B::board_M5VAMeter:       return "VAMeter";
-        case B::board_M5StackCoreS3SE: return "CoreS3 SE";
-        case B::board_M5AtomS3R:       return "AtomS3R";
-        case B::board_M5PaperS3:       return "PaperS3";
-        case B::board_M5CoreMP135:     return "CoreMP135";
-        case B::board_M5StampPLC:      return "StampPLC";
-        case B::board_M5Tab5:          return "Tab5";
-        case B::board_ArduinoNessoN1:  return "Nesso N1";
-        case B::board_M5CardputerADV:  return "Cardputer ADV";
-        case B::board_M5UnitC6L:       return "UnitC6L";
-        case B::board_M5StickS3:       return "StickS3";
-        case B::board_M5StackChan:     return "StackChan";
-        case B::board_M5PaperColor:    return "Paper Color";
-        case B::board_M5PaperMono:     return "Paper Mono";
-        case B::board_M5StopWatch:     return "StopWatch";
+        case B::board_M5Stack:
+            return "M5Stack (Basic/Gray/Fire)";
+        case B::board_M5StackCore2:
+            return "Core2";
+        case B::board_M5StickC:
+            return "StickC";
+        case B::board_M5StickCPlus:
+            return "StickC Plus";
+        case B::board_M5StickCPlus2:
+            return "StickC Plus2";
+        case B::board_M5StackCoreInk:
+            return "Core Ink";
+        case B::board_M5Paper:
+            return "Paper";
+        case B::board_M5Tough:
+            return "Tough";
+        case B::board_M5Station:
+            return "Station";
+        case B::board_M5StackCoreS3:
+            return "CoreS3";
+        case B::board_M5AtomS3:
+            return "AtomS3";
+        case B::board_M5Dial:
+            return "Dial";
+        case B::board_M5DinMeter:
+            return "DinMeter";
+        case B::board_M5Cardputer:
+            return "Cardputer";
+        case B::board_M5AirQ:
+            return "AirQ";
+        case B::board_M5VAMeter:
+            return "VAMeter";
+        case B::board_M5StackCoreS3SE:
+            return "CoreS3 SE";
+        case B::board_M5AtomS3R:
+            return "AtomS3R";
+        case B::board_M5PaperS3:
+            return "PaperS3";
+        case B::board_M5CoreMP135:
+            return "CoreMP135";
+        case B::board_M5StampPLC:
+            return "StampPLC";
+        case B::board_M5Tab5:
+            return "Tab5";
+        case B::board_ArduinoNessoN1:
+            return "Nesso N1";
+        case B::board_M5CardputerADV:
+            return "Cardputer ADV";
+        case B::board_M5UnitC6L:
+            return "UnitC6L";
+        case B::board_M5StickS3:
+            return "StickS3";
+        case B::board_M5StackChan:
+            return "StackChan";
+        case B::board_M5PaperColor:
+            return "Paper Color";
+        case B::board_M5PaperMono:
+            return "Paper Mono";
+        case B::board_M5StopWatch:
+            return "StopWatch";
         // --- boards without a display ---
-        case B::board_M5AtomLite:      return "ATOM Lite";
-        case B::board_M5AtomPsram:     return "ATOM PSRAM";
-        case B::board_M5AtomU:         return "ATOM U";
-        case B::board_M5Camera:        return "Camera";
-        case B::board_M5TimerCam:      return "TimerCam";
-        case B::board_M5StampPico:     return "StampPico";
-        case B::board_M5StampC3:       return "StampC3";
-        case B::board_M5StampC3U:      return "StampC3U";
-        case B::board_M5StampS3:       return "StampS3";
-        case B::board_M5AtomS3Lite:    return "AtomS3 Lite";
-        case B::board_M5AtomS3U:       return "AtomS3 U";
-        case B::board_M5Capsule:       return "Capsule";
-        case B::board_M5NanoC6:        return "NanoC6";
-        case B::board_M5AtomMatrix:    return "ATOM Matrix";
-        case B::board_M5AtomVoice:     return "ATOM Echo/Voice";
-        case B::board_M5AtomS3RExt:    return "AtomS3R Ext";
-        case B::board_M5AtomS3RCam:    return "AtomS3R Cam";
-        case B::board_M5AtomVoiceS3R:  return "Atom Echo/Voice S3R";
-        case B::board_M5PowerHub:      return "PowerHub";
-        case B::board_M5DualKey:       return "DualKey";
-        case B::board_M5UnitPoEP4:     return "UnitPoE P4";
-        case B::board_M5StampS3Bat:    return "StampS3 Bat";
-        case B::board_M5StampP4:       return "StampP4";
-        case B::board_M5NanoH2:        return "NanoH2";
+        case B::board_M5AtomLite:
+            return "ATOM Lite";
+        case B::board_M5AtomPsram:
+            return "ATOM PSRAM";
+        case B::board_M5AtomU:
+            return "ATOM U";
+        case B::board_M5Camera:
+            return "Camera";
+        case B::board_M5TimerCam:
+            return "TimerCam";
+        case B::board_M5StampPico:
+            return "StampPico";
+        case B::board_M5StampC3:
+            return "StampC3";
+        case B::board_M5StampC3U:
+            return "StampC3U";
+        case B::board_M5StampS3:
+            return "StampS3";
+        case B::board_M5AtomS3Lite:
+            return "AtomS3 Lite";
+        case B::board_M5AtomS3U:
+            return "AtomS3 U";
+        case B::board_M5Capsule:
+            return "Capsule";
+        case B::board_M5NanoC6:
+            return "NanoC6";
+        case B::board_M5AtomMatrix:
+            return "ATOM Matrix";
+        case B::board_M5AtomVoice:
+            return "ATOM Echo/Voice";
+        case B::board_M5AtomS3RExt:
+            return "AtomS3R Ext";
+        case B::board_M5AtomS3RCam:
+            return "AtomS3R Cam";
+        case B::board_M5AtomVoiceS3R:
+            return "Atom Echo/Voice S3R";
+        case B::board_M5PowerHub:
+            return "PowerHub";
+        case B::board_M5DualKey:
+            return "DualKey";
+        case B::board_M5UnitPoEP4:
+            return "UnitPoE P4";
+        case B::board_M5StampS3Bat:
+            return "StampS3 Bat";
+        case B::board_M5StampP4:
+            return "StampP4";
+        case B::board_M5NanoH2:
+            return "NanoH2";
         // --- external displays ---
-        case B::board_M5AtomDisplay:   return "AtomDisplay";
-        case B::board_M5UnitLCD:       return "UnitLCD";
-        case B::board_M5UnitOLED:      return "UnitOLED";
-        case B::board_M5UnitMiniOLED:  return "UnitMiniOLED";
-        case B::board_M5UnitGLASS:     return "UnitGLASS";
-        case B::board_M5UnitGLASS2:    return "UnitGLASS2";
-        case B::board_M5UnitRCA:       return "UnitRCA";
-        case B::board_M5ModuleDisplay: return "ModuleDisplay";
-        case B::board_M5ModuleRCA:     return "ModuleRCA";
-        case B::board_M5UnitPoEP4HDMI: return "UnitPoE P4 HDMI";
-        case B::board_FrameBuffer:     return "FrameBuffer";
+        case B::board_M5AtomDisplay:
+            return "AtomDisplay";
+        case B::board_M5UnitLCD:
+            return "UnitLCD";
+        case B::board_M5UnitOLED:
+            return "UnitOLED";
+        case B::board_M5UnitMiniOLED:
+            return "UnitMiniOLED";
+        case B::board_M5UnitGLASS:
+            return "UnitGLASS";
+        case B::board_M5UnitGLASS2:
+            return "UnitGLASS2";
+        case B::board_M5UnitRCA:
+            return "UnitRCA";
+        case B::board_M5ModuleDisplay:
+            return "ModuleDisplay";
+        case B::board_M5ModuleRCA:
+            return "ModuleRCA";
+        case B::board_M5UnitPoEP4HDMI:
+            return "UnitPoE P4 HDMI";
+        case B::board_FrameBuffer:
+            return "FrameBuffer";
         case B::board_unknown:
-        default:                       return "unknown";
+        default:
+            return "unknown";
     }
 }
 
@@ -310,13 +376,19 @@ const char* imu_kind_name(const m5::unit::imu::ImuKind k)
 {
     using K = m5::unit::imu::ImuKind;
     switch (k) {
-        case K::MPU6050: return "MPU6050";
-        case K::MPU6886: return "MPU6886";
-        case K::MPU9250: return "MPU9250";
-        case K::BMI270:  return "BMI270";
-        case K::SH200Q:  return "SH200Q";
+        case K::MPU6050:
+            return "MPU6050";
+        case K::MPU6886:
+            return "MPU6886";
+        case K::MPU9250:
+            return "MPU9250";
+        case K::BMI270:
+            return "BMI270";
+        case K::SH200Q:
+            return "SH200Q";
         case K::None:
-        default:         return "none";
+        default:
+            return "none";
     }
 }
 
@@ -324,8 +396,8 @@ const char* imu_kind_name(const m5::unit::imu::ImuKind k)
 void axis_order_str(const m5::imu::AxisOrder& o, char* const buf, const size_t n)
 {
     static const char* const PERM[] = {"XYZ", "XZY", "YXZ", "YZX", "ZXY", "ZYX"};
-    char inv[4] = {};
-    size_t k    = 0;
+    char inv[4]                     = {};
+    size_t k                        = 0;
     if (o.invert_x) {
         inv[k++] = 'X';
     }
@@ -358,11 +430,10 @@ bool begin_builtin_mpu6886(const m5::board_t board)
     // the already-running mpu6886; UnitMPU6886::begin() returns false when it is already periodic
     // and its DEVICE_RESET stops measurement -- so a second begin silently kills the gyro clock and
     // the AHRS filter never updates.)
-    const bool has_bmm150 =
-        (board == m5::board_t::board_M5Stack) &&
-        (m5::unit::imu::detectBuiltinMag([](uint8_t a, uint8_t reg, uint8_t& out) {
-             return M5.In_I2C.readRegister(a, reg, &out, 1, 400000);
-         }) == m5::unit::imu::MagKind::BMM150);
+    const bool has_bmm150 = (board == m5::board_t::board_M5Stack) &&
+                            (m5::unit::imu::detectBuiltinMag([](uint8_t a, uint8_t reg, uint8_t& out) {
+                                 return M5.In_I2C.readRegister(a, reg, &out, 1, 400000);
+                             }) == m5::unit::imu::MagKind::BMM150);
     if (has_bmm150) {
         Units.add(bmm150, M5.In_I2C);
     }
@@ -401,8 +472,7 @@ bool begin_builtin_bmi270(const m5::board_t board)
 {
     uint8_t bmi_addr{0x68};
     m5::unit::bmi270::detectAddress(
-        [](uint8_t a, uint8_t reg, uint8_t& out) { return M5.In_I2C.readRegister(a, reg, &out, 1, 400000); },
-        bmi_addr);
+        [](uint8_t a, uint8_t reg, uint8_t& out) { return M5.In_I2C.readRegister(a, reg, &out, 1, 400000); }, bmi_addr);
     auto* bmi270 = new m5::unit::UnitBMI270(bmi_addr);
     if (!Units.add(*bmi270, M5.In_I2C) || !Units.begin()) {
         return false;
@@ -445,11 +515,10 @@ bool begin_builtin_mpu6050(const m5::board_t board)
     }
     diag.accel_src = &mpu6050;
 
-    const bool has_mag3110 =
-        (board == m5::board_t::board_M5Stack) &&
-        (m5::unit::imu::detectBuiltinMag([](uint8_t a, uint8_t reg, uint8_t& out) {
-             return M5.In_I2C.readRegister(a, reg, &out, 1, 400000);
-         }) == m5::unit::imu::MagKind::MAG3110);
+    const bool has_mag3110 = (board == m5::board_t::board_M5Stack) &&
+                             (m5::unit::imu::detectBuiltinMag([](uint8_t a, uint8_t reg, uint8_t& out) {
+                                  return M5.In_I2C.readRegister(a, reg, &out, 1, 400000);
+                              }) == m5::unit::imu::MagKind::MAG3110);
     if (has_mag3110) {
         Units.add(mag3110, M5.In_I2C);
     }
@@ -499,11 +568,10 @@ bool begin_builtin_sh200q(const m5::board_t board)
     diag.accel_src = &sh200q;
     diag.imu_addr  = 0x6C;
 
-    const bool has_bmm150 =
-        (board == m5::board_t::board_M5Stack) &&
-        (m5::unit::imu::detectBuiltinMag([](uint8_t a, uint8_t reg, uint8_t& out) {
-             return M5.In_I2C.readRegister(a, reg, &out, 1, 400000);
-         }) == m5::unit::imu::MagKind::BMM150);
+    const bool has_bmm150 = (board == m5::board_t::board_M5Stack) &&
+                            (m5::unit::imu::detectBuiltinMag([](uint8_t a, uint8_t reg, uint8_t& out) {
+                                 return M5.In_I2C.readRegister(a, reg, &out, 1, 400000);
+                             }) == m5::unit::imu::MagKind::BMM150);
     if (has_bmm150) {
         Units.add(bmm150, M5.In_I2C);
     }
@@ -529,7 +597,7 @@ bool begin_builtin()
 {
     const auto board = M5.getBoard();
     const auto kind  = m5::unit::imu::detectBuiltinImu(
-        [](uint8_t a, uint8_t reg, uint8_t& out) { return M5.In_I2C.readRegister(a, reg, &out, 1, 400000); });
+         [](uint8_t a, uint8_t reg, uint8_t& out) { return M5.In_I2C.readRegister(a, reg, &out, 1, 400000); });
 
     diag.board = board;
     diag.imu   = kind;
@@ -570,8 +638,7 @@ bool begin_builtin()
     }
 
     // A BMI270 with an AUX BMM150 carries Mag on the accel source itself; surface it for /info.
-    if (ok && diag.accel_src && !diag.mag_src &&
-        m5::imu::any(diag.accel_src->imuSpec() & m5::imu::Capability::Mag)) {
+    if (ok && diag.accel_src && !diag.mag_src && m5::imu::any(diag.accel_src->imuSpec() & m5::imu::Capability::Mag)) {
         diag.mag_src   = diag.accel_src;
         diag.mag_label = "BMM150 (AUX)";
     }
@@ -775,8 +842,8 @@ void handle_quaternion()
 #else
     char buf[180];
     std::snprintf(buf, sizeof(buf),
-                  "{\"w\":%.4f,\"x\":%.4f,\"y\":%.4f,\"z\":%.4f,\"filter\":\"%s\",\"temp\":%.1f,\"cal\":%s}", w, x,
-                  y, z, filter_name(current_filter), ahrs.latest().temp, auto_cal_enabled ? "true" : "false");
+                  "{\"w\":%.4f,\"x\":%.4f,\"y\":%.4f,\"z\":%.4f,\"filter\":\"%s\",\"temp\":%.1f,\"cal\":%s}", w, x, y,
+                  z, filter_name(current_filter), ahrs.latest().temp, auto_cal_enabled ? "true" : "false");
 #endif
     web_server.send(200, "application/json", buf);
 }
@@ -948,9 +1015,9 @@ void setup()
         c.enable_aux_bmm150 = false;
         unit.config(c);
     }
-    ok               = ok && Units.begin() && ahrs.add(unit);
-    diag.unit_label  = "UnitDoF6 (BMI270)";
-    diag.accel_src   = &unit;
+    ok              = ok && Units.begin() && ahrs.add(unit);
+    diag.unit_label = "UnitDoF6 (BMI270)";
+    diag.accel_src  = &unit;
     if (!ok) {
         fail_reason     = "UnitDoF6 not found (check GROVE cable)";
         diag.unit_label = fail_reason;  // /info "source" reports the reason
@@ -996,18 +1063,18 @@ void setup()
         }
     }
 #endif
-    ok = ok && Units.begin() && ahrs.add(unit.imu()) && ahrs.add(unit.mag());
+    ok              = ok && Units.begin() && ahrs.add(unit.imu()) && ahrs.add(unit.mag());
 #if defined(USING_UNIT_DOF10)
     diag.unit_label = "UnitDoF10 (BMI270+BMM350+SPA06)";
 #else
     diag.unit_label = "UnitDoF9 (BMI270+BMM350)";
 #endif
-    diag.accel_src = &unit.imu();
-    diag.mag_src   = &unit.mag();
-    diag.mag_label = "BMM350 (0x14)";
+    diag.accel_src  = &unit.imu();
+    diag.mag_src    = &unit.mag();
+    diag.mag_label  = "BMM350 (0x14)";
     if (!ok) {
 #if defined(USING_UNIT_DOF10)
-        fail_reason = "UnitDoF10 not found (check GROVE cable)";
+        fail_reason     = "UnitDoF10 not found (check GROVE cable)";
 #else
         fail_reason = "UnitDoF9 not found (check GROVE cable)";
 #endif
