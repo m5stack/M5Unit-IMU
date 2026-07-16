@@ -13,6 +13,8 @@
      http://192.168.4.1 for the same gizmo live in a browser (works with or without an LCD)
   Controls:
    - BtnA click (short press): switch AHRS filter
+   - BtnA double-click: zero the displayed yaw at the current heading (tare; roll/pitch unaffected,
+     the filter's own internal heading is untouched)
    - BtnA hold (long press): toggle magnetometer auto-calibration (sphere-fit hard-iron) ON/OFF
 */
 #include <M5Unified.h>
@@ -860,8 +862,12 @@ void loop()
         }
     }
 
-    if (M5.BtnA.wasClicked()) {  // short press (released before hold threshold): switch filter
+    if (M5.BtnA.wasSingleClicked()) {  // short press, no follow-up click: switch filter
         switch_filter();
+    }
+    if (M5.BtnA.wasDoubleClicked()) {  // double click: zero the displayed yaw at the current heading
+        ahrs.tareYaw();
+        M5_LOGI("Yaw tared to current heading (clearYawTare()-only API restores the absolute heading)");
     }
     if (M5.BtnA.wasHold()) {  // long press: toggle mag auto-calibration (sphere-fit hard-iron)
         auto_cal_enabled = !auto_cal_enabled;
