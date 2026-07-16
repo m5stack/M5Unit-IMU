@@ -118,6 +118,10 @@ and warns if the build target does not match the switch position.
 > **NOTE:** These examples target ESP-IDF 5.x (>=5.0). M5Unified / M5GFX do not yet support
 > ESP-IDF 6.x; stay on the latest 5.x release.
 
+> **NOTE:** AhrsDemo's WiFi SoftAP + browser viewer is Arduino-only (it uses the arduino-esp32
+> `WiFi.h` / `WebServer.h`, which do not exist on ESP-IDF native). ESP-IDF builds output to
+> Serial and the LCD only.
+
 `common/variant.cmake` maps the Kconfig `CONFIG_EXAMPLE_USING_*` choice to the source-level
 `USING_*` macro shared with the Arduino build, so you do not edit the example source.
 
@@ -126,8 +130,9 @@ cd examples/UnitUnified/AhrsDemo
 idf.py set-target esp32s3
 idf.py menuconfig
 # -> "M5Unit-IMU example" -> "Target device" -> choose ONE:
-#      UnitMiniIMU (MPU6886) / UnitBMM350 (U231) /
-#      UnitDoF6 (U228) / UnitDoF9 (U229) / UnitDoF10 (U230) (PlotToSerial only) /
+#      UnitMiniIMU (U095, MPU6886) / UnitBMM350 (U231) /
+#      UnitDoF6 (U228, BMI270) / UnitDoF9 (U229, BMI270+BMM350) /
+#      UnitDoF10 (U230, BMI270+BMM350+SPA06) /
 #      UnitMiniIMU + UnitBMM350, 9-axis GROVE (AhrsDemo only) /
 #      Built-in IMU, M5.getBoard() auto-detect (AhrsDemo only)
 #    For the DoF units, "DoF BMI270 I2C address (SW1 switch)" selects 0x68 (default) / 0x69.
