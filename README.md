@@ -52,6 +52,29 @@ Unit BMM350 (TBD)
 > M5Stack Core the shared bus is routed to GROVE Port C (needs the M5GO/Fire base) for the same
 > built-in-IMU reason; the example does this automatically.
 
+## AHRS filters
+
+`AhrsController` fuses any accel/gyro (+ optional mag) source through one of six attitude
+filters, selectable at runtime (`selectFilter()`). All six share the same conventions -- the
+output quaternion is the body-to-world rotation, and supplying a magnetometer automatically
+upgrades 6-axis to 9-axis operation -- so switching filters never changes the coordinate system,
+only the estimation characteristics:
+
+| Filter | Origin | Characteristics | Pick it for |
+|---|---|---|---|
+| Complementary | classic textbook technique | Lightest, responsive; less accurate under dynamic motion | Minimal CPU, first steps |
+| Madgwick | Madgwick 2010 | Light and proven; the paper-default gain (beta 0.1) settles slowly from a cold start | General 6/9-axis use |
+| Mahony | Mahony et al. 2008 | PI feedback absorbs gyro bias (with Ki > 0) | 6-axis with noticeable gyro drift |
+| EKF | standard extended Kalman filter | Estimates gyro bias in-state; highest CPU cost | Accuracy-first applications |
+| Fusion | [x-io Technologies](https://github.com/xioTechnologies/Fusion) (MIT) | Built-in 3 s startup ramp: fastest to settle; widely deployed | A practical default choice |
+| VQF | [Laidig & Seel 2023](https://github.com/dlaidig/vqf) (MIT) | Recent research; very low noise at rest | Static accuracy, research |
+
+Default gains are each paper's standard values. Because those defaults make Madgwick/Mahony slow
+to converge onto the magnetic heading from a cold start, AhrsDemo temporarily raises their gain
+for 3 seconds after a filter is selected (the initialization strategy Madgwick's own report
+recommends, mirroring Fusion's built-in ramp); steady-state behavior stays at the paper defaults.
+See "Third-party licenses" below for the vendored Fusion/VQF credits.
+
 ## Built-in IMUs by board revision
 
 Many M5Stack boards changed their built-in IMU across production revisions **without changing the
@@ -108,6 +131,19 @@ orientation differs per board -- see the
 ## License
 
 - [M5Unit-IMU - MIT](LICENSE)
+
+### Third-party licenses
+
+The AHRS layer vendors two third-party filter implementations (unmodified, under
+`src/imu/filter/third_party/`):
+
+- [Fusion](https://github.com/xioTechnologies/Fusion) — Copyright (c) 2021 x-io Technologies,
+  [MIT](src/imu/filter/third_party/fusion/LICENSE.md)
+- [VQF](https://github.com/dlaidig/vqf) — Copyright (c) 2021 Daniel Laidig,
+  [MIT](src/imu/filter/third_party/vqf/LICENSE)
+
+The Complementary / Madgwick / Mahony / EKF filters are original implementations, re-derived from
+their published papers (Madgwick 2010; Mahony, Hamel & Pflimlin 2008).
 
 ## Examples
 
