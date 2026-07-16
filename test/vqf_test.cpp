@@ -61,12 +61,12 @@ TEST(VQFFilterTest, GyroYawFollowsWithoutMag)
 }
 
 // basicvqf's magnetometer heading reference converges the horizontal mag component onto
-// world +Y (see BasicVQF::updateMag()'s atan2(magEarth[0], magEarth[1])), a fixed 90 degree
+// world +Y (see BasicVQF::updateMag()'s atan2(magEarth[0], magEarth[1])), a fixed +90 degree
 // offset from this repository's mag table (filter_base.hpp: mag horizontal along +X at
-// yaw = 0; see vqf.hpp for the full explanation). So instead of asserting a specific
-// absolute yaw value (as FusionFilterTest::MagCorrectsYawToStableHeading does), this test
-// checks the property that actually matters: mag correction pulls the heading to the same
-// stable attractor regardless of where gyro drift/integration left it beforehand.
+// yaw = 0). VQFFilter::quaternion() corrects this with a fixed world-Z -90 degree rotation
+// once mag samples flow (see vqf.hpp), so -- like the other filters' MagCorrectsYaw tests --
+// the absolute converged yaw must be 0, and it must be the same stable attractor regardless
+// of where gyro drift/integration left the heading beforehand.
 TEST(VQFFilterTest, MagCorrectsYawToStableHeadingRegardlessOfInitialOffset)
 {
     VQFFilter filter_a;
@@ -86,6 +86,8 @@ TEST(VQFFilterTest, MagCorrectsYawToStableHeadingRegardlessOfInitialOffset)
     euler_of(filter_a, roll_a, pitch_a, yaw_a);
     euler_of(filter_b, roll_b, pitch_b, yaw_b);
 
+    EXPECT_NEAR(yaw_a, 0.0f, 1.0f);  // Same shared mag convention as the other five filters
+    EXPECT_NEAR(yaw_b, 0.0f, 1.0f);
     EXPECT_NEAR(yaw_a, yaw_b, 1.0f);
     EXPECT_NEAR(roll_a, 0.0f, 1.0f);
     EXPECT_NEAR(pitch_a, 0.0f, 1.0f);

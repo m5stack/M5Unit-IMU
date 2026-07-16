@@ -54,13 +54,13 @@ namespace imu {
     needed there. Its magnetometer heading reference, however, converges the *horizontal*
     mag component onto world **+Y**, not +X (see BasicVQF::updateMag()'s
     `atan2(magEarth[0], magEarth[1])`, i.e. atan2(x, y) rather than this repository's
-    atan2(y, x)-style convention) -- a fixed 90 degree yaw offset from this repository's mag
-    table (filter_base.hpp: mag horizontal along +X at yaw = 0). This adapter does not
-    correct for that offset (there is no single correct way to "fix" an axis convention
-    mismatch without also deciding what should happen to roll/pitch under the same
-    remapping, and basicvqf's roll/pitch already agree with this repository as-is); the 9D
-    scenario in vqf_test.cpp is written to check for stable convergence rather than a
-    specific absolute yaw value for this reason.
+    atan2(y, x)-style convention) -- a fixed +90 degree yaw offset from this repository's mag
+    table (filter_base.hpp: mag horizontal along +X at yaw = 0). quaternion() corrects this
+    by composing a fixed world-Z rotation of -90 degrees on top of getQuat9D() once any mag
+    sample has been consumed (`_mag_seen`); a pure heading rotation, so roll/pitch (which
+    already agree with this repository) are untouched. In the mag-less case no correction is
+    applied (delta stays 0 and the 6D quaternion already matches the shared convention);
+    reset() and a sample-period rebuild clear `_mag_seen` along with basicvqf's delta.
   - Sample period: BasicVQF is constructed with a fixed nominal sampling period (`gyrTs`)
     and has no public API to change it afterwards (`BasicVQF::setup()`, which derives the
     internal filter coefficients from it, is only called from the constructors). Since
@@ -117,6 +117,7 @@ private:
 
     std::unique_ptr<::BasicVQF> _vqf{};  // basicvqf's filter instance (see VQFFilter()/ensureSamplePeriod())
     float _built_dt{};                   // Sample period _vqf was (re)built with, in seconds
+    bool _mag_seen{};                    // Any mag sample consumed? Gates the heading convention fix
 };
 
 }  // namespace imu

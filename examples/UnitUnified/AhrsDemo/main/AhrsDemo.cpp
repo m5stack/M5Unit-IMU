@@ -143,6 +143,10 @@ void switch_filter()
 {
     current_filter = next_filter(current_filter);
     ahrs.selectFilter(current_filter);
+    // selectFilter() resets the new filter's attitude to identity; a yaw tare captured against
+    // the OLD filter's heading would keep rotating the fresh estimate by a now-meaningless
+    // offset (it looks like a filter-dependent axis shift). Drop it; double-click re-tares.
+    ahrs.clearYawTare();
     M5_LOGI("Filter switched to %s", filter_name(current_filter));
 }
 
