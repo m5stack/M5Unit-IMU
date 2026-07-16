@@ -100,8 +100,7 @@ and the current product page carries no orientation diagram for them:
 - **original (≤ 2019.6)** — MPU9250 (0x68, WHO_AM_I 0x71) + internal **AK8963** (0x0C, reached via the
   MPU9250 aux bypass). Driver: `UnitMPU9250` composite (its `mag()` is the AK8963). Same generation as
   the 2017.12–2019.6 Gray.
-- **2019.7** — **SH200Q** (0x6C) + BMM150 (0x10). Driver: `UnitSH200Q` (not yet implemented) +
-  `UnitBMM150`.
+- **2019.7** — **SH200Q** (0x6C) + BMM150 (0x10). Driver: `UnitSH200Q` + `UnitBMM150`.
 
 Axis remap for both is unverified (no image, no M5Unified reference table); confirm on original
 hardware before committing a preset.
@@ -153,11 +152,12 @@ M5.getBoard() cannot tell the generations apart, AhrsDemo probes the chip on the
 The original M5StickC changed its IMU across production runs; the current product page shows no
 per-generation orientation diagram:
 
-- **2019.3** — **SH200Q** (0x6C). Driver: `UnitSH200Q` (not yet implemented).
+- **2019.3** — **SH200Q** (0x6C). Driver: `UnitSH200Q`.
 - **2019.8+** — MPU6886 (0x68). Driver: `UnitMPU6886`.
 
-Axis remap for the SH200Q generation is unverified. (StickC-Plus / StickC-Plus2 below are MPU6886
-throughout.)
+Axis remap for the SH200Q generation is unverified -- field reports even suggest its accel and gyro
+axis systems may not agree with each other, so it stays at identity until confirmed on 2019
+hardware. (StickC-Plus / StickC-Plus2 below are MPU6886 throughout.)
 
 ## StickC-Plus — MPU6886 (0x68)
 

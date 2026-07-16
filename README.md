@@ -52,13 +52,51 @@ Unit BMM350 (TBD)
 > M5Stack Core the shared bus is routed to GROVE Port C (needs the M5GO/Fire base) for the same
 > built-in-IMU reason; the example does this automatically.
 
+## Built-in IMUs by board revision
+
+Many M5Stack boards changed their built-in IMU across production revisions **without changing the
+board id** -- `M5.getBoard()` cannot tell the generations apart, so the examples probe the I2C bus
+at startup (`detectBuiltinImu` / `detectBuiltinMag`) and pick the driver from what actually
+responds. All chips below have drivers in this library.
+
+| Board | Revision | Accel/Gyro | Magnetometer |
+|---|---|---|---|
+| M5Stack Basic | all | none (a few undocumented early lots: MPU9250) | none |
+| M5Stack Gray | 2017 (original) | MPU6050 (0x68) | MAG3110 (0x0E) |
+| | 2017.12 | MPU9250 (0x68) | AK8963 (0x0C, in-package) |
+| | 2019.6 - current | MPU6886 (0x68) | BMM150 (0x10) |
+| M5Stack Fire | - 2019.6 (original) | MPU9250 (0x68) | AK8963 (0x0C, in-package) |
+| | 2019.7 | SH200Q (0x6C) | BMM150 (0x10) |
+| | 2019.8 - 2021.7 | MPU6886 (0x68) | BMM150 (0x10) |
+| | v2.6 / v2.7 (2021.8 -) | MPU6886 (0x68) | none (removed) |
+| Core2 / for AWS / v1.1 | | MPU6886 (0x68) | none |
+| Core2 v1.3 | | BMI270 (0x68) | none |
+| CoreS3 / SE | | BMI270 (0x69) | BMM150 (via BMI270 AUX) |
+| M5StickC | 2019.3 (original) | SH200Q (0x6C) | none |
+| | 2019.8 - | MPU6886 (0x68) | none |
+| StickC Plus / Plus2 / T2 | | MPU6886 (0x68) | none |
+| StickS3 | | BMI270 (0x68) | none |
+| ATOM Matrix | original | MPU6886 (0x68) | none |
+| | v1.1 | BMI270 (0x68) | none |
+| AtomS3 | | MPU6886 (0x68) | none |
+| AtomS3R | | BMI270 (0x68) | BMM150 (via BMI270 AUX) |
+| Capsule | | BMI270 (0x69) | none |
+| Tough / Station | | MPU6886 (0x68) | none |
+| PaperS3 | | BMI270 (0x68) | none |
+| Tab5 | | BMI270 (0x68) | none |
+| Nesso N1 | | BMI270 (0x68) | none |
+
+The list is not exhaustive (boards without an established IMU configuration are omitted). Mounting
+orientation differs per board -- see the
+[built-in IMU orientation diagrams](docs/imu_orientation/README.md).
+
 ## Related Link
 
-- [Document & Datasheet - UnitMiniIMU (U095)](https://docs.m5stack.com/en/unit/imu)
-- Document & Datasheet - Unit DoF6 (U228) — TBD
-- Document & Datasheet - Unit DoF9 (U229) — TBD
-- Document & Datasheet - Unit DoF10 (U230) — TBD
-- Document & Datasheet - Unit BMM350 (U231) — TBD
+- [Unit Mini IMU & Datasheet](https://docs.m5stack.com/en/products/sku/U095)
+- [Unit DoF6 & Datasheet](https://docs.m5stack.com/en/products/sku/U228)
+- [Unit DoF9 & Datasheet](https://docs.m5stack.com/en/products/sku/U229)
+- [Unit DoF10 & Datasheet](https://docs.m5stack.com/en/products/sku/U230)
+- [Unit BMM350 & Datasheet](https://docs.m5stack.com/en/products/sku/U231)
 - [Built-in IMU orientation diagrams](docs/imu_orientation/README.md) — per-board axis-orientation
   references for the built-in IMUs (for setting the correct axis remap)
 
