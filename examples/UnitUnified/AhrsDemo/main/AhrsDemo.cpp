@@ -20,6 +20,7 @@
 #include <M5UnitUnifiedIMU.h>
 #include <math/quaternion.hpp>
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <wiring/m5_unit_unified_wiring.hpp>  // Board-aware connection helpers (include last)
 
@@ -77,7 +78,16 @@ m5::unit::UnitDoF10 unit{DOF_BMI270_ADDRESS};
 #error Please choose unit!
 #endif
 
-M5Canvas canvas(&lcd);
+M5Canvas text_canvas(&lcd);   // 1-bit header strip (text is white-on-black only)
+M5Canvas gizmo_canvas(&lcd);  // 2-bit palette square for the colored 3D axis gizmo
+constexpr int32_t HEADER_H{50};  // covers the 4 header text lines (y = 2/14/26/38)
+
+// gizmo_canvas palette indices (a palette sprite interprets color arguments as indices)
+constexpr uint8_t PAL_BLACK{0};
+constexpr uint8_t PAL_RED{1};
+constexpr uint8_t PAL_GREEN{2};
+constexpr uint8_t PAL_BLUE{3};
+
 bool has_lcd{};
 m5::imu::FilterType current_filter{m5::imu::FilterType::Madgwick};
 bool auto_cal_enabled{};  // magnetometer auto-calibration state (BtnA hold); default OFF
@@ -404,19 +414,10 @@ bool begin_builtin()
 }
 #endif
 
-//! @brief Half-brightness an RGB565 color (used to dim the far half of a projected axis line)
-uint16_t dim565(const uint16_t color)
-{
-    const uint16_t r = (color >> 11) & 0x1F;
-    const uint16_t g = (color >> 5) & 0x3F;
-    const uint16_t b = color & 0x1F;
-    return static_cast<uint16_t>(((r / 2) << 11) | ((g / 2) << 5) | (b / 2));
-}
-
-//! @brief One body axis to project: unit vector, display color, label
+//! @brief One body axis to project: unit vector, gizmo_canvas palette index, label
 struct GizmoAxis {
     m5::math::Vector3 body;
-    uint16_t color;
+    uint8_t color;
     char label;
 };
 
@@ -425,58 +426,59 @@ struct ProjectedAxis {
     int16_t x;
     int16_t y;
     float depth;
-    uint16_t color;
+    uint8_t color;
     char label;
 };
 
 //! @brief Draw the filter name / roll-pitch-yaw header plus the rotating 3D axis gizmo
 void draw_gizmo(const float roll, const float pitch, const float yaw)
 {
-    const bool compact = canvas.width() < 160;  // small panels (e.g. AtomS3 128x128) need a tighter header
+    const bool compact = text_canvas.width() < 160;  // small panels (e.g. AtomS3 128x128) need a tighter header
 
     float qw{1.0f}, qx{}, qy{}, qz{};
     ahrs.quaternion(qw, qx, qy, qz);
     const m5::math::Quaternion q(qw, qx, qy, qz);
 
-    canvas.fillScreen(TFT_BLACK);
-    canvas.setTextColor(TFT_WHITE, TFT_BLACK);
-    canvas.setCursor(4, 2);
+    text_canvas.fillScreen(TFT_BLACK);
+    text_canvas.setTextColor(TFT_WHITE, TFT_BLACK);
+    text_canvas.setCursor(4, 2);
     if (compact) {
-        canvas.printf("%s %s", filter_name(current_filter), auto_cal_enabled ? "Cal:ON" : "Cal:--");
+        text_canvas.printf("%s %s", filter_name(current_filter), auto_cal_enabled ? "Cal:ON" : "Cal:--");
     } else {
-        canvas.printf("Filter: %s", filter_name(current_filter));
+        text_canvas.printf("Filter: %s", filter_name(current_filter));
     }
-    canvas.setCursor(4, 14);
+    text_canvas.setCursor(4, 14);
     if (compact) {
-        canvas.printf("R:%-4.0f P:%-4.0f Y:%-4.0f", roll, pitch, yaw);
+        text_canvas.printf("R:%-4.0f P:%-4.0f Y:%-4.0f", roll, pitch, yaw);
     } else {
-        canvas.printf("R:%7.2f P:%7.2f Y:%7.2f", roll, pitch, yaw);
+        text_canvas.printf("R:%7.2f P:%7.2f Y:%7.2f", roll, pitch, yaw);
     }
-    canvas.setCursor(4, 26);
+    text_canvas.setCursor(4, 26);
     if (compact) {
-        canvas.printf("T:%.1fC", ahrs.latest().temp);
+        text_canvas.printf("T:%.1fC", ahrs.latest().temp);
     } else {
-        canvas.printf("Temp:%6.2f C %s", ahrs.latest().temp, auto_cal_enabled ? "Cal:ON" : "Cal:--");
+        text_canvas.printf("Temp:%6.2f C %s", ahrs.latest().temp, auto_cal_enabled ? "Cal:ON" : "Cal:--");
     }
 #if defined(USING_UNIT_DOF10)
-    canvas.setCursor(4, 38);
+    text_canvas.setCursor(4, 38);
     if (compact) {
-        canvas.printf("P:%.0f A:%.0fm", unit.baro().pressure(), unit.baro().altitude());
+        text_canvas.printf("P:%.0f A:%.0fm", unit.baro().pressure(), unit.baro().altitude());
     } else {
-        canvas.printf("P:%.1fhPa Alt:%.1fm", unit.baro().pressure(), unit.baro().altitude());
+        text_canvas.printf("P:%.1fhPa Alt:%.1fm", unit.baro().pressure(), unit.baro().altitude());
     }
 #endif
+    text_canvas.pushSprite(0, 0);
 
-    const int w       = canvas.width();
-    const int h       = canvas.height();
+    const int w       = gizmo_canvas.width();
+    const int h       = gizmo_canvas.height();
     const int cx      = w / 2;
-    const int cy      = h / 2 + 16;
-    const float scale = (static_cast<float>(std::min(w, h - 32)) * 0.5f) - 12.0f;  // leave margin for labels
+    const int cy      = h / 2;
+    const float scale = (static_cast<float>(std::min(w, h)) * 0.5f) - 12.0f;  // leave margin for labels
 
     const GizmoAxis axes[3] = {
-        {{1.0f, 0.0f, 0.0f}, static_cast<uint16_t>(TFT_RED), 'X'},
-        {{0.0f, 1.0f, 0.0f}, static_cast<uint16_t>(TFT_GREEN), 'Y'},
-        {{0.0f, 0.0f, 1.0f}, static_cast<uint16_t>(TFT_BLUE), 'Z'},
+        {{1.0f, 0.0f, 0.0f}, PAL_RED, 'X'},
+        {{0.0f, 1.0f, 0.0f}, PAL_GREEN, 'Y'},
+        {{0.0f, 0.0f, 1.0f}, PAL_BLUE, 'Z'},
     };
     ProjectedAxis proj[3]{};
     for (size_t i = 0; i < 3; ++i) {
@@ -491,15 +493,35 @@ void draw_gizmo(const float roll, const float pitch, const float yaw)
     std::sort(std::begin(proj), std::end(proj),
               [](const ProjectedAxis& a, const ProjectedAxis& b) { return a.depth < b.depth; });
 
-    canvas.fillCircle(cx, cy, 3, TFT_WHITE);
+    gizmo_canvas.fillScreen(PAL_BLACK);
     for (const auto& p : proj) {
-        const uint16_t color = (p.depth < 0.0f) ? dim565(p.color) : p.color;
-        canvas.drawLine(cx, cy, p.x, p.y, color);
-        canvas.setTextColor(color, TFT_BLACK);
-        canvas.setCursor(p.x + 2, p.y - 4);
-        canvas.print(p.label);
+        if (p.depth < 0.0f) {
+            // Away-facing axis: thin single-pixel line.
+            gizmo_canvas.drawLine(cx, cy, p.x, p.y, p.color);
+        } else {
+            // Near-facing axis: approximate a ~3px-wide line with three parallel 1px lines offset
+            // along the line's perpendicular. gizmo_canvas.drawWideLine() is NOT usable here: on a
+            // palette-depth sprite it unconditionally runs its color argument through
+            // convert_to_rgb888() before drawing (LGFXBase::drawWideLine), which re-expands a raw
+            // palette index as if it were an RGB332/565 color and then collapses it back to the
+            // wrong palette entry (e.g. PAL_RED/PAL_GREEN both alias to PAL_BLACK). drawLine() has no
+            // such pre-conversion and passes the index straight through, so it stays correct.
+            const float dx   = static_cast<float>(p.x - cx);
+            const float dy   = static_cast<float>(p.y - cy);
+            const float len  = std::sqrt(dx * dx + dy * dy);
+            const float nx   = (len > 0.001f) ? -dy / len : 1.0f;
+            const float ny   = (len > 0.001f) ? dx / len : 0.0f;
+            const int32_t ox = static_cast<int32_t>(std::lround(nx));
+            const int32_t oy = static_cast<int32_t>(std::lround(ny));
+            gizmo_canvas.drawLine(cx, cy, p.x, p.y, p.color);
+            gizmo_canvas.drawLine(cx + ox, cy + oy, p.x + ox, p.y + oy, p.color);
+            gizmo_canvas.drawLine(cx - ox, cy - oy, p.x - ox, p.y - oy, p.color);
+        }
+        gizmo_canvas.setTextColor(p.color, PAL_BLACK);
+        gizmo_canvas.setCursor(p.x + 2, p.y - 4);
+        gizmo_canvas.print(p.label);
     }
-    canvas.pushSprite(0, 0);
+    gizmo_canvas.pushSprite((lcd.width() - w) / 2, HEADER_H);
 }
 
 }  // namespace
@@ -642,18 +664,26 @@ void setup()
     }
     has_lcd = lcd.width() > 0;
     if (has_lcd) {
-        canvas.setColorDepth(8);
-        // The gizmo needs colors, so 8-bit is the minimum (a 1/4-bit palette would need index-based
-        // drawing). A full-screen 8-bit sprite on a large panel (e.g. Tab5 1280x720 = 921KB) exceeds
-        // the internal SRAM, so place big sprites in PSRAM; small ones stay internal for speed.
-        constexpr uint32_t INTERNAL_SPRITE_LIMIT{120 * 1024};  // bytes; 320x240x8bit=76.8KB stays internal
-        const uint32_t sprite_bytes = static_cast<uint32_t>(lcd.width()) * lcd.height();
-        canvas.setPsram(sprite_bytes > INTERNAL_SPRITE_LIMIT);
-        if (!canvas.createSprite(lcd.width(), lcd.height())) {
-            // Internal allocation failed (no PSRAM board with a big panel): retry in PSRAM anyway.
-            canvas.setPsram(true);
-            canvas.createSprite(lcd.width(), lcd.height());
+        // Two small sprites instead of one full-screen 8-bit sprite: a 1-bit header strip and a
+        // 2-bit 4-color palette square for the gizmo. Even a large panel (Tab5 1280x720) then fits
+        // in internal RAM (~8KB + ~112KB) next to the WiFi stack, where a full-screen 8-bit sprite
+        // (921KB) would not.
+        text_canvas.setColorDepth(1);
+        text_canvas.setPsram(false);
+        text_canvas.createSprite(lcd.width(), HEADER_H);
+
+        const int32_t side = std::min<int32_t>(lcd.width(), lcd.height() - HEADER_H);
+        gizmo_canvas.setColorDepth(2);
+        gizmo_canvas.setPsram(false);
+        if (!gizmo_canvas.createSprite(side, side)) {
+            // Very large panel on a low-memory board: retry in PSRAM rather than showing nothing.
+            gizmo_canvas.setPsram(true);
+            gizmo_canvas.createSprite(side, side);
         }
+        gizmo_canvas.setPaletteColor(PAL_BLACK, 0, 0, 0);
+        gizmo_canvas.setPaletteColor(PAL_RED, 255, 0, 0);
+        gizmo_canvas.setPaletteColor(PAL_GREEN, 0, 255, 0);
+        gizmo_canvas.setPaletteColor(PAL_BLUE, 0, 0, 255);
     }
 
     diag.board = M5.getBoard();  // host board (begin_builtin() also fills the built-in chip fields)
