@@ -244,7 +244,7 @@ const char* board_name(const m5::board_t b)
     }
 }
 
-#if __has_include(<WiFi.h>)  // used only by the web /info panel
+#if __has_include(<WiFi.h>) && !defined(CONFIG_IDF_TARGET_ESP32H2)  // used only by the web /info panel
 const char* imu_kind_name(const m5::unit::imu::ImuKind k)
 {
     using K = m5::unit::imu::ImuKind;
@@ -277,7 +277,7 @@ void axis_order_str(const m5::imu::AxisOrder& o, char* const buf, const size_t n
     inv[k] = '\0';
     std::snprintf(buf, n, "%s inv:%s", PERM[static_cast<uint8_t>(o.permutation)], k ? inv : "-");
 }
-#endif  // __has_include(<WiFi.h>)
+#endif  // __has_include(<WiFi.h>) && !ESP32H2
 
 #if defined(USING_BUILTIN_IMU)
 //! @brief Register a built-in MPU6886/MPU6050 with ahrs, applying this board's axis correction
@@ -553,11 +553,13 @@ void draw_gizmo(const float roll, const float pitch, const float yaw)
 // Brings up a SoftAP "AhrsDemo" (password "ahrsdemo123") and serves a self-contained page at
 // http://192.168.4.1 that polls the AhrsController quaternion and renders a live 3D body-axis
 // gizmo (X=red / Y=green / Z=blue). Useful on headless boards, but runs on LCD boards too.
-// ESP32-H2 (NanoH2) ships no WiFi library, so <WiFi.h> is absent and the whole block compiles out
-// there (mirrors M5Unified's own examples, e.g. Basic/Rtc). ESP32 classic (AtomMatrix) and every
-// other WiFi-capable target keep it -- unlike CONFIG_SOC_WIFI_SUPPORTED, which is not defined on
-// some Arduino cores (ESP32 classic) and so wrongly compiled the viewer out there.
-#if __has_include(<WiFi.h>)
+// ESP32-H2 (NanoH2) has no WiFi radio, but __has_include alone cannot exclude it: PlatformIO's
+// LDF adds the WiFi library to the include path from the raw #include line without evaluating
+// #if, and on core 3.x WiFi.h then compiles empty there (its innards are SOC_WIFI_SUPPORTED-
+// gated) -- hence the explicit H2 target check. Not SOC_WIFI_SUPPORTED here: that is undefined on
+// some Arduino cores (ESP32 classic) and on ESP32-P4 (Tab5), whose WiFi is hosted, so it would
+// wrongly compile the viewer out on those.
+#if __has_include(<WiFi.h>) && !defined(CONFIG_IDF_TARGET_ESP32H2)
 #define AHRS_WEB_VIEWER 1
 #include <WiFi.h>
 #include <WebServer.h>
@@ -674,7 +676,7 @@ void start_web_viewer()
                   WiFi.softAPIP().toString().c_str());
 }
 }  // namespace
-#endif  // __has_include(<WiFi.h>)
+#endif  // __has_include(<WiFi.h>) && !ESP32H2
 
 void setup()
 {
