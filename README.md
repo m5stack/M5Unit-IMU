@@ -46,6 +46,11 @@ Unit BMM350 (TBD)
 >
 > On a classic M5Stack Core the DoF BMI270 (0x68) collides with the built-in IMU on GROVE Port A, so
 > route the unit to GROVE Port C (`Wire`) — the PlotToSerial/AhrsDemo examples do this automatically.
+>
+> **UnitMiniIMU + UnitBMM350 (9-axis pair, AhrsDemo):** both units share ONE GROVE bus — split the
+> port with a hub (e.g. Unit HUB). 0x68 + 0x14 coexist without an address conflict. On a classic
+> M5Stack Core the shared bus is routed to GROVE Port C (needs the M5GO/Fire base) for the same
+> built-in-IMU reason; the example does this automatically.
 
 ## Related Link
 

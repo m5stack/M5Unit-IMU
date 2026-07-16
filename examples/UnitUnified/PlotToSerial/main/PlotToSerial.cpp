@@ -39,6 +39,14 @@
 #define DOF_BMI270_ADDRESS 0x68
 #endif
 
+// HP (high-performance) I2C port count: IDF >= 5.2 splits HP/LP counts (SOC_HP_I2C_NUM); older
+// cores (e.g. Arduino core 2.x on IDF 4.4) only define SOC_I2C_NUM, which IS the HP count there.
+#if defined(SOC_HP_I2C_NUM)
+#define EXAMPLE_HP_I2C_NUM SOC_HP_I2C_NUM
+#else
+#define EXAMPLE_HP_I2C_NUM SOC_I2C_NUM
+#endif
+
 namespace {
 auto& lcd = M5.Display;
 m5::unit::UnitUnified Units;
@@ -225,20 +233,22 @@ void setup()
     // not collide, so it keeps addI2C. Grove maps connector pin1 -> SCL and pin2 -> SDA (same wires
     // as UART RX/TX); M5Unified exposes Port C as port_c_pin1 (RXD) / port_c_pin2 (TXD).
     if (M5.getBoard() == m5::board_t::board_M5Stack) {
-        // The unit already carries its own 400kHz clock (set in its constructor), so reuse it.
         const int sda = M5.getPin(m5::pin_name_t::port_c_pin2);
         const int scl = M5.getPin(m5::pin_name_t::port_c_pin1);
-#if defined(ARDUINO)
-        // The Arduino Wire object is free here (M5Unified drives its buses via In_I2C/Ex_I2C).
-        ok = m5::unit::wiring::i2cWire(Units, unit, Wire, sda, scl, unit.component_config().clock);
-#elif __has_include(<driver/i2c_master.h>)
-        // ESP-IDF native: I2C_NUM_0 is held by M5.In_I2C (the internal bus), so open Port C on
-        // I2C_NUM_1 via the new i2c_master driver (IDF >= 5.2).
-        const auto bus = m5::unit::wiring::i2cBusHandle(I2C_NUM_1, static_cast<gpio_num_t>(sda),
-                                                        static_cast<gpio_num_t>(scl), unit.component_config().clock);
-        ok             = (bus != nullptr) && Units.add(unit, bus);
+#if EXAMPLE_HP_I2C_NUM >= 2
+        // On classic Core BOTH HP I2C ports sit with the lgfx i2c layer on the internal pins:
+        // In_I2C holds port 0 (the LIVE internal bus -- M5Unified keeps polling the IP5306 power IC
+        // there, and on Arduino the `Wire` object is that same port 0, so using Wire here would
+        // fight In_I2C over one peripheral with different pins -> NACKs). M5GFX's autodetect probe
+        // holds port 1, which is idle afterwards (display is SPI, backlight is PWM, no touch on
+        // this family). So rebind port 1 to the Port C pins through the same lgfx-backed
+        // m5::I2C_Class -- identical mechanism on Arduino and ESP-IDF (any IDF 5.x).
+        // (Single-HP-I2C SoCs like ESP32-C6/H2 do not define I2C_NUM_1 and are never a classic
+        // Core, so this path is compile-only there -- see the #else.)
+        static m5::I2C_Class port_c_i2c;
+        ok = port_c_i2c.begin(I2C_NUM_1, sda, scl) && m5::unit::wiring::i2cClass(Units, unit, port_c_i2c);
 #else
-        // ESP-IDF 5.0/5.1 (legacy driver only): Port C routing is not wired up here.
+        // Single-HP-I2C SoC (never a classic Core): Port C routing is not wired up here.
         ok = false;
 #endif
     } else {
@@ -254,7 +264,8 @@ void setup()
     // Wire.begin() whenever their backend is Wire), probe both candidates as a diagnostic and warn if
     // the address actually present differs from the one this build targets. Arduino-only: the probe
     // talks over Wire directly; ESP-IDF builds skip it (a mismatch still shows as a begin failure).
-    {
+    // Also skipped on classic Core, where Port C runs on the lgfx I2C_Class and Wire is never begun.
+    if (M5.getBoard() != m5::board_t::board_M5Stack) {
         uint8_t detected{DOF_BMI270_ADDRESS};
         m5::unit::bmi270::detectAddress(
             [](const uint8_t addr, const uint8_t reg, uint8_t& out) {
