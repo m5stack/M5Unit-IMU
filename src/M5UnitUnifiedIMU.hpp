@@ -37,6 +37,7 @@
 #include "unit/unit_bmi270.hpp"
 #include "unit/unit_ak8963.hpp"
 #include "unit/unit_mag3110.hpp"
+#include "unit/unit_sh200q.hpp"
 #include "unit/unit_dof9.hpp"
 #include "unit/unit_spa06.hpp"
 #include "unit/unit_dof10.hpp"

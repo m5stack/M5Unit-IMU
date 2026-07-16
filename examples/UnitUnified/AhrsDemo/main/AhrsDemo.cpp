@@ -66,6 +66,7 @@ m5::unit::UnitBMM350 mag_unit{};
 m5::unit::UnitMPU6886 mpu6886{};
 // bmi270 is constructed inside begin_builtin() once its board-dependent I2C address is probed.
 m5::unit::UnitBMM150 bmm150{};
+m5::unit::UnitSH200Q sh200q{};  // earliest (2019) M5StickC only
 #elif defined(USING_UNIT_DOF6)
 // UnitDoF6 is a plain alias of UnitBMI270. The BMI270 address (0x68/0x69) follows the DoF board's SW1
 // switch; build with DOF_BMI270_ADDRESS to match it (see the #define above).
@@ -370,6 +371,20 @@ bool begin_builtin_bmi270(const m5::board_t board)
     }
 }
 
+//! @brief Register a built-in SH200Q with ahrs (the earliest 2019 M5StickC only)
+//! @details No axis-remap preset is applied yet: field reports suggest the SH200Q's accel and gyro
+//! axis systems may not agree with each other (or the datasheet), so identity is used until the
+//! orientation is confirmed on hardware (docs/imu_orientation). Expect a large gyro zero offset.
+bool begin_builtin_sh200q()
+{
+    if (!Units.add(sh200q, M5.In_I2C) || !Units.begin()) {
+        return false;
+    }
+    diag.accel_src = &sh200q;
+    diag.imu_addr  = 0x6C;
+    return ahrs.add(sh200q);
+}
+
 //! @brief Register this board's built-in IMU with ahrs, choosing the driver by probing the bus
 //! @details M5.getBoard() cannot distinguish IMU generations (Core2 v1.1 MPU6886 vs v1.3 BMI270,
 //! ATOM Matrix MPU6886 vs v1.1 BMI270 -- both report the same board id), so the accel/gyro chip is
@@ -406,11 +421,9 @@ bool begin_builtin()
             return false;
 
         case m5::unit::imu::ImuKind::SH200Q:
-            M5_LOGE("Detected an SH200Q (2019 generation). Its accel/gyro driver is not yet "
-                    "implemented in M5Unit-IMU; cannot start the built-in IMU.");
-            fail_reason     = "SH200Q detected: driver not supported";
-            diag.unit_label = fail_reason;  // /info "source" reports the reason
-            return false;
+            diag.builtin = true;
+            ok           = begin_builtin_sh200q();
+            break;
 
         case m5::unit::imu::ImuKind::None:
         default:
