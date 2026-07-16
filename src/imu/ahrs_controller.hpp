@@ -13,6 +13,8 @@
 #include <cstddef>
 #include <cstdint>
 
+#include <math/quaternion.hpp>
+
 #include "axis_order.hpp"
 #include "filter/filter_base.hpp"
 #include "imu_data_source.hpp"
@@ -257,6 +259,29 @@ public:
      */
     void euler(float& roll_deg, float& pitch_deg, float& yaw_deg) const;
 
+    /*!
+      @brief Zero the publicly reported yaw at the current heading
+      @details Samples the active filter's current fused yaw (the same value
+      quaternion()/euler() would derive from it) and stores a world-frame Z-axis
+      rotation of the opposite angle as an internal tare offset. From then on every
+      quaternion()/euler() call composes this offset on top of the filter's raw
+      attitude, so the reported yaw reads ~0 right after this call while roll and
+      pitch are unaffected. The filter's own internal attitude estimate -- and, on a
+      9-axis setup, its alignment to magnetic north -- is left untouched; only the
+      publicly reported attitude is shifted. Calling this again re-zeros to whatever
+      heading the filter has reached by then. See clearYawTare() to remove the offset.
+      No-op (tare stays whatever it already was) if no filter has been selected yet.
+     */
+    void tareYaw();
+
+    /*!
+      @brief Remove a previously applied tareYaw() offset
+      @details Resets the internal yaw tare to identity, so quaternion()/euler() once
+      again report the filter's raw heading as-is (e.g. relative to magnetic north on
+      a 9-axis setup).
+     */
+    void clearYawTare();
+
     //! @brief Most recently fused physical-unit sample
     inline const imu_physical_data_t& latest() const
     {
@@ -303,6 +328,10 @@ private:
 
     AhrsFilterBase* _owned_filter{};  // Non-null only when constructed by selectFilter()
     AhrsFilterBase* _filter{};        // Active filter (owned or injected); nullptr until chosen
+
+    // World-frame Z rotation composed onto the filter's raw quaternion by quaternion()/euler()
+    // (see tareYaw()/clearYawTare()); identity (no-op) by default.
+    m5::math::Quaternion _yaw_tare{};
 
     imu_physical_data_t _latest{};
     bool _has_valid_mag{false};

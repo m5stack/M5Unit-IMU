@@ -8,6 +8,8 @@
 #include <imu/axis_order.hpp>
 #include <imu/imu_data_source.hpp>
 #include <imu/imu_types.hpp>
+#include <math/quaternion.hpp>
+#include <cmath>
 #include <vector>
 
 using namespace m5::imu;
@@ -701,4 +703,63 @@ TEST(AhrsController, CalibrateGyroFailsWithoutGyroSource)
     AhrsController ahrs;
     EXPECT_TRUE(ahrs.add(mag));
     EXPECT_FALSE(ahrs.calibrateGyro(10, 0.01f));
+}
+
+// ---------------------------------------------------------------------------------------
+// Yaw tare
+// ---------------------------------------------------------------------------------------
+
+TEST(AhrsController, TareYawZeroesYawKeepsRollPitchAndClearRestoresPreTareYaw)
+{
+    MockSource ag(Capability::Accel | Capability::Gyro);
+    for (int i = 0; i < 50; ++i) {
+        ag.pushAccelGyro(0, 0, 1, 0, 0, 90);  // level accel, sustained yaw rate -> yaw drifts, roll/pitch stay ~0
+    }
+
+    AhrsController ahrs;
+    EXPECT_TRUE(ahrs.add(ag));
+    EXPECT_TRUE(ahrs.begin());  // default Madgwick filter
+    ahrs.update(1.0f);          // dt split evenly across the 50 drained samples
+
+    float roll_before{}, pitch_before{}, yaw_before{};
+    ahrs.euler(roll_before, pitch_before, yaw_before);
+    EXPECT_GT(std::fabs(yaw_before), 5.0f);  // moved well off zero yaw
+
+    ahrs.tareYaw();
+
+    float roll_after{}, pitch_after{}, yaw_after{};
+    ahrs.euler(roll_after, pitch_after, yaw_after);
+    EXPECT_NEAR(yaw_after, 0.0f, 1.0e-3f);
+    EXPECT_NEAR(roll_after, roll_before, 1.0e-3f);
+    EXPECT_NEAR(pitch_after, pitch_before, 1.0e-3f);
+
+    // quaternion() and euler() must agree on the tared attitude.
+    float w{}, x{}, y{}, z{};
+    ahrs.quaternion(w, x, y, z);
+    float roll_from_q{}, pitch_from_q{}, yaw_from_q{};
+    m5::math::Quaternion(w, x, y, z).toEuler(roll_from_q, pitch_from_q, yaw_from_q);
+    EXPECT_NEAR(roll_from_q, roll_after, 1.0e-4f);
+    EXPECT_NEAR(pitch_from_q, pitch_after, 1.0e-4f);
+    EXPECT_NEAR(yaw_from_q, yaw_after, 1.0e-4f);
+
+    ahrs.clearYawTare();
+
+    float roll_cleared{}, pitch_cleared{}, yaw_cleared{};
+    ahrs.euler(roll_cleared, pitch_cleared, yaw_cleared);
+    EXPECT_NEAR(yaw_cleared, yaw_before, 1.0e-3f);
+    EXPECT_NEAR(roll_cleared, roll_before, 1.0e-3f);
+    EXPECT_NEAR(pitch_cleared, pitch_before, 1.0e-3f);
+}
+
+TEST(AhrsController, TareYawIsNoOpWithoutAFilter)
+{
+    AhrsController ahrs;  // no source/filter set up yet
+    ahrs.tareYaw();       // must not crash
+
+    float w{}, x{}, y{}, z{};
+    ahrs.quaternion(w, x, y, z);
+    EXPECT_FLOAT_EQ(w, 1.0f);
+    EXPECT_FLOAT_EQ(x, 0.0f);
+    EXPECT_FLOAT_EQ(y, 0.0f);
+    EXPECT_FLOAT_EQ(z, 0.0f);
 }

@@ -334,10 +334,17 @@ void AhrsController::setFilter(AhrsFilterBase& filter)
     _filter       = &filter;
 }
 
+// Composes _yaw_tare onto the filter's raw quaternion -- the single place that applies the tare
+// offset, so quaternion() and euler() (which is derived from this) can never disagree about it.
 void AhrsController::quaternion(float& w, float& x, float& y, float& z) const
 {
     if (_filter) {
         _filter->quaternion(w, x, y, z);
+        const m5::math::Quaternion composed = _yaw_tare * m5::math::Quaternion(w, x, y, z);
+        w = composed.w;
+        x = composed.x;
+        y = composed.y;
+        z = composed.z;
         return;
     }
     w = 1.0f;
@@ -349,6 +356,27 @@ void AhrsController::euler(float& roll_deg, float& pitch_deg, float& yaw_deg) co
     float w{1.0f}, x{}, y{}, z{};
     quaternion(w, x, y, z);
     m5::math::Quaternion(w, x, y, z).toEuler(roll_deg, pitch_deg, yaw_deg);
+}
+
+void AhrsController::tareYaw()
+{
+    if (!_filter) {
+        return;
+    }
+    // Sample the filter's raw (untared) quaternion -- not quaternion()'s already-composed
+    // output -- so a repeated tareYaw() call re-zeros to the filter's current heading instead of
+    // drifting back toward it (composing the correction onto an already-corrected sample would
+    // partially cancel a previous tareYaw()).
+    float w{1.0f}, x{}, y{}, z{};
+    _filter->quaternion(w, x, y, z);
+    float roll{}, pitch{}, yaw{};
+    m5::math::Quaternion(w, x, y, z).toEuler(roll, pitch, yaw);
+    _yaw_tare = m5::math::Quaternion::fromEuler(0.0f, 0.0f, -yaw);
+}
+
+void AhrsController::clearYawTare()
+{
+    _yaw_tare = m5::math::Quaternion::identity();
 }
 
 bool AhrsController::is_mag_overflow(const int32_t mag[3])
