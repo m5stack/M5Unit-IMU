@@ -711,21 +711,37 @@ void setup()
     diag.board = M5.getBoard();  // host board (begin_builtin() also fills the built-in chip fields)
 
     bool ok{};
-#if defined(USING_UNIT_MINI_IMU)
-    // UnitMiniIMU: NessoN1 -> SoftwareI2C (M5HAL), NanoC6 / NanoH2 -> M5.Ex_I2C, others -> Wire.
-    // Special case: on classic M5Stack Core (board_M5Stack) GROVE Port A *is* the internal I2C bus,
-    // and Gray/Fire carry a built-in MPU6886 at 0x68 -- the same address as UnitMiniIMU. Routing the
-    // external unit to the default port there would collide with (or silently read) the built-in
-    // IMU, so use GROVE Port C on the free Arduino Wire bus (M5Unified uses In_I2C/Ex_I2C, not Wire)
-    // instead. Every other board keeps addI2C().
-    if (M5.getBoard() == m5::board_t::board_M5Stack) {
-        // Grove maps connector pin1 -> SCL and pin2 -> SDA (same wires as UART RX/TX). M5Unified
-        // exposes Port C as port_c_pin1 (RXD) / port_c_pin2 (TXD), so SDA = pin2, SCL = pin1. The
-        // unit already carries its own 400kHz clock (set in UnitMPU6886's constructor), so reuse it.
+#if defined(USING_UNIT_MINI_IMU) || defined(USING_UNIT_DOF6) || defined(USING_UNIT_DOF9) || defined(USING_UNIT_DOF10)
+    // On classic M5Stack Core (board_M5Stack) GROVE Port A *is* the internal I2C bus, shared with
+    // Gray/Fire's built-in IMU at 0x68 -- the same address as these external units. Route them to
+    // GROVE Port C on a bus of their own instead. Grove maps connector pin1 -> SCL and pin2 -> SDA
+    // (same wires as UART RX/TX); M5Unified exposes Port C as port_c_pin1 (RXD) / port_c_pin2 (TXD).
+    const auto connect_port_c = [](m5::unit::Component& u) {
         const int sda = M5.getPin(m5::pin_name_t::port_c_pin2);
         const int scl = M5.getPin(m5::pin_name_t::port_c_pin1);
-        ok = m5::unit::wiring::i2cWire(Units, unit, Wire, sda, scl, unit.component_config().clock) &&
-             Units.begin() && ahrs.add(unit);
+#if defined(ARDUINO)
+        // The Arduino Wire object is free here (M5Unified drives its buses via In_I2C/Ex_I2C).
+        return m5::unit::wiring::i2cWire(Units, u, Wire, sda, scl, u.component_config().clock);
+#elif __has_include(<driver/i2c_master.h>)
+        // ESP-IDF native: I2C_NUM_0 is held by M5.In_I2C (the internal bus), so open Port C on
+        // I2C_NUM_1 via the new i2c_master driver (IDF >= 5.2).
+        const auto bus = m5::unit::wiring::i2cBusHandle(I2C_NUM_1, static_cast<gpio_num_t>(sda),
+                                                        static_cast<gpio_num_t>(scl), u.component_config().clock);
+        return bus != nullptr && Units.add(u, bus);
+#else
+        // ESP-IDF 5.0/5.1 (legacy driver only): Port C routing is not wired up; fail into the
+        // diagnostic notice instead of colliding with the built-in IMU on Port A.
+        return false;
+#endif
+    };
+#endif
+#if defined(USING_UNIT_MINI_IMU)
+    // UnitMiniIMU: NessoN1 -> SoftwareI2C (M5HAL), NanoC6 / NanoH2 -> M5.Ex_I2C, others -> Wire.
+    // Special case: classic M5Stack Core routes to GROVE Port C (see connect_port_c above); every
+    // other board keeps addI2C().
+    if (M5.getBoard() == m5::board_t::board_M5Stack) {
+        // The unit already carries its own 400kHz clock (set in UnitMPU6886's constructor).
+        ok              = connect_port_c(unit) && Units.begin() && ahrs.add(unit);
         diag.unit_label = "UnitMiniIMU (GROVE Port C @0x68)";
     } else {
         ok              = m5::unit::wiring::addI2C(Units, unit, 400 * 1000U) && Units.begin() && ahrs.add(unit);
@@ -752,16 +768,16 @@ void setup()
     // UnitDoF6 (BMI270 @0x68/0x69): same Port-C-vs-addI2C branching as UnitMiniIMU -- the DoF BMI270
     // collides with classic-Core Gray/Fire's built-in MPU6886/BMI270 at the same 0x68 address.
     if (M5.getBoard() == m5::board_t::board_M5Stack) {
-        const int sda = M5.getPin(m5::pin_name_t::port_c_pin2);
-        const int scl = M5.getPin(m5::pin_name_t::port_c_pin1);
-        ok            = m5::unit::wiring::i2cWire(Units, unit, Wire, sda, scl, unit.component_config().clock);
+        ok = connect_port_c(unit);
     } else {
         ok = m5::unit::wiring::addI2C(Units, unit, 400 * 1000U);
     }
+#if defined(ARDUINO)
     // The DoF BMI270 address is SW1-selectable (0x68 default / 0x69) and fixed at compile time via
     // DOF_BMI270_ADDRESS. Now that the bus above is connected (addI2C()/i2cWire() have called
     // Wire.begin() whenever their backend is Wire), probe both candidates as a diagnostic and warn if
-    // the address actually present differs from the one this build targets.
+    // the address actually present differs from the one this build targets. Arduino-only: the probe
+    // talks over Wire directly; ESP-IDF builds skip it (a mismatch still shows as a begin failure).
     {
         uint8_t detected{DOF_BMI270_ADDRESS};
         m5::unit::bmi270::detectAddress(
@@ -787,6 +803,7 @@ void setup()
             M5_LOGI("DoF BMI270 at 0x%02X", DOF_BMI270_ADDRESS);
         }
     }
+#endif
     // DoF6 is a 6-axis BMI270 with no magnetometer -> skip the AUX BMM150 probe (silences a harmless
     // begin() error).
     {
@@ -805,16 +822,16 @@ void setup()
     // UnitDoF9/UnitDoF10 (BMI270 @0x68/0x69 + BMM350 @0x14[+ SPA06 @0x76]): same Port-C-vs-addI2C
     // branching as UnitMiniIMU/UnitDoF6 for the composite unit's shared bus.
     if (M5.getBoard() == m5::board_t::board_M5Stack) {
-        const int sda = M5.getPin(m5::pin_name_t::port_c_pin2);
-        const int scl = M5.getPin(m5::pin_name_t::port_c_pin1);
-        ok            = m5::unit::wiring::i2cWire(Units, unit, Wire, sda, scl, unit.component_config().clock);
+        ok = connect_port_c(unit);
     } else {
         ok = m5::unit::wiring::addI2C(Units, unit, 400 * 1000U);
     }
+#if defined(ARDUINO)
     // The DoF BMI270 address is SW1-selectable (0x68 default / 0x69) and fixed at compile time via
     // DOF_BMI270_ADDRESS. Now that the bus above is connected (addI2C()/i2cWire() have called
     // Wire.begin() whenever their backend is Wire), probe both candidates as a diagnostic and warn if
-    // the address actually present differs from the one this build targets.
+    // the address actually present differs from the one this build targets. Arduino-only: the probe
+    // talks over Wire directly; ESP-IDF builds skip it (a mismatch still shows as a begin failure).
     {
         uint8_t detected{DOF_BMI270_ADDRESS};
         m5::unit::bmi270::detectAddress(
@@ -840,6 +857,7 @@ void setup()
             M5_LOGI("DoF BMI270 at 0x%02X", DOF_BMI270_ADDRESS);
         }
     }
+#endif
     ok = ok && Units.begin() && ahrs.add(unit.imu()) && ahrs.add(unit.mag());
 #if defined(USING_UNIT_DOF10)
     diag.unit_label = "UnitDoF10 (BMI270+BMM350+SPA06)";
