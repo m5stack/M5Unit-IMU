@@ -156,24 +156,16 @@ struct DiagInfo {
 };
 DiagInfo diag;
 
-#if __has_include(<WiFi.h>)  // the formatters below are used only by the web /info panel
-const char* imu_kind_name(const m5::unit::imu::ImuKind k)
-{
-    using K = m5::unit::imu::ImuKind;
-    switch (k) {
-        case K::MPU6050: return "MPU6050";
-        case K::MPU6886: return "MPU6886";
-        case K::MPU9250: return "MPU9250";
-        case K::BMI270:  return "BMI270";
-        case K::SH200Q:  return "SH200Q";
-        case K::None:
-        default:         return "none";
-    }
-}
+//! @brief Non-null once IMU setup has failed; short, display-friendly reason why the accel/gyro is
+//! unavailable (built-in absent / unsupported generation, or an external unit not responding).
+//! setup()/loop() use it to skip failStop() and show a diagnostic notice (Serial + LCD + web /info)
+//! instead of halting on a red screen.
+const char* fail_reason{nullptr};
 
 //! @brief Human-readable name for every m5::board_t (mirrors M5GFX lgfx/boards.hpp). Deprecated
 //! aliases (board_M5Atom, board_M5AtomEcho, board_M5AtomEchoS3R) share a value with their
-//! canonical entry and so are covered by it.
+//! canonical entry and so are covered by it. Used by the diagnostic notice (every build) and the
+//! web /info panel.
 const char* board_name(const m5::board_t b)
 {
     using B = m5::board_t;
@@ -248,6 +240,21 @@ const char* board_name(const m5::board_t b)
         case B::board_FrameBuffer:     return "FrameBuffer";
         case B::board_unknown:
         default:                       return "unknown";
+    }
+}
+
+#if __has_include(<WiFi.h>)  // used only by the web /info panel
+const char* imu_kind_name(const m5::unit::imu::ImuKind k)
+{
+    using K = m5::unit::imu::ImuKind;
+    switch (k) {
+        case K::MPU6050: return "MPU6050";
+        case K::MPU6886: return "MPU6886";
+        case K::MPU9250: return "MPU9250";
+        case K::BMI270:  return "BMI270";
+        case K::SH200Q:  return "SH200Q";
+        case K::None:
+        default:         return "none";
     }
 }
 
@@ -393,16 +400,22 @@ bool begin_builtin()
         case m5::unit::imu::ImuKind::MPU9250:
             M5_LOGE("Detected an MPU9250 (original 9-axis generation). Its accel/gyro driver is not "
                     "yet implemented in M5Unit-IMU; cannot start the built-in IMU.");
+            fail_reason     = "MPU9250 detected: driver not supported";
+            diag.unit_label = fail_reason;  // /info "source" reports the reason
             return false;
 
         case m5::unit::imu::ImuKind::SH200Q:
             M5_LOGE("Detected an SH200Q (2019 generation). Its accel/gyro driver is not yet "
                     "implemented in M5Unit-IMU; cannot start the built-in IMU.");
+            fail_reason     = "SH200Q detected: driver not supported";
+            diag.unit_label = fail_reason;  // /info "source" reports the reason
             return false;
 
         case m5::unit::imu::ImuKind::None:
         default:
             M5_LOGE("No supported built-in accel/gyro IMU detected on the internal bus.");
+            fail_reason     = "No built-in IMU detected";
+            diag.unit_label = fail_reason;  // /info "source" reports the reason
             return false;
     }
 
@@ -411,6 +424,13 @@ bool begin_builtin()
         m5::imu::any(diag.accel_src->imuSpec() & m5::imu::Capability::Mag)) {
         diag.mag_src   = diag.accel_src;
         diag.mag_label = "BMM150 (AUX)";
+    }
+    if (!ok && !fail_reason) {
+        // Kind was MPU6886/MPU6050/BMI270 (recognized chip), but begin_builtin_mpu6886()/
+        // begin_builtin_bmi270() itself failed (e.g. a bus error) -- distinct from "no supported
+        // chip" above.
+        fail_reason     = "Built-in IMU begin failed";
+        diag.unit_label = fail_reason;  // /info "source" reports the reason
     }
     return ok;
 }
@@ -712,6 +732,10 @@ void setup()
         diag.unit_label = "UnitMiniIMU (MPU6886 @0x68)";
     }
     diag.accel_src = &unit;
+    if (!ok) {
+        fail_reason     = "UnitMiniIMU not found (check GROVE cable)";
+        diag.unit_label = fail_reason;  // /info "source" reports the reason
+    }
 #elif defined(USING_UNIT_MINI_IMU_WITH_BMM350)
     // Both units share the same GROVE bus (0x68 + 0x14 coexist, no address conflict)
     ok = m5::unit::wiring::addI2C(Units, unit, 400 * 1000U) && m5::unit::wiring::addI2C(Units, mag_unit, 400 * 1000U) &&
@@ -720,6 +744,10 @@ void setup()
     diag.accel_src  = &unit;
     diag.mag_src    = &mag_unit;
     diag.mag_label  = "BMM350";
+    if (!ok) {
+        fail_reason     = "UnitMiniIMU/BMM350 not found (check GROVE cable)";
+        diag.unit_label = fail_reason;  // /info "source" reports the reason
+    }
 #elif defined(USING_UNIT_DOF6)
     // UnitDoF6 (BMI270 @0x68/0x69): same Port-C-vs-addI2C branching as UnitMiniIMU -- the DoF BMI270
     // collides with classic-Core Gray/Fire's built-in MPU6886/BMI270 at the same 0x68 address.
@@ -769,6 +797,10 @@ void setup()
     ok               = ok && Units.begin() && ahrs.add(unit);
     diag.unit_label  = "UnitDoF6 (BMI270)";
     diag.accel_src   = &unit;
+    if (!ok) {
+        fail_reason     = "UnitDoF6 not found (check GROVE cable)";
+        diag.unit_label = fail_reason;  // /info "source" reports the reason
+    }
 #elif defined(USING_UNIT_DOF9) || defined(USING_UNIT_DOF10)
     // UnitDoF9/UnitDoF10 (BMI270 @0x68/0x69 + BMM350 @0x14[+ SPA06 @0x76]): same Port-C-vs-addI2C
     // branching as UnitMiniIMU/UnitDoF6 for the composite unit's shared bus.
@@ -817,29 +849,72 @@ void setup()
     diag.accel_src = &unit.imu();
     diag.mag_src   = &unit.mag();
     diag.mag_label = "BMM350 (0x14)";
+    if (!ok) {
+#if defined(USING_UNIT_DOF10)
+        fail_reason = "UnitDoF10 not found (check GROVE cable)";
+#else
+        fail_reason = "UnitDoF9 not found (check GROVE cable)";
+#endif
+        diag.unit_label = fail_reason;  // /info "source" reports the reason
+    }
 #elif defined(USING_BUILTIN_IMU)
     ok = begin_builtin();
 #endif
-    if (!ok || !ahrs.begin()) {
-        M5_LOGE("Failed to begin");
-        M5_LOGW("%s", Units.debugInfo().c_str());
-        m5::unit::wiring::failStop();
+    if (!ok && !fail_reason) {
+        // A begin path failed without recording a specific reason -- truly unexpected, but record
+        // a generic one so the diagnostic mode below still engages instead of halting.
+        fail_reason = "begin failed";
     }
-    ahrs.selectFilter(current_filter);  // FilterType::Madgwick
+    if (!fail_reason && !ahrs.begin()) {
+        fail_reason = "begin failed";
+    }
+    if (fail_reason) {
+        // No IMU to run: skip failStop() (a solid red screen tells the user nothing) and finish
+        // setup anyway -- the boot log, the LCD notice below, and the web /info panel all carry
+        // the reason instead.
+        M5_LOGW("IMU unavailable: %s", fail_reason);
+        M5_LOGW("%s", Units.debugInfo().c_str());
+    } else {
+        ahrs.selectFilter(current_filter);  // FilterType::Madgwick
 
-    M5_LOGI("M5UnitUnified initialized");
-    M5_LOGI("%s", Units.debugInfo().c_str());
-    M5_LOGI("AHRS filter: %s (BtnA: switch)", filter_name(current_filter));
-    M5.Log.printf("[filter]: roll,pitch,yaw\n");
+        M5_LOGI("M5UnitUnified initialized");
+        M5_LOGI("%s", Units.debugInfo().c_str());
+        M5_LOGI("AHRS filter: %s (BtnA: switch)", filter_name(current_filter));
+        M5.Log.printf("[filter]: roll,pitch,yaw\n");
+    }
 
 #if defined(AHRS_WEB_VIEWER)
     start_web_viewer();
 #endif
+
+    if (has_lcd && fail_reason) {
+        // Static one-shot notice: nothing else draws to `lcd` on this path (loop() returns before
+        // draw_gizmo()), so this stays on screen for the life of the program.
+        lcd.fillScreen(TFT_BLACK);
+        lcd.setTextColor(TFT_WHITE, TFT_BLACK);
+        lcd.setTextSize(lcd.width() < 160 ? 1 : 2);
+        lcd.setCursor(4, 4);
+        lcd.printf("AhrsDemo\n%s\nboard: %s\n", fail_reason, board_name(diag.board));
+#if defined(AHRS_WEB_VIEWER)
+        lcd.printf("WiFi 'AhrsDemo' -> 192.168.4.1/info\n");
+#endif
+    }
 }
 
 void loop()
 {
     M5.update();
+
+    if (fail_reason) {
+        // IMU unavailable: nothing to drain/fuse/draw, and BtnA is meaningless without a
+        // running filter. Still service the web viewer (its /info panel is the most useful
+        // diagnostic here); the static LCD notice drawn in setup() and the boot log carry the reason.
+#if defined(AHRS_WEB_VIEWER)
+        web_server.handleClient();
+#endif
+        return;
+    }
+
     Units.update();
 
 #if defined(AHRS_WEB_VIEWER)
