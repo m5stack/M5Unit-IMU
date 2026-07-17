@@ -6,7 +6,7 @@
 /*!
   @file unit_spa06_data.hpp
   @brief SPA06-003 measurement data + calibration/compensation (framework independent)
-  @details Per datasheet/spa06-003.md. PSR/TMP are 24-bit 2's complement; 11 calibration coefficients
+  @details Per the SPA06-003 datasheet. PSR/TMP are 24-bit 2's complement; 11 calibration coefficients
   (c0,c1 12-bit; c00,c10 20-bit; c01,c11,c20,c21,c30 16-bit; c31,c40 12-bit) drive a high-order
   compensation polynomial. Pressure is returned in Pa; the UnitSPA06 driver converts to hPa.
 */

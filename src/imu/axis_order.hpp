@@ -35,8 +35,7 @@ enum class AxisPermutation : uint8_t {
   @details Applied by AhrsController::update() to every accel/gyro/mag sample from a given
   IMUDataSource, right after raw-to-physical conversion and before auto-calibration offsets
   are subtracted (see AhrsController::writeAxisOrder()/readAxisOrder()). Mirrors
-  M5Unified's internal_axisorder_t, reworked to operate directly on physical-unit float
-  triplets instead of a packed 3-bit-per-axis raw index.
+  M5Unified's internal_axisorder_t, operating directly on physical-unit float triplets.
 
   The default (AxisPermutation::XYZ, no inversion) is the identity transform, i.e. exactly
   what a source already reports in its own chip frame.

@@ -7,6 +7,8 @@
   @file presets.cpp
   @brief Board-specific AhrsController setup for M5Stack products with a built-in IMU
 */
+// Not native-buildable: the unit types used here pull in M5UnitUnified + Arduino/ESP-IDF headers,
+// so test_native's build_src_filter excludes this file; it is compile-verified by embedded envs.
 #include "presets.hpp"
 
 namespace m5 {

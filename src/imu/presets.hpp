@@ -7,18 +7,10 @@
   @file presets.hpp
   @brief Board-specific AhrsController setup for M5Stack products with a built-in IMU
   @details Each function below only registers the given unit(s) with an AhrsController and
-  applies the axis remap M5Unified's IMU_Class::begin() hard-codes for that board (see
-  research/m5unified-port.md §軸リマップ, ported from M5Unified's internal_axisorder_t /
-  IMU_Class.cpp board switch). None of these functions call unit.begin() themselves -- the
-  caller must have already begun the unit(s) (I2C bus ready) -- and none of them decide which
-  board is running; callers pick which preset to call (e.g. via M5.getBoard()).
-
-  @note Not covered by native tests: everything these functions touch (AhrsController /
-  AxisOrder) already has native coverage from Task 9. The unit types used here
-  (UnitMPU6886/UnitBMI270/UnitBMM150) pull in M5UnitUnified + Arduino/ESP-IDF headers and
-  cannot build under test_native (see platformio.ini's test_native build_src_filter, which
-  excludes this file); presets.cpp is instead verified by compiling under an embedded env
-  (e.g. test_MPU6886_Core2).
+  applies the axis remap M5Unified's IMU_Class::begin() hard-codes for that board. None of
+  these functions call unit.begin() themselves -- the caller must have already begun the
+  unit(s) (I2C bus ready) -- and none of them decide which board is running; callers pick
+  which preset to call (e.g. via M5.getBoard()).
 */
 #ifndef M5_UNIT_IMU_IMU_PRESETS_HPP
 #define M5_UNIT_IMU_IMU_PRESETS_HPP

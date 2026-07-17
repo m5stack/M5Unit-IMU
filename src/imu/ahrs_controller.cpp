@@ -43,7 +43,7 @@ constexpr float AHRS_DT_EMA_ALPHA{0.1f};
 constexpr int32_t MAG_OVERFLOW_SENTINEL{-32768};
 
 // Auto-calibration parameters (M5Unified IMU_Class::_update_convert_param(), ported from
-// raw<<16 fixed point to physical units -- see research/m5unified-port.md). radius/tolerance
+// raw<<16 fixed point to physical units). radius/tolerance
 // are the expected magnitude of (sample - offset) at rest and the tolerance band around it;
 // noise is the per-sample movement threshold below which stillness accumulates.
 //! @note accel/gyro thresholds below are moved from M5Unified as physical quantity values.

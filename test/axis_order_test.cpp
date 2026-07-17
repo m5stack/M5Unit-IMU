@@ -81,7 +81,7 @@ TEST(AxisOrder, AllAxesInvertedWithIdentityPermutation)
 
 TEST(AxisOrder, PermutationAndInversionCombine)
 {
-    // AtomS3R-style remap: order_yxz | invert_y (see research/m5unified-port.md)
+    // AtomS3R-style remap: order_yxz | invert_y (M5Unified's correction for this board)
     AxisOrder order;
     order.permutation = AxisPermutation::YXZ;
     order.invert_y    = true;

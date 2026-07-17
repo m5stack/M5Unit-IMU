@@ -49,8 +49,8 @@ namespace imu {
     filter, to avoid feeding raw, jittery sample-to-sample deltas straight into filters
     that resample their internal state on large dt swings (see vqf.hpp). update(const
     float dt) bypasses both the clock and the smoothing -- the caller's dt is used as-is
-    for the whole batch drained during that call, which is what test code (and any other
-    caller with its own timebase) should use.
+    for the whole batch drained during that call, which is what callers with their own
+    timebase should use.
  */
 class AhrsController {
 public:
@@ -133,9 +133,8 @@ public:
       @param accel Accelerometer strength, 0 = off, 1-255 = adjustment speed (higher = faster)
       @param gyro Gyroscope strength, 0 = off, 1-255 = adjustment speed
       @param mag Magnetometer strength, 0 = off, 1-255 = adjustment speed
-      @details Ported from M5Unified's IMU_Class stillness/sphere-fit auto-offset algorithm
-      (see research/m5unified-port.md), rewritten to operate on physical-unit samples
-      instead of raw<<16 fixed point. Each capability tracks how "still" its recent samples
+      @details A stillness/sphere-fit auto-offset algorithm operating on physical-unit
+      samples. Each capability tracks how "still" its recent samples
       have been; once that stillness score exceeds a threshold, the offset is nudged toward
       fitting the sample to the expected shape at rest (accel/mag: a sphere of a fixed
       radius around the offset; gyro: the origin). The resulting offset is subtracted from
@@ -162,8 +161,8 @@ public:
       m5::utility::millis()) for approximately duration_ms while the unit is held still,
       then overwrites the gyro offset with the mean of every gyro sample seen. See
       calibrateGyro(const uint32_t, const float) for the deterministic, explicit-dt sibling
-      used by native tests (drives the same sample-collection state machine through
-      update(const float dt) instead of the real clock, so tests do not depend on wall time).
+      (drives the same sample collection through update(const float dt) instead of the real
+      clock).
      */
     bool calibrateGyro(const uint32_t duration_ms);
 
