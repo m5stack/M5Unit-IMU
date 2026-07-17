@@ -67,8 +67,27 @@ public:
     }
     ///@}
 
+    ///@name Reset
+    ///@{
+    //! @brief Soft reset (REG_RESET SOFT_RST), leaving the chip initialized but unconfigured and stopped
+    //! @return True if successful
+    //! @warning During periodic measurements, an error is returned; call stopPeriodicMeasurement() first
+    //! @warning All settings revert to the chip defaults; call startPeriodicMeasurement(...) to reconfigure and
+    //! resume measurement
+    bool softReset();
+    ///@}
+
     ///@name Periodic measurement
     ///@{
+    /*!
+      @brief Start periodic measurement
+      @param pressure_oversampling Pressure oversampling (1/2/4/8/16/32/64/128)
+      @param temperature_oversampling Temperature oversampling (1/2/4/8/16/32/64/128)
+      @param rate Pressure/temperature measurement rate code PM_RATE/TMP_RATE bits (0=1/s..7=128/s)
+      @return True if successful
+    */
+    bool startPeriodicMeasurement(const uint8_t pressure_oversampling, const uint8_t temperature_oversampling,
+                                  const uint8_t rate);
     //! @brief Start periodic measurement in the current settings
     bool startPeriodicMeasurement();
     //! @brief Stop periodic measurement
@@ -90,6 +109,8 @@ public:
     ///@}
 
 protected:
+    bool start_periodic_measurement(const uint8_t pressure_oversampling, const uint8_t temperature_oversampling,
+                                    const uint8_t rate);
     bool start_periodic_measurement();
     bool stop_periodic_measurement();
     bool read_measurement(spa06::Data& d);

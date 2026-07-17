@@ -44,6 +44,9 @@ UnitMPU6xxx::UnitMPU6xxx(const uint8_t addr)
 
 bool UnitMPU6xxx::begin()
 {
+    // Re-entrant begin(): make sure _periodic and the hardware never get out of sync
+    stop_periodic_measurement();
+
     auto ssize = stored_size();
     if (ssize != _data->capacity()) {
         _data.reset(new m5::container::CircularBuffer<mpu6886::Data>(ssize));
@@ -60,24 +63,27 @@ bool UnitMPU6xxx::begin()
         M5_LIB_LOGE("WHO_AM_I mismatch %02X", id);
         return false;
     }
+    if (!softReset()) {
+        return false;
+    }
+
+    return _cfg.start_periodic
+               ? startPeriodicMeasurement(_cfg.accel_range, _cfg.gyro_range, _cfg.dlpf, _cfg.sample_rate_div)
+               : true;
+}
+
+bool UnitMPU6xxx::softReset()
+{
+    if (inPeriodic()) {
+        M5_LIB_LOGE("Periodic measurements are running");
+        return false;
+    }
     if (!writeRegister8(REG_PWR_MGMT_1, DEVICE_RESET)) {
         M5_LIB_LOGE("Failed to reset");
         return false;
     }
     m5::utility::delay(10);
-
-    if (!write_register8_verified(REG_PWR_MGMT_1, CLKSEL_AUTO_PLL) || !writeAccelRange(_cfg.accel_range) ||
-        !writeGyroRange(_cfg.gyro_range) || !write_register8_verified(REG_CONFIG, static_cast<uint8_t>(_cfg.dlpf)) ||
-        !write_register8_verified(REG_SMPLRT_DIV, _cfg.sample_rate_div) ||
-        !write_register8_verified(REG_INT_PIN_CFG, 0xC0) || !write_register8_verified(REG_INT_ENABLE, 0x00) ||
-        !write_register8_verified(REG_ACCEL_CONFIG2, 0x00) || !write_register8_verified(REG_USER_CTRL, 0x00) ||
-        !write_register8_verified(REG_FIFO_EN, 0x00)) {
-        M5_LIB_LOGE("Failed to initialize");
-        return false;
-    }
-    m5::utility::delay(50);  // Wait for gyro (typ 35ms) / accel (typ 10ms) startup
-
-    return _cfg.start_periodic ? startPeriodicMeasurement() : true;
+    return true;
 }
 
 void UnitMPU6xxx::update(const bool force)
@@ -97,21 +103,51 @@ void UnitMPU6xxx::update(const bool force)
     }
 }
 
-bool UnitMPU6xxx::start_periodic_measurement()
+bool UnitMPU6xxx::start_periodic_measurement(const mpu6886::AccelRange accel_range, const mpu6886::GyroRange gyro_range,
+                                             const mpu6886::Dlpf dlpf, const uint8_t sample_rate_div)
 {
     if (inPeriodic()) {
         return false;
     }
+
+    // Wake from the post-reset sleep (CLKSEL auto PLL), then apply the measurement settings
+    if (!write_register8_verified(REG_PWR_MGMT_1, CLKSEL_AUTO_PLL) || !writeAccelRange(accel_range) ||
+        !writeGyroRange(gyro_range) || !write_register8_verified(REG_CONFIG, static_cast<uint8_t>(dlpf)) ||
+        !write_register8_verified(REG_SMPLRT_DIV, sample_rate_div) ||
+        !write_register8_verified(REG_INT_PIN_CFG, 0xC0) || !write_register8_verified(REG_INT_ENABLE, 0x00) ||
+        !write_register8_verified(REG_ACCEL_CONFIG2, 0x00) || !write_register8_verified(REG_USER_CTRL, 0x00) ||
+        !write_register8_verified(REG_FIFO_EN, 0x00)) {
+        M5_LIB_LOGE("Failed to initialize");
+        return false;
+    }
+    m5::utility::delay(50);  // Wait for gyro (typ 35ms) / accel (typ 10ms) startup
+
+    // accel_range/gyro_range are synced to _cfg by writeAccelRange/writeGyroRange above
+    _cfg.dlpf            = dlpf;
+    _cfg.sample_rate_div = sample_rate_div;
+
     _periodic = true;
     _latest   = 0;
-    _interval = 1 + _cfg.sample_rate_div;
+    _interval = 1 + sample_rate_div;
     return true;
+}
+
+bool UnitMPU6xxx::start_periodic_measurement()
+{
+    return start_periodic_measurement(_cfg.accel_range, _cfg.gyro_range, _cfg.dlpf, _cfg.sample_rate_div);
 }
 
 bool UnitMPU6xxx::stop_periodic_measurement()
 {
     _periodic = false;
     return true;
+}
+
+bool UnitMPU6xxx::startPeriodicMeasurement(const mpu6886::AccelRange accel_range, const mpu6886::GyroRange gyro_range,
+                                           const mpu6886::Dlpf dlpf, const uint8_t sample_rate_div)
+{
+    return PeriodicMeasurementAdapter<UnitMPU6xxx, mpu6886::Data>::startPeriodicMeasurement(accel_range, gyro_range,
+                                                                                            dlpf, sample_rate_div);
 }
 
 bool UnitMPU6xxx::startPeriodicMeasurement()

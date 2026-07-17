@@ -50,8 +50,8 @@ public:
         bmi270::AccelODR accel_odr{bmi270::AccelODR::Rate100Hz};
         //! Gyroscope output data rate (periodic measurement interval is derived from this)
         bmi270::GyroODR gyro_odr{bmi270::GyroODR::Rate100Hz};
-        //! Probe for an on-chip BMM150 magnetometer via the AUX interface on begin()?
-        //! If no BMM150 responds, begin() still succeeds with 6-axis (accel/gyro) only
+        //! Probe for an on-chip BMM150 magnetometer via the AUX interface on startPeriodicMeasurement()?
+        //! If no BMM150 responds, the start still succeeds with 6-axis (accel/gyro) only
         bool enable_aux_bmm150{true};
     };
 
@@ -102,8 +102,30 @@ public:
     bool readGyroRange(bmi270::GyroRange& range);
     ///@}
 
+    ///@name Reset
+    ///@{
+    //! @brief Soft reset (REG_CMD CMD_SOFTRESET), then re-run the mandatory post-reset initialization
+    //! (config blob re-upload), leaving the chip initialized but unconfigured and stopped
+    //! @return True if successful
+    //! @warning During periodic measurements, an error is returned; call stopPeriodicMeasurement() first
+    //! @warning All settings revert to the chip defaults; call startPeriodicMeasurement(...) to reconfigure and
+    //! resume measurement
+    bool softReset();
+    ///@}
+
     ///@name Periodic measurement
     ///@{
+    /*!
+      @brief Start periodic measurement
+      @param accel_range Accelerometer range
+      @param gyro_range Gyroscope range
+      @param accel_odr Accelerometer output data rate
+      @param gyro_odr Gyroscope output data rate (periodic measurement interval is derived from this)
+      @return True if successful
+      @note When config_t::enable_aux_bmm150 is set, the AUX BMM150 is also (re)probed and configured here
+    */
+    bool startPeriodicMeasurement(const bmi270::AccelRange accel_range, const bmi270::GyroRange gyro_range,
+                                  const bmi270::AccelODR accel_odr, const bmi270::GyroODR gyro_odr);
     //! @brief Start periodic measurement in the current settings
     //! @return True if successful
     bool startPeriodicMeasurement();
@@ -115,7 +137,7 @@ public:
     ///@name IMUDataSource
     ///@{
     //! @brief Capability of this unit
-    //! @return Accel | Gyro | Temp, plus Mag if an AUX BMM150 was detected in begin()
+    //! @return Accel | Gyro | Temp, plus Mag if an AUX BMM150 was detected in startPeriodicMeasurement()
     virtual m5::imu::Capability imuSpec() const override
     {
         using m5::imu::Capability;
@@ -132,6 +154,8 @@ public:
     ///@}
 
 protected:
+    bool start_periodic_measurement(const bmi270::AccelRange accel_range, const bmi270::GyroRange gyro_range,
+                                    const bmi270::AccelODR accel_odr, const bmi270::GyroODR gyro_odr);
     bool start_periodic_measurement();
     bool stop_periodic_measurement();
     bool read_measurement(bmi270::Data& d);
@@ -142,7 +166,7 @@ protected:
     // BMI270_Class::_upload_file() which always returns true regardless of write result.
     bool upload_config();
 
-    // AUX (on-chip BMM150) support. Called once from begin() after the ACC/GYR config
+    // AUX (on-chip BMM150) support. Called from start_periodic_measurement() after the ACC/GYR config
     // writes succeed; on success the AUX interface is left in data mode (BMI270 auto-polls
     // the BMM150 at 30Hz into REG_DATA_0..REG_DATA_7) and _mag_trim holds the factory trim read
     // via the AUX bridge. On failure (no BMM150 wired), the caller falls back to 6-axis.
@@ -163,8 +187,8 @@ private:
     config_t _cfg{};
     int16_t _last_temp{};             // Latest valid REG_TEMPERATURE_0 reading (register update is not per-sample)
     uint32_t _pushed{}, _consumed{};  // readImuRaw pop counters (do not disturb latest()/oldest())
-    bool _aux_mag{false};             // True if an AUX BMM150 was detected and configured in begin()
-    bmm150::trim_t _mag_trim{};       // Factory trim read via the AUX bridge, valid only if _aux_mag
+    bool _aux_mag{false};        // True if an AUX BMM150 was detected and configured in start_periodic_measurement()
+    bmm150::trim_t _mag_trim{};  // Factory trim read via the AUX bridge, valid only if _aux_mag
     std::unique_ptr<m5::container::CircularBuffer<bmi270::Data>> _data{};
 };
 

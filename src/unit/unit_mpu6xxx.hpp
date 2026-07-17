@@ -99,8 +99,28 @@ public:
     bool readGyroRange(mpu6886::GyroRange& range);
     ///@}
 
+    ///@name Reset
+    ///@{
+    //! @brief Soft reset (REG_PWR_MGMT_1 DEVICE_RESET), leaving the chip initialized but unconfigured and stopped
+    //! @return True if successful
+    //! @warning During periodic measurements, an error is returned; call stopPeriodicMeasurement() first
+    //! @warning All settings revert to the chip defaults; call startPeriodicMeasurement(...) to reconfigure and
+    //! resume measurement
+    bool softReset();
+    ///@}
+
     ///@name Periodic measurement
     ///@{
+    /*!
+      @brief Start periodic measurement
+      @param accel_range Accelerometer range
+      @param gyro_range Gyroscope range
+      @param dlpf Gyro/temp low pass filter
+      @param sample_rate_div Sample rate divider (ODR = 1000/(1+div) Hz)
+      @return True if successful
+    */
+    bool startPeriodicMeasurement(const mpu6886::AccelRange accel_range, const mpu6886::GyroRange gyro_range,
+                                  const mpu6886::Dlpf dlpf, const uint8_t sample_rate_div);
     //! @brief Start periodic measurement in the current settings
     //! @return True if successful
     bool startPeriodicMeasurement();
@@ -140,6 +160,10 @@ protected:
     virtual float temperature_offset() const = 0;
     ///@}
 
+    //! @brief Virtual: UnitMPU9250 layers its aux-bypass re-open on top (the config write here
+    //! includes INT_PIN_CFG=0xC0, which closes the bypass)
+    virtual bool start_periodic_measurement(const mpu6886::AccelRange accel_range, const mpu6886::GyroRange gyro_range,
+                                            const mpu6886::Dlpf dlpf, const uint8_t sample_rate_div);
     bool start_periodic_measurement();
     bool stop_periodic_measurement();
     bool read_measurement(mpu6886::Data& d);

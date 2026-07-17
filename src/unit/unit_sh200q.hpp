@@ -100,8 +100,31 @@ public:
     bool readGyroRange(sh200q::GyroRange& range);
     ///@}
 
+    ///@name Reset
+    ///@{
+    //! @brief Soft reset (the undocumented ADC/init reset dance inherited from the original library),
+    //! leaving the chip initialized but unconfigured and stopped
+    //! @return True if successful
+    //! @warning During periodic measurements, an error is returned; call stopPeriodicMeasurement() first
+    //! @warning All settings revert to the chip defaults; call startPeriodicMeasurement(...) to reconfigure and
+    //! resume measurement
+    bool softReset();
+    ///@}
+
     ///@name Periodic measurement
     ///@{
+    /*!
+      @brief Start periodic measurement
+      @param accel_range Accelerometer range
+      @param gyro_range Gyroscope range
+      @param accel_odr Accelerometer output data rate
+      @param gyro_odr Gyroscope output data rate (also paces the periodic measurement)
+      @param gyro_dlpf Gyro low pass filter
+      @return True if successful
+    */
+    bool startPeriodicMeasurement(const sh200q::AccelRange accel_range, const sh200q::GyroRange gyro_range,
+                                  const sh200q::AccelOdr accel_odr, const sh200q::GyroOdr gyro_odr,
+                                  const sh200q::GyroDlpf gyro_dlpf);
     //! @brief Start periodic measurement in the current settings
     bool startPeriodicMeasurement();
     //! @brief Stop periodic measurement
@@ -123,6 +146,9 @@ public:
     ///@}
 
 protected:
+    bool start_periodic_measurement(const sh200q::AccelRange accel_range, const sh200q::GyroRange gyro_range,
+                                    const sh200q::AccelOdr accel_odr, const sh200q::GyroOdr gyro_odr,
+                                    const sh200q::GyroDlpf gyro_dlpf);
     bool start_periodic_measurement();
     bool stop_periodic_measurement();
     bool read_measurement(sh200q::Data& d);

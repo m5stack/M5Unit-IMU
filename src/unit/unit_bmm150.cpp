@@ -65,6 +65,9 @@ UnitBMM150::UnitBMM150(const uint8_t addr)
 
 bool UnitBMM150::begin()
 {
+    // Re-entrant begin(): make sure _periodic and the hardware never get out of sync
+    stop_periodic_measurement();
+
     auto ssize = stored_size();
     if (ssize != _data->capacity()) {
         _data.reset(new m5::container::CircularBuffer<bmm150::Data>(ssize));
@@ -91,25 +94,29 @@ bool UnitBMM150::begin()
         return false;
     }
 
-    if (!writeRegister8(REG_POWER_CONTROL, SOFT_RESET_AND_POWER_ON)) {
-        M5_LIB_LOGE("Failed to reset");
+    if (!softReset()) {
         return false;
     }
-    m5::utility::delay(3);
 
     if (!read_trim(_trim)) {
         return false;
     }
 
-    if (!write_register8_verified(REG_REP_XY, preset_rep_xy(_cfg.preset)) ||
-        !write_register8_verified(REG_REP_Z, preset_rep_z(_cfg.preset)) ||
-        !write_register8_verified(REG_OP_MODE,
-                                  static_cast<uint8_t>((static_cast<uint8_t>(_cfg.rate) << 3) | OPMODE_NORMAL))) {
-        M5_LIB_LOGE("Failed to initialize");
+    return _cfg.start_periodic ? startPeriodicMeasurement(_cfg.rate, _cfg.preset) : true;
+}
+
+bool UnitBMM150::softReset()
+{
+    if (inPeriodic()) {
+        M5_LIB_LOGE("Periodic measurements are running");
         return false;
     }
-
-    return _cfg.start_periodic ? startPeriodicMeasurement() : true;
+    if (!writeRegister8(REG_POWER_CONTROL, SOFT_RESET_AND_POWER_ON)) {
+        M5_LIB_LOGE("Failed to reset");
+        return false;
+    }
+    m5::utility::delay(3);
+    return true;
 }
 
 void UnitBMM150::update(const bool force)
@@ -129,21 +136,38 @@ void UnitBMM150::update(const bool force)
     }
 }
 
-bool UnitBMM150::start_periodic_measurement()
+bool UnitBMM150::start_periodic_measurement(const bmm150::DataRate rate, const bmm150::Preset preset)
 {
     if (inPeriodic()) {
         return false;
     }
+
+    // writePreset/writeDataRate also sync _cfg (and _interval) on success
+    if (!writePreset(preset) || !writeDataRate(rate)) {
+        M5_LIB_LOGE("Failed to initialize");
+        return false;
+    }
+
     _periodic = true;
     _latest   = 0;
-    _interval = interval_ms(_cfg.rate);
+    _interval = interval_ms(rate);
     return true;
+}
+
+bool UnitBMM150::start_periodic_measurement()
+{
+    return start_periodic_measurement(_cfg.rate, _cfg.preset);
 }
 
 bool UnitBMM150::stop_periodic_measurement()
 {
     _periodic = false;
     return true;
+}
+
+bool UnitBMM150::startPeriodicMeasurement(const bmm150::DataRate rate, const bmm150::Preset preset)
+{
+    return PeriodicMeasurementAdapter<UnitBMM150, bmm150::Data>::startPeriodicMeasurement(rate, preset);
 }
 
 bool UnitBMM150::startPeriodicMeasurement()

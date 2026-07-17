@@ -71,6 +71,9 @@ UnitSPA06::UnitSPA06(const uint8_t addr)
 
 bool UnitSPA06::begin()
 {
+    // Re-entrant begin(): make sure _periodic and the hardware never get out of sync
+    stop_periodic_measurement();
+
     auto ssize = stored_size();
     if (ssize != _data->capacity()) {
         _data.reset(new m5::container::CircularBuffer<spa06::Data>(ssize));
@@ -87,11 +90,9 @@ bool UnitSPA06::begin()
         M5_LIB_LOGE("Not SPA06 %02X", id);
         return false;
     }
-    if (!writeRegister8(REG_RESET, SOFT_RESET)) {
-        M5_LIB_LOGE("Failed to reset");
+    if (!softReset()) {
         return false;
     }
-    m5::utility::delay(50);
 
     // Wait for sensor + coefficients ready (MEAS_CFG bit7 COEF_RDY, bit6 SENSOR_RDY).
     bool ready{};
@@ -111,26 +112,23 @@ bool UnitSPA06::begin()
         return false;
     }
 
-    _kp = spa06::scale_factor(_cfg.pressure_oversampling);
-    _kt = spa06::scale_factor(_cfg.temperature_oversampling);
+    return _cfg.start_periodic
+               ? startPeriodicMeasurement(_cfg.pressure_oversampling, _cfg.temperature_oversampling, _cfg.rate)
+               : true;
+}
 
-    const uint8_t prs_cfg = static_cast<uint8_t>((_cfg.rate << 4) | prc_bits(_cfg.pressure_oversampling));
-    const uint8_t tmp_cfg = static_cast<uint8_t>((_cfg.rate << 4) | prc_bits(_cfg.temperature_oversampling));
-    uint8_t cfg_reg{};
-    // The datasheet requires the SHIFT bit to be enabled whenever oversampling exceeds 8x.
-    if (_cfg.pressure_oversampling > 8) {
-        cfg_reg |= P_SHIFT_BIT;
-    }
-    if (_cfg.temperature_oversampling > 8) {
-        cfg_reg |= T_SHIFT_BIT;
-    }
-    if (!writeRegister8(REG_PRS_CFG, prs_cfg) || !writeRegister8(REG_TMP_CFG, tmp_cfg) ||
-        !writeRegister8(REG_CFG_REG, cfg_reg)) {
-        M5_LIB_LOGE("Failed to configure");
+bool UnitSPA06::softReset()
+{
+    if (inPeriodic()) {
+        M5_LIB_LOGE("Periodic measurements are running");
         return false;
     }
-
-    return _cfg.start_periodic ? startPeriodicMeasurement() : true;
+    if (!writeRegister8(REG_RESET, SOFT_RESET)) {
+        M5_LIB_LOGE("Failed to reset");
+        return false;
+    }
+    m5::utility::delay(50);
+    return true;
 }
 
 bool UnitSPA06::read_coefficients()
@@ -178,11 +176,35 @@ bool UnitSPA06::read_measurement(spa06::Data& d)
     return true;
 }
 
-bool UnitSPA06::start_periodic_measurement()
+bool UnitSPA06::start_periodic_measurement(const uint8_t pressure_oversampling, const uint8_t temperature_oversampling,
+                                           const uint8_t rate)
 {
     if (inPeriodic()) {
         return false;
     }
+
+    const uint8_t prs_cfg = static_cast<uint8_t>((rate << 4) | prc_bits(pressure_oversampling));
+    const uint8_t tmp_cfg = static_cast<uint8_t>((rate << 4) | prc_bits(temperature_oversampling));
+    uint8_t cfg_reg{};
+    // The datasheet requires the SHIFT bit to be enabled whenever oversampling exceeds 8x.
+    if (pressure_oversampling > 8) {
+        cfg_reg |= P_SHIFT_BIT;
+    }
+    if (temperature_oversampling > 8) {
+        cfg_reg |= T_SHIFT_BIT;
+    }
+    if (!writeRegister8(REG_PRS_CFG, prs_cfg) || !writeRegister8(REG_TMP_CFG, tmp_cfg) ||
+        !writeRegister8(REG_CFG_REG, cfg_reg)) {
+        M5_LIB_LOGE("Failed to configure");
+        return false;
+    }
+
+    _kp                           = spa06::scale_factor(pressure_oversampling);
+    _kt                           = spa06::scale_factor(temperature_oversampling);
+    _cfg.pressure_oversampling    = pressure_oversampling;
+    _cfg.temperature_oversampling = temperature_oversampling;
+    _cfg.rate                     = rate;
+
     // Start continuous pressure + temperature background measurement.
     if (!writeRegister8(REG_MEAS_CFG, MEAS_CTRL_CONT_PT)) {
         return false;
@@ -193,11 +215,23 @@ bool UnitSPA06::start_periodic_measurement()
     return true;
 }
 
+bool UnitSPA06::start_periodic_measurement()
+{
+    return start_periodic_measurement(_cfg.pressure_oversampling, _cfg.temperature_oversampling, _cfg.rate);
+}
+
 bool UnitSPA06::stop_periodic_measurement()
 {
     writeRegister8(REG_MEAS_CFG, MEAS_CTRL_STANDBY);
     _periodic = false;
     return true;
+}
+
+bool UnitSPA06::startPeriodicMeasurement(const uint8_t pressure_oversampling, const uint8_t temperature_oversampling,
+                                         const uint8_t rate)
+{
+    return PeriodicMeasurementAdapter<UnitSPA06, spa06::Data>::startPeriodicMeasurement(pressure_oversampling,
+                                                                                        temperature_oversampling, rate);
 }
 
 bool UnitSPA06::startPeriodicMeasurement()

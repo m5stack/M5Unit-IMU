@@ -109,6 +109,9 @@ UnitBMI270::UnitBMI270(const uint8_t addr)
 
 bool UnitBMI270::begin()
 {
+    // Re-entrant begin(): make sure _periodic and the hardware never get out of sync
+    stop_periodic_measurement();
+
     auto ssize = stored_size();
     if (ssize != _data->capacity()) {
         _data.reset(new m5::container::CircularBuffer<bmi270::Data>(ssize));
@@ -131,28 +134,44 @@ bool UnitBMI270::begin()
         return false;
     }
 
+    if (!softReset()) {
+        return false;
+    }
+
+    return _cfg.start_periodic
+               ? startPeriodicMeasurement(_cfg.accel_range, _cfg.gyro_range, _cfg.accel_odr, _cfg.gyro_odr)
+               : true;
+}
+
+bool UnitBMI270::softReset()
+{
+    if (inPeriodic()) {
+        M5_LIB_LOGE("Periodic measurements are running");
+        return false;
+    }
     if (!writeRegister8(REG_CMD, CMD_SOFTRESET)) {
         M5_LIB_LOGE("Failed to reset");
         return false;
     }
-    {
-        // The soft reset reboots the device (~2 ms) during which register reads NAK or return 0.
-        // Poll PWR_CONF, tolerating those transient failures, until it reads its non-zero reset
-        // default -- i.e. the interface is back (mirrors M5Unified's BMI270_Class::begin()).
-        uint8_t pwr_conf{};
-        uint32_t retry = PWR_CONF_POLL_RETRY;
-        do {
-            m5::utility::delay(1);
-            if (!readRegister8(REG_PWR_CONF, pwr_conf, 0)) {
-                pwr_conf = 0;
-            }
-        } while (pwr_conf == 0 && --retry);
-        if (pwr_conf == 0) {
-            M5_LIB_LOGE("BMI270 did not respond after soft reset");
-            return false;
+
+    // The soft reset reboots the device (~2 ms) during which register reads NAK or return 0.
+    // Poll PWR_CONF, tolerating those transient failures, until it reads its non-zero reset
+    // default -- i.e. the interface is back (mirrors M5Unified's BMI270_Class::begin()).
+    uint8_t pwr_conf{};
+    uint32_t retry = PWR_CONF_POLL_RETRY;
+    do {
+        m5::utility::delay(1);
+        if (!readRegister8(REG_PWR_CONF, pwr_conf, 0)) {
+            pwr_conf = 0;
         }
+    } while (pwr_conf == 0 && --retry);
+    if (pwr_conf == 0) {
+        M5_LIB_LOGE("BMI270 did not respond after soft reset");
+        return false;
     }
 
+    // Mandatory post-reset initialization: the reset erases the config blob, so re-upload it
+    // and wait for the internal engine to report init_ok.
     if (!writeRegister8(REG_PWR_CONF, 0x00)) {
         M5_LIB_LOGE("Failed to disable advanced power save");
         return false;
@@ -172,49 +191,27 @@ bool UnitBMI270::begin()
         return false;
     }
 
-    {
-        uint8_t status{};
-        uint32_t retry = INTERNAL_STATUS_POLL_RETRY;
-        for (;;) {
-            m5::utility::delay(1);
-            if (!readRegister8(REG_INTERNAL_STATUS, status, 0)) {
-                status = 0;  // transient NAK while the device settles; keep polling
-            }
-            const uint8_t msg = status & INTERNAL_STATUS_MESSAGE_MASK;
-            if (msg == INTERNAL_STATUS_INIT_OK) {
-                break;
-            }
-            if (msg != 0x00) {
-                M5_LIB_LOGE("BMI270 init error (REG_INTERNAL_STATUS:%02X)", status);
-                return false;
-            }
-            if (--retry == 0) {
-                M5_LIB_LOGE("BMI270 init timeout (REG_INTERNAL_STATUS:%02X)", status);
-                return false;
-            }
+    uint8_t status{};
+    retry = INTERNAL_STATUS_POLL_RETRY;
+    for (;;) {
+        m5::utility::delay(1);
+        if (!readRegister8(REG_INTERNAL_STATUS, status, 0)) {
+            status = 0;  // transient NAK while the device settles; keep polling
+        }
+        const uint8_t msg = status & INTERNAL_STATUS_MESSAGE_MASK;
+        if (msg == INTERNAL_STATUS_INIT_OK) {
+            break;
+        }
+        if (msg != 0x00) {
+            M5_LIB_LOGE("BMI270 init error (REG_INTERNAL_STATUS:%02X)", status);
+            return false;
+        }
+        if (--retry == 0) {
+            M5_LIB_LOGE("BMI270 init timeout (REG_INTERNAL_STATUS:%02X)", status);
+            return false;
         }
     }
-
-    if (!write_register8_verified(REG_PWR_CTRL, PWR_CTRL_ACC_GYR_TEMP_ON) ||
-        !write_register8_verified(REG_ACC_CONF,
-                                  CONF_FILTER_PERF | CONF_BWP_NORMAL | static_cast<uint8_t>(_cfg.accel_odr)) ||
-        !write_register8_verified(REG_ACC_RANGE, static_cast<uint8_t>(_cfg.accel_range)) ||
-        !write_register8_verified(REG_GYR_CONF,
-                                  CONF_FILTER_PERF | CONF_BWP_NORMAL | static_cast<uint8_t>(_cfg.gyro_odr)) ||
-        !write_register8_verified(REG_GYR_RANGE, static_cast<uint8_t>(_cfg.gyro_range))) {
-        M5_LIB_LOGE("Failed to configure");
-        return false;
-    }
-
-    _aux_mag = _cfg.enable_aux_bmm150 && probe_aux_bmm150();
-    if (_cfg.enable_aux_bmm150 && !_aux_mag) {
-        // No BMM150 responded on the AUX interface (normal on boards without one):
-        // disable the AUX interface and continue with 6-axis (accel/gyro/temp) only.
-        writeRegister8(REG_IF_CONF, 0x00);
-        M5_LIB_LOGI("AUX BMM150 not available; continuing with 6-axis (accel/gyro/temp) only");
-    }
-
-    return _cfg.start_periodic ? startPeriodicMeasurement() : true;
+    return true;
 }
 
 void UnitBMI270::update(const bool force)
@@ -234,21 +231,56 @@ void UnitBMI270::update(const bool force)
     }
 }
 
-bool UnitBMI270::start_periodic_measurement()
+bool UnitBMI270::start_periodic_measurement(const bmi270::AccelRange accel_range, const bmi270::GyroRange gyro_range,
+                                            const bmi270::AccelODR accel_odr, const bmi270::GyroODR gyro_odr)
 {
     if (inPeriodic()) {
         return false;
     }
+
+    if (!write_register8_verified(REG_PWR_CTRL, PWR_CTRL_ACC_GYR_TEMP_ON) ||
+        !write_register8_verified(REG_ACC_CONF, CONF_FILTER_PERF | CONF_BWP_NORMAL | static_cast<uint8_t>(accel_odr)) ||
+        !writeAccelRange(accel_range) ||
+        !write_register8_verified(REG_GYR_CONF, CONF_FILTER_PERF | CONF_BWP_NORMAL | static_cast<uint8_t>(gyro_odr)) ||
+        !writeGyroRange(gyro_range)) {
+        M5_LIB_LOGE("Failed to configure");
+        return false;
+    }
+
+    // accel_range/gyro_range are synced to _cfg by writeAccelRange/writeGyroRange above
+    _cfg.accel_odr = accel_odr;
+    _cfg.gyro_odr  = gyro_odr;
+
+    _aux_mag = _cfg.enable_aux_bmm150 && probe_aux_bmm150();
+    if (_cfg.enable_aux_bmm150 && !_aux_mag) {
+        // No BMM150 responded on the AUX interface (normal on boards without one):
+        // disable the AUX interface and continue with 6-axis (accel/gyro/temp) only.
+        writeRegister8(REG_IF_CONF, 0x00);
+        M5_LIB_LOGI("AUX BMM150 not available; continuing with 6-axis (accel/gyro/temp) only");
+    }
+
     _periodic = true;
     _latest   = 0;
-    _interval = odr_interval_ms(_cfg.gyro_odr);
+    _interval = odr_interval_ms(gyro_odr);
     return true;
+}
+
+bool UnitBMI270::start_periodic_measurement()
+{
+    return start_periodic_measurement(_cfg.accel_range, _cfg.gyro_range, _cfg.accel_odr, _cfg.gyro_odr);
 }
 
 bool UnitBMI270::stop_periodic_measurement()
 {
     _periodic = false;
     return true;
+}
+
+bool UnitBMI270::startPeriodicMeasurement(const bmi270::AccelRange accel_range, const bmi270::GyroRange gyro_range,
+                                          const bmi270::AccelODR accel_odr, const bmi270::GyroODR gyro_odr)
+{
+    return PeriodicMeasurementAdapter<UnitBMI270, bmi270::Data>::startPeriodicMeasurement(accel_range, gyro_range,
+                                                                                          accel_odr, gyro_odr);
 }
 
 bool UnitBMI270::startPeriodicMeasurement()

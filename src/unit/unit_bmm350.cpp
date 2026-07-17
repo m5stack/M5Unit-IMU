@@ -161,6 +161,9 @@ UnitBMM350::UnitBMM350(const uint8_t addr)
 
 bool UnitBMM350::begin()
 {
+    // Re-entrant begin(): make sure _periodic and the hardware never get out of sync
+    stop_periodic_measurement();
+
     auto ssize = stored_size();
     if (ssize != _data->capacity()) {
         _data.reset(new m5::container::CircularBuffer<bmm350::Data>(ssize));
@@ -181,12 +184,28 @@ bool UnitBMM350::begin()
         return false;
     }
 
+    if (!softReset()) {
+        return false;
+    }
+
+    return _cfg.start_periodic ? startPeriodicMeasurement(_cfg.rate, _cfg.avg) : true;
+}
+
+bool UnitBMM350::softReset()
+{
+    if (inPeriodic()) {
+        M5_LIB_LOGE("Periodic measurements are running");
+        return false;
+    }
     if (!writeRegister8(REG_CMD, CMD_SOFTRESET)) {
         M5_LIB_LOGE("Failed to reset");
         return false;
     }
     m5::utility::delay(24);
 
+    // Mandatory post-reset initialization, matching the boot sequence order: re-download the OTP
+    // compensation, power off the OTP block, then perform the magnetic reset (BR then FGR; must
+    // complete once before Normal mode).
     otp_compensation_t comp{};
     if (!download_otp(comp)) {
         M5_LIB_LOGE("Failed to download OTP");
@@ -199,7 +218,6 @@ bool UnitBMM350::begin()
         return false;
     }
 
-    // Magnetic reset (BR then FGR; boot must complete this once before Normal mode)
     if (!writeRegister8(REG_PMU_CMD, PMU_CMD_BR)) {
         M5_LIB_LOGE("Failed to issue BR");
         return false;
@@ -210,18 +228,7 @@ bool UnitBMM350::begin()
         return false;
     }
     m5::utility::delay(18);
-
-    if (!write_register8_verified(REG_INT_CTRL, INT_CTRL_DRDY_DATA_REG_EN)) {
-        M5_LIB_LOGE("Failed to initialize");
-        return false;
-    }
-
-    if (!commit_odr_avg(_cfg.rate, _cfg.avg)) {
-        M5_LIB_LOGE("Failed to initialize");
-        return false;
-    }
-
-    return _cfg.start_periodic ? startPeriodicMeasurement() : true;
+    return true;
 }
 
 void UnitBMM350::update(const bool force)
@@ -241,21 +248,44 @@ void UnitBMM350::update(const bool force)
     }
 }
 
-bool UnitBMM350::start_periodic_measurement()
+bool UnitBMM350::start_periodic_measurement(const bmm350::DataRate rate, const bmm350::Averaging avg)
 {
     if (inPeriodic()) {
         return false;
     }
+
+    if (!write_register8_verified(REG_INT_CTRL, INT_CTRL_DRDY_DATA_REG_EN)) {
+        M5_LIB_LOGE("Failed to initialize");
+        return false;
+    }
+
+    if (!commit_odr_avg(rate, avg)) {
+        M5_LIB_LOGE("Failed to initialize");
+        return false;
+    }
+    _cfg.rate = rate;
+    _cfg.avg  = avg;
+
     _periodic = true;
     _latest   = 0;
-    _interval = interval_ms(_cfg.rate);
+    _interval = interval_ms(rate);
     return true;
+}
+
+bool UnitBMM350::start_periodic_measurement()
+{
+    return start_periodic_measurement(_cfg.rate, _cfg.avg);
 }
 
 bool UnitBMM350::stop_periodic_measurement()
 {
     _periodic = false;
     return true;
+}
+
+bool UnitBMM350::startPeriodicMeasurement(const bmm350::DataRate rate, const bmm350::Averaging avg)
+{
+    return PeriodicMeasurementAdapter<UnitBMM350, bmm350::Data>::startPeriodicMeasurement(rate, avg);
 }
 
 bool UnitBMM350::startPeriodicMeasurement()

@@ -66,9 +66,19 @@ public:
     }
     ///@}
 
+    ///@name Reset
+    ///@{
+    //! @brief Soft reset (REG_CNTL2 SRST), leaving the chip initialized but unconfigured and stopped
+    //! @return True if successful
+    //! @warning During periodic measurements, an error is returned; call stopPeriodicMeasurement() first
+    //! @warning All settings revert to the chip defaults; call startPeriodicMeasurement() to reconfigure and
+    //! resume measurement
+    bool softReset();
+    ///@}
+
     ///@name Periodic measurement
     ///@{
-    //! @brief Start periodic measurement in the current settings
+    //! @brief Start periodic measurement (16-bit continuous 100Hz)
     bool startPeriodicMeasurement();
     //! @brief Stop periodic measurement
     bool stopPeriodicMeasurement();

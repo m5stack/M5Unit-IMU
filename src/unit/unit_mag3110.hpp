@@ -65,9 +65,20 @@ public:
     }
     ///@}
 
+    ///@name Reset
+    ///@{
+    //! @brief Soft reset (the MAG3110 has no reset command; returns to STANDBY via REG_CTRL_REG1),
+    //! leaving the chip initialized but unconfigured and stopped
+    //! @return True if successful
+    //! @warning During periodic measurements, an error is returned; call stopPeriodicMeasurement() first
+    //! @warning Measurement stops and settings must be reapplied; call startPeriodicMeasurement() to reconfigure
+    //! and resume measurement
+    bool softReset();
+    ///@}
+
     ///@name Periodic measurement
     ///@{
-    //! @brief Start periodic measurement in the current settings
+    //! @brief Start periodic measurement (auto magnetic reset + 80Hz continuous ACTIVE)
     bool startPeriodicMeasurement();
     //! @brief Stop periodic measurement
     bool stopPeriodicMeasurement();

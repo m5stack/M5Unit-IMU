@@ -40,6 +40,9 @@ UnitAK8963::UnitAK8963(const uint8_t addr)
 
 bool UnitAK8963::begin()
 {
+    // Re-entrant begin(): make sure _periodic and the hardware never get out of sync
+    stop_periodic_measurement();
+
     auto ssize = stored_size();
     if (ssize != _data->capacity()) {
         _data.reset(new m5::container::CircularBuffer<ak8963::Data>(ssize));
@@ -58,24 +61,28 @@ bool UnitAK8963::begin()
     }
 
     // Soft reset, then read the factory sensitivity adjustment (ASA) from FUSE-ROM.
-    writeRegister8(REG_CNTL2, SOFT_RESET);
-    m5::utility::delay(10);
+    if (!softReset()) {
+        return false;
+    }
     if (!read_sensitivity(_asa)) {
         return false;
     }
 
-    // Enter 16-bit continuous 100Hz. AK8963 requires a power-down between mode changes.
-    if (!writeRegister8(REG_CNTL1, static_cast<uint8_t>(Mode::PowerDown))) {
-        M5_LIB_LOGE("Failed to power down");
+    return _cfg.start_periodic ? startPeriodicMeasurement() : true;
+}
+
+bool UnitAK8963::softReset()
+{
+    if (inPeriodic()) {
+        M5_LIB_LOGE("Periodic measurements are running");
+        return false;
+    }
+    if (!writeRegister8(REG_CNTL2, SOFT_RESET)) {
+        M5_LIB_LOGE("Failed to reset");
         return false;
     }
     m5::utility::delay(10);
-    if (!writeRegister8(REG_CNTL1, static_cast<uint8_t>(BIT_16BIT | static_cast<uint8_t>(Mode::Cont100Hz)))) {
-        M5_LIB_LOGE("Failed to set mode");
-        return false;
-    }
-
-    return _cfg.start_periodic ? startPeriodicMeasurement() : true;
+    return true;
 }
 
 bool UnitAK8963::read_sensitivity(std::array<uint8_t, 3>& asa)
@@ -117,6 +124,18 @@ bool UnitAK8963::start_periodic_measurement()
     if (inPeriodic()) {
         return false;
     }
+
+    // Enter 16-bit continuous 100Hz. AK8963 requires a power-down between mode changes.
+    if (!writeRegister8(REG_CNTL1, static_cast<uint8_t>(Mode::PowerDown))) {
+        M5_LIB_LOGE("Failed to power down");
+        return false;
+    }
+    m5::utility::delay(10);
+    if (!writeRegister8(REG_CNTL1, static_cast<uint8_t>(BIT_16BIT | static_cast<uint8_t>(Mode::Cont100Hz)))) {
+        M5_LIB_LOGE("Failed to set mode");
+        return false;
+    }
+
     _periodic = true;
     _latest   = 0;
     _interval = ak8963::CONT100HZ_INTERVAL_MS;

@@ -45,6 +45,9 @@ UnitSH200Q::UnitSH200Q(const uint8_t addr)
 
 bool UnitSH200Q::begin()
 {
+    // Re-entrant begin(): make sure _periodic and the hardware never get out of sync
+    stop_periodic_measurement();
+
     auto ssize = stored_size();
     if (ssize != _data->capacity()) {
         _data.reset(new m5::container::CircularBuffer<sh200q::Data>(ssize));
@@ -62,6 +65,21 @@ bool UnitSH200Q::begin()
         return false;
     }
 
+    if (!softReset()) {
+        return false;
+    }
+
+    return _cfg.start_periodic ? startPeriodicMeasurement(_cfg.accel_range, _cfg.gyro_range, _cfg.accel_odr,
+                                                          _cfg.gyro_odr, _cfg.gyro_dlpf)
+                               : true;
+}
+
+bool UnitSH200Q::softReset()
+{
+    if (inPeriodic()) {
+        M5_LIB_LOGE("Periodic measurements are running");
+        return false;
+    }
     // Undocumented init dance, mirrored verbatim from the original M5StickC library (see
     // unit_sh200q.hpp command namespace): ADC reset, then two more toggle/write rituals.
     if (!toggle_register_bits(REG_ADC_RESET, 0x04) || !toggle_register_bits(REG_INIT_D8, 0x80) ||
@@ -74,25 +92,7 @@ bool UnitSH200Q::begin()
         M5_LIB_LOGE("Failed to reset");
         return false;
     }
-
-    const uint8_t acc_cfg  = ACC_CONFIG_BASE | (static_cast<uint8_t>(_cfg.accel_odr) << 3);
-    const uint8_t gyro_cfg = GYRO_CONFIG_BASE | (static_cast<uint8_t>(_cfg.gyro_odr) << 1);
-    if (!write_register8_verified(REG_ACC_CONFIG, acc_cfg) || !write_register8_verified(REG_GYRO_CONFIG, gyro_cfg) ||
-        !write_register8_verified(REG_GYRO_DLPF, static_cast<uint8_t>(_cfg.gyro_dlpf)) ||
-        !write_register8_verified(REG_FIFO_CONFIG, FIFO_BYPASS) || !writeAccelRange(_cfg.accel_range) ||
-        !writeGyroRange(_cfg.gyro_range)) {
-        M5_LIB_LOGE("Failed to initialize");
-        return false;
-    }
-
-    // Final undocumented step (the original library's second "ADC reset"), then settle.
-    if (!writeRegister8(REG_SET1, SET1_VALUE) || !toggle_register_bits(REG_SET2, 0x10)) {
-        M5_LIB_LOGE("Failed to initialize");
-        return false;
-    }
-    m5::utility::delay(10);
-
-    return _cfg.start_periodic ? startPeriodicMeasurement() : true;
+    return true;
 }
 
 void UnitSH200Q::update(const bool force)
@@ -112,21 +112,59 @@ void UnitSH200Q::update(const bool force)
     }
 }
 
-bool UnitSH200Q::start_periodic_measurement()
+bool UnitSH200Q::start_periodic_measurement(const sh200q::AccelRange accel_range, const sh200q::GyroRange gyro_range,
+                                            const sh200q::AccelOdr accel_odr, const sh200q::GyroOdr gyro_odr,
+                                            const sh200q::GyroDlpf gyro_dlpf)
 {
     if (inPeriodic()) {
         return false;
     }
+
+    const uint8_t acc_cfg  = ACC_CONFIG_BASE | (static_cast<uint8_t>(accel_odr) << 3);
+    const uint8_t gyro_cfg = GYRO_CONFIG_BASE | (static_cast<uint8_t>(gyro_odr) << 1);
+    if (!write_register8_verified(REG_ACC_CONFIG, acc_cfg) || !write_register8_verified(REG_GYRO_CONFIG, gyro_cfg) ||
+        !write_register8_verified(REG_GYRO_DLPF, static_cast<uint8_t>(gyro_dlpf)) ||
+        !write_register8_verified(REG_FIFO_CONFIG, FIFO_BYPASS) || !writeAccelRange(accel_range) ||
+        !writeGyroRange(gyro_range)) {
+        M5_LIB_LOGE("Failed to initialize");
+        return false;
+    }
+
+    // Final undocumented step (the original library's second "ADC reset"), then settle.
+    if (!writeRegister8(REG_SET1, SET1_VALUE) || !toggle_register_bits(REG_SET2, 0x10)) {
+        M5_LIB_LOGE("Failed to initialize");
+        return false;
+    }
+    m5::utility::delay(10);
+
+    // accel_range/gyro_range are synced to _cfg by writeAccelRange/writeGyroRange above
+    _cfg.accel_odr = accel_odr;
+    _cfg.gyro_odr  = gyro_odr;
+    _cfg.gyro_dlpf = gyro_dlpf;
+
     _periodic = true;
     _latest   = 0;
-    _interval = 1000U / sh200q::gyro_odr_hz(_cfg.gyro_odr);
+    _interval = 1000U / sh200q::gyro_odr_hz(gyro_odr);
     return true;
+}
+
+bool UnitSH200Q::start_periodic_measurement()
+{
+    return start_periodic_measurement(_cfg.accel_range, _cfg.gyro_range, _cfg.accel_odr, _cfg.gyro_odr, _cfg.gyro_dlpf);
 }
 
 bool UnitSH200Q::stop_periodic_measurement()
 {
     _periodic = false;
     return true;
+}
+
+bool UnitSH200Q::startPeriodicMeasurement(const sh200q::AccelRange accel_range, const sh200q::GyroRange gyro_range,
+                                          const sh200q::AccelOdr accel_odr, const sh200q::GyroOdr gyro_odr,
+                                          const sh200q::GyroDlpf gyro_dlpf)
+{
+    return PeriodicMeasurementAdapter<UnitSH200Q, sh200q::Data>::startPeriodicMeasurement(
+        accel_range, gyro_range, accel_odr, gyro_odr, gyro_dlpf);
 }
 
 bool UnitSH200Q::startPeriodicMeasurement()

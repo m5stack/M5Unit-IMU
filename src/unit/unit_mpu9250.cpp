@@ -42,6 +42,24 @@ std::shared_ptr<Adapter> UnitMPU9250::ensure_adapter(const uint8_t ch)
     return ad ? std::shared_ptr<Adapter>(ad->duplicate(unit->address())) : std::make_shared<Adapter>();
 }
 
+bool UnitMPU9250::start_periodic_measurement(const mpu6886::AccelRange accel_range,
+                                             const mpu6886::GyroRange gyro_range, const mpu6886::Dlpf dlpf,
+                                             const uint8_t sample_rate_div)
+{
+    if (!UnitMPU6xxx::start_periodic_measurement(accel_range, gyro_range, dlpf, sample_rate_div)) {
+        return false;
+    }
+    // The base config just wrote INT_PIN_CFG=0xC0 (bypass closed); re-open it so the AK8963 child
+    // keeps answering at 0x0C across stop -> start cycles (begin() does the same for the
+    // start_periodic=false path).
+    if (!m5::unit::imu::enableAuxBypass([this](uint8_t /*a*/, uint8_t r, uint8_t& o) { return readRegister8(r, o, 0); },
+                                        [this](uint8_t /*a*/, uint8_t r, uint8_t v) { return writeRegister8(r, v); })) {
+        M5_LIB_LOGE("MPU9250 aux bypass not enabled (WHO_AM_I != 0x71)");
+        return false;
+    }
+    return true;
+}
+
 bool UnitMPU9250::begin()
 {
     // 1) Accel/gyro die (the MPU init writes INT_PIN_CFG=0xC0, which closes the aux bypass).

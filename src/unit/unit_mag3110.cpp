@@ -41,6 +41,9 @@ UnitMAG3110::UnitMAG3110(const uint8_t addr)
 
 bool UnitMAG3110::begin()
 {
+    // Re-entrant begin(): make sure _periodic and the hardware never get out of sync
+    stop_periodic_measurement();
+
     auto ssize = stored_size();
     if (ssize != _data->capacity()) {
         _data.reset(new m5::container::CircularBuffer<mag3110::Data>(ssize));
@@ -58,20 +61,27 @@ bool UnitMAG3110::begin()
         return false;
     }
 
-    // Configure while in STANDBY (CTRL_REG1[AC]=0): enable automatic magnetic reset, then enter the
-    // 80Hz continuous ACTIVE mode.
+    if (!softReset()) {
+        return false;
+    }
+
+    return _cfg.start_periodic ? startPeriodicMeasurement() : true;
+}
+
+bool UnitMAG3110::softReset()
+{
+    if (inPeriodic()) {
+        M5_LIB_LOGE("Periodic measurements are running");
+        return false;
+    }
+    // The MAG3110 has no soft reset command; returning to STANDBY (CTRL_REG1[AC]=0) is the
+    // closest equivalent and is also the state begin() configures from
     if (!writeRegister8(REG_CTRL_REG1, CTRL_REG1_STANDBY)) {
         M5_LIB_LOGE("Failed to standby");
         return false;
     }
     m5::utility::delay(10);
-    if (!writeRegister8(REG_CTRL_REG2, CTRL_REG2_AUTO_MRST) ||
-        !writeRegister8(REG_CTRL_REG1, CTRL_REG1_ACTIVE_80HZ)) {
-        M5_LIB_LOGE("Failed to set mode");
-        return false;
-    }
-
-    return _cfg.start_periodic ? startPeriodicMeasurement() : true;
+    return true;
 }
 
 void UnitMAG3110::update(const bool force)
@@ -96,6 +106,14 @@ bool UnitMAG3110::start_periodic_measurement()
     if (inPeriodic()) {
         return false;
     }
+
+    // Configure while in STANDBY (CTRL_REG1[AC]=0): enable automatic magnetic reset, then enter the
+    // 80Hz continuous ACTIVE mode.
+    if (!writeRegister8(REG_CTRL_REG2, CTRL_REG2_AUTO_MRST) || !writeRegister8(REG_CTRL_REG1, CTRL_REG1_ACTIVE_80HZ)) {
+        M5_LIB_LOGE("Failed to set mode");
+        return false;
+    }
+
     _periodic = true;
     _latest   = 0;
     _interval = mag3110::CONT80HZ_INTERVAL_MS;

@@ -49,6 +49,10 @@ protected:
     {
         return id == 0x71;
     }
+    //! @brief Base config + re-open the aux bypass (the base writes INT_PIN_CFG=0xC0, which closes
+    //! it and would cut off the AK8963 child at 0x0C on a stop -> start cycle)
+    virtual bool start_periodic_measurement(const mpu6886::AccelRange accel_range, const mpu6886::GyroRange gyro_range,
+                                            const mpu6886::Dlpf dlpf, const uint8_t sample_rate_div) override;
     //! @brief Share this composite's bus with the mag child, duplicated at the child's address
     virtual std::shared_ptr<Adapter> ensure_adapter(const uint8_t ch) override;
 

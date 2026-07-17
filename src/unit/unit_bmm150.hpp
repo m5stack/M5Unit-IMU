@@ -94,8 +94,26 @@ public:
     bool readPreset(bmm150::Preset& preset);
     ///@}
 
+    ///@name Reset
+    ///@{
+    //! @brief Soft reset (REG_POWER_CONTROL soft-reset bits, keeping the power control bit on),
+    //! leaving the chip initialized but unconfigured and stopped
+    //! @return True if successful
+    //! @warning During periodic measurements, an error is returned; call stopPeriodicMeasurement() first
+    //! @warning All settings revert to the chip defaults; call startPeriodicMeasurement(...) to reconfigure and
+    //! resume measurement
+    bool softReset();
+    ///@}
+
     ///@name Periodic measurement
     ///@{
+    /*!
+      @brief Start periodic measurement
+      @param rate Output data rate
+      @param preset Accuracy/power preset (controls REG_REP_XY/REG_REP_Z)
+      @return True if successful
+    */
+    bool startPeriodicMeasurement(const bmm150::DataRate rate, const bmm150::Preset preset);
     //! @brief Start periodic measurement in the current settings
     //! @return True if successful
     bool startPeriodicMeasurement();
@@ -122,6 +140,7 @@ public:
     ///@}
 
 protected:
+    bool start_periodic_measurement(const bmm150::DataRate rate, const bmm150::Preset preset);
     bool start_periodic_measurement();
     bool stop_periodic_measurement();
     bool read_measurement(bmm150::Data& d);

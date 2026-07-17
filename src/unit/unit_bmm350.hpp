@@ -91,8 +91,26 @@ public:
     bool readAveraging(bmm350::Averaging& avg);
     ///@}
 
+    ///@name Reset
+    ///@{
+    //! @brief Soft reset (REG_CMD CMD_SOFTRESET), then re-run the mandatory post-reset initialization
+    //! (OTP download and magnetic reset (BR/FGR)), leaving the chip initialized but unconfigured and stopped
+    //! @return True if successful
+    //! @warning During periodic measurements, an error is returned; call stopPeriodicMeasurement() first
+    //! @warning All settings revert to the chip defaults; call startPeriodicMeasurement(...) to reconfigure and
+    //! resume measurement
+    bool softReset();
+    ///@}
+
     ///@name Periodic measurement
     ///@{
+    /*!
+      @brief Start periodic measurement
+      @param rate Output data rate
+      @param avg Averaging factor (clamped to what the rate accepts, see clamp_averaging())
+      @return True if successful
+    */
+    bool startPeriodicMeasurement(const bmm350::DataRate rate, const bmm350::Averaging avg);
     //! @brief Start periodic measurement in the current settings
     //! @return True if successful
     bool startPeriodicMeasurement();
@@ -119,6 +137,7 @@ public:
     ///@}
 
 protected:
+    bool start_periodic_measurement(const bmm350::DataRate rate, const bmm350::Averaging avg);
     bool start_periodic_measurement();
     bool stop_periodic_measurement();
     bool read_measurement(bmm350::Data& d);
