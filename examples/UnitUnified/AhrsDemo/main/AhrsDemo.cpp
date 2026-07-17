@@ -31,7 +31,8 @@
 // Choose one define symbol to match the unit you are using
 // *************************************************************
 #if !defined(USING_UNIT_MINI_IMU) && !defined(USING_UNIT_MINI_IMU_WITH_BMM350) && !defined(USING_BUILTIN_IMU) && \
-    !defined(USING_UNIT_DOF6) && !defined(USING_UNIT_DOF9) && !defined(USING_UNIT_DOF10)
+    !defined(USING_UNIT_DOF6) && !defined(USING_UNIT_DOF9) && !defined(USING_UNIT_DOF10) &&                     \
+    !defined(USING_UNIT_MINI_IMU_PRO)
 // For UnitMiniIMU (SKU: TBD) - 6-axis, GROVE
 #define USING_UNIT_MINI_IMU
 // For UnitMiniIMU + UnitBMM350 (U231) - 9-axis on GROVE (0x68 + 0x14 coexist)
@@ -44,6 +45,8 @@
 // #define USING_UNIT_DOF9
 // For UnitDoF10 (U230) -- 10-axis BMI270 + BMM350 + SPA06 barometer
 // #define USING_UNIT_DOF10
+// For UnitMiniIMUPro (U171) -- 9-axis BMI270 + BMM150 (its BMP280 is out of scope, see M5Unit-ENV)
+// #define USING_UNIT_MINI_IMU_PRO
 #endif
 
 // Unit DoF BMI270 I2C address, selected by the board's SW1 switch (0x68 default / 0x69). Set this to
@@ -81,6 +84,10 @@ m5::unit::UnitDoF9 unit{DOF_BMI270_ADDRESS};
 // BMI270 address (0x68/0x69) follows the DoF board's SW1 switch via DOF_BMI270_ADDRESS; BMM350 is 0x14,
 // SPA06 barometer is 0x76.
 m5::unit::UnitDoF10 unit{DOF_BMI270_ADDRESS};
+#elif defined(USING_UNIT_MINI_IMU_PRO)
+// BMI270 is fixed at 0x68 (no address switch on this board); BMM150 is 0x10. The on-board BMP280
+// (0x76) is out of this library's scope and left untouched.
+m5::unit::UnitMiniIMUPro unit{};
 #else
 #error Please choose unit!
 #endif
@@ -1078,6 +1085,23 @@ void setup()
 #else
         fail_reason = "UnitDoF9 not found (check GROVE cable)";
 #endif
+        diag.unit_label = fail_reason;  // /info "source" reports the reason
+    }
+#elif defined(USING_UNIT_MINI_IMU_PRO)
+    // UnitMiniIMUPro (BMI270 @0x68 fixed + BMM150 @0x10): same Port-C-vs-addI2C branching as the DoF
+    // composites for the shared bus; no SW1 on this board, so no address probe is needed.
+    if (M5.getBoard() == m5::board_t::board_M5Stack) {
+        ok = m5::unit::imu::wiring::i2cPortC(Units, unit);
+    } else {
+        ok = m5::unit::wiring::addI2C(Units, unit, 400 * 1000U);
+    }
+    ok              = ok && Units.begin() && ahrs.add(unit.imu()) && ahrs.add(unit.mag());
+    diag.unit_label = "UnitMiniIMUPro (BMI270+BMM150)";
+    diag.accel_src  = &unit.imu();
+    diag.mag_src    = &unit.mag();
+    diag.mag_label  = "BMM150 (0x10)";
+    if (!ok) {
+        fail_reason     = "UnitMiniIMUPro not found (check GROVE cable)";
         diag.unit_label = fail_reason;  // /info "source" reports the reason
     }
 #elif defined(USING_BUILTIN_IMU)

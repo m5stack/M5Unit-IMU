@@ -19,6 +19,8 @@ choice EXAMPLE_IMU_VARIANT
         bool "UnitDoF9 (U229, BMI270+BMM350)"
     config EXAMPLE_USING_UNIT_DOF10
         bool "UnitDoF10 (U230, BMI270+BMM350+SPA06)"
+    config EXAMPLE_USING_UNIT_MINI_IMU_PRO
+        bool "UnitMiniIMUPro (U171, BMI270+BMM150)"
     config EXAMPLE_USING_UNIT_MINI_IMU_WITH_BMM350
         bool "UnitMiniIMU + UnitBMM350, 9-axis GROVE (AhrsDemo only)"
     config EXAMPLE_USING_BUILTIN_IMU

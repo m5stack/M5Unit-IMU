@@ -19,7 +19,7 @@
 // Choose one define symbol to match the unit you are using
 // *************************************************************
 #if !defined(USING_UNIT_MINI_IMU) && !defined(USING_UNIT_BMM350) && !defined(USING_UNIT_DOF6) && \
-    !defined(USING_UNIT_DOF9) && !defined(USING_UNIT_DOF10)
+    !defined(USING_UNIT_DOF9) && !defined(USING_UNIT_DOF10) && !defined(USING_UNIT_MINI_IMU_PRO)
 // For UnitMiniIMU (U095)
 // #define USING_UNIT_MINI_IMU
 // For UnitBMM350 (U231)
@@ -30,6 +30,8 @@
 // #define USING_UNIT_DOF9
 // For UnitDoF10 (U230) -- 10-axis BMI270 + BMM350 + SPA06 barometer
 // #define USING_UNIT_DOF10
+// For UnitMiniIMUPro (U171) -- 9-axis BMI270 + BMM150 (its BMP280 is out of scope, see M5Unit-ENV)
+// #define USING_UNIT_MINI_IMU_PRO
 // Following devices will be supported in later plans:
 // USING_BUILTIN_IMU
 #endif
@@ -62,6 +64,11 @@ m5::imu::imu_convert_param_t param{};
 // BMI270 address (0x68/0x69) follows the DoF board's SW1 switch via DOF_BMI270_ADDRESS; BMM350 is 0x14,
 // SPA06 barometer is 0x76.
 m5::unit::UnitDoF10 unit{DOF_BMI270_ADDRESS};
+m5::imu::imu_convert_param_t param{};
+#elif defined(USING_UNIT_MINI_IMU_PRO)
+// BMI270 is fixed at 0x68 (no address switch on this board); BMM150 is 0x10. The on-board BMP280
+// (0x76) is out of this library's scope and left untouched.
+m5::unit::UnitMiniIMUPro unit{};
 m5::imu::imu_convert_param_t param{};
 #else
 #error Please choose unit!
@@ -188,6 +195,31 @@ void draw_lcd()
     canvas.printf("P:%.1fhPa", unit.baro().pressure());
     canvas.setCursor(4, 2 + line++ * line_height);
     canvas.printf("Alt:%.1fm bT:%.1fC", unit.baro().altitude(), unit.baro().temperature());
+#elif defined(USING_UNIT_MINI_IMU_PRO)
+    canvas.setCursor(4, 2 + line++ * line_height);
+    canvas.print("IMUPro");
+    const auto a = unit.imu().latest();
+    // One axis per line: at full scale (+-16g / +-2000dps) a combined line would overflow a 128px panel
+    canvas.setCursor(4, 2 + line++ * line_height);
+    canvas.printf("Ax:%+.2f", a.accel_x() * param.accel_res);
+    canvas.setCursor(4, 2 + line++ * line_height);
+    canvas.printf("Ay:%+.2f", a.accel_y() * param.accel_res);
+    canvas.setCursor(4, 2 + line++ * line_height);
+    canvas.printf("Az:%+.2f", a.accel_z() * param.accel_res);
+    canvas.setCursor(4, 2 + line++ * line_height);
+    canvas.printf("Gx:%+.1f", a.gyro_x() * param.gyro_res);
+    canvas.setCursor(4, 2 + line++ * line_height);
+    canvas.printf("Gy:%+.1f", a.gyro_y() * param.gyro_res);
+    canvas.setCursor(4, 2 + line++ * line_height);
+    canvas.printf("Gz:%+.1f", a.gyro_z() * param.gyro_res);
+    const auto m = unit.mag().latest();
+    // BMM150's compensated output is 16 LSB/uT (see unit_bmm150_data.hpp)
+    canvas.setCursor(4, 2 + line++ * line_height);
+    canvas.printf("Mx:%+.1f", m.comp_x() / 16.0f);
+    canvas.setCursor(4, 2 + line++ * line_height);
+    canvas.printf("My:%+.1f", m.comp_y() / 16.0f);
+    canvas.setCursor(4, 2 + line++ * line_height);
+    canvas.printf("Mz:%+.1f", m.comp_z() / 16.0f);
 #endif
 
     canvas.pushSprite(0, 0);
@@ -218,7 +250,8 @@ void setup()
     //                                                M5.Ex_I2C, others -> Wire
     // UnitBMM350: GROVE (all boards)
     bool ok{};
-#if defined(USING_UNIT_MINI_IMU) || defined(USING_UNIT_DOF6) || defined(USING_UNIT_DOF9) || defined(USING_UNIT_DOF10)
+#if defined(USING_UNIT_MINI_IMU) || defined(USING_UNIT_DOF6) || defined(USING_UNIT_DOF9) || \
+    defined(USING_UNIT_DOF10) || defined(USING_UNIT_MINI_IMU_PRO)
     // On classic M5Stack Core (board_M5Stack) GROVE Port A *is* the internal I2C bus, and Gray/Fire
     // carry a built-in MPU6886 or BMI270 at 0x68 -- the same address as UnitMiniIMU/UnitDoF6/UnitDoF9/
     // UnitDoF10's BMI270. Route the external unit to GROVE Port C on a bus of its own so it never
@@ -286,7 +319,7 @@ void setup()
 
 #if defined(USING_UNIT_MINI_IMU) || defined(USING_UNIT_DOF6)
     unit.imuConvertParam(param);
-#elif defined(USING_UNIT_DOF9) || defined(USING_UNIT_DOF10)
+#elif defined(USING_UNIT_DOF9) || defined(USING_UNIT_DOF10) || defined(USING_UNIT_MINI_IMU_PRO)
     unit.imu().imuConvertParam(param);
 #endif
 }
@@ -336,6 +369,22 @@ void loop()
         if (unit.baro().updated()) {
             M5.Log.printf(">press:%.2f\n>alt:%.2f\n>btemp:%.2f\n", unit.baro().pressure(), unit.baro().altitude(),
                           unit.baro().temperature());
+        }
+    }
+#elif defined(USING_UNIT_MINI_IMU_PRO)
+    // UnitMiniIMUPro is a composite with no measurement of its own; gate on its sub-units instead.
+    if (unit.imu().updated() || unit.mag().updated()) {
+        if (unit.imu().updated()) {
+            const auto a = unit.imu().latest();
+            // Teleplot format (https://github.com/nesnes/teleplot): one ">name:value" per line.
+            M5.Log.printf(">ax:%.3f\n>ay:%.3f\n>az:%.3f\n>gx:%.2f\n>gy:%.2f\n>gz:%.2f\n", a.accel_x() * param.accel_res,
+                          a.accel_y() * param.accel_res, a.accel_z() * param.accel_res, a.gyro_x() * param.gyro_res,
+                          a.gyro_y() * param.gyro_res, a.gyro_z() * param.gyro_res);
+        }
+        if (unit.mag().updated()) {
+            const auto m = unit.mag().latest();
+            // BMM150's compensated output is 16 LSB/uT (see unit_bmm150_data.hpp)
+            M5.Log.printf(">mx:%.3f\n>my:%.3f\n>mz:%.3f\n", m.comp_x() / 16.0f, m.comp_y() / 16.0f, m.comp_z() / 16.0f);
         }
     }
 #else

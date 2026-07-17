@@ -41,6 +41,7 @@
 #include "unit/unit_dof9.hpp"
 #include "unit/unit_spa06.hpp"
 #include "unit/unit_dof10.hpp"
+#include "unit/unit_mini_imu_pro.hpp"
 
 /*!
   @namespace m5

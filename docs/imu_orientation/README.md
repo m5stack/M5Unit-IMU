@@ -25,6 +25,15 @@ Notes:
 
 [Source](https://docs.m5stack.com/en/unit/imu)
 
+## Unit Mini IMU-Pro (U171) — BMI270 (0x68) + BMM150 (0x10) + BMP280 (0x76)
+
+The predecessor of the DoF series: BMI270 + BMM150 directly on the GROVE main bus (driver:
+`UnitMiniIMUPro` composite). The BMP280 barometer is out of this library's scope (see M5Unit-ENV).
+
+<img src="imu-unitminiimupro.jpg" width="480" alt="Unit Mini IMU-Pro orientation">
+
+[Source](https://docs.m5stack.com/en/unit/IMU%20Pro%20Mini%20Unit)
+
 ## Unit DoF6 (U228) — BMI270 (0x68/0x69) (no orientation image)
 
 Text-only (no orientation image yet). 6-axis BMI270; SW1 selects I2C address 0x68 (default) / 0x69.

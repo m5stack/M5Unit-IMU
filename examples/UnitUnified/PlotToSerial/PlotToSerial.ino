@@ -10,7 +10,7 @@
 // Choose one define symbol to match the unit you are using
 // *************************************************************
 #if !defined(USING_UNIT_MINI_IMU) && !defined(USING_UNIT_BMM350) && !defined(USING_UNIT_DOF6) && \
-    !defined(USING_UNIT_DOF9) && !defined(USING_UNIT_DOF10)
+    !defined(USING_UNIT_DOF9) && !defined(USING_UNIT_DOF10) && !defined(USING_UNIT_MINI_IMU_PRO)
 // For UnitMiniIMU (U095)
 // #define USING_UNIT_MINI_IMU
 // For UnitBMM350 (U231)
@@ -21,6 +21,8 @@
 // #define USING_UNIT_DOF9
 // For UnitDoF10 (U230) -- 10-axis BMI270 + BMM350 + SPA06 barometer
 // #define USING_UNIT_DOF10
+// For UnitMiniIMUPro (U171) -- 9-axis BMI270 + BMM150 (its BMP280 is out of scope, see M5Unit-ENV)
+// #define USING_UNIT_MINI_IMU_PRO
 #endif
 
 #include "main/PlotToSerial.cpp"
