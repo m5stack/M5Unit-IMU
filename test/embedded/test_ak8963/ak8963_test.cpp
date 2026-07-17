@@ -135,3 +135,30 @@ TEST_F(TestAK8963, PeriodicMeasurement)
     }
     EXPECT_GT(checked, 0);
 }
+
+TEST_F(TestAK8963, SoftReset)
+{
+    SCOPED_TRACE(ustr);
+
+    // Running: rejected
+    EXPECT_TRUE(unit->inPeriodic());
+    EXPECT_FALSE(unit->softReset());
+
+    // Stopped: accepted; startPeriodicMeasurement() reconfigures and resumes
+    EXPECT_TRUE(unit->stopPeriodicMeasurement());
+    EXPECT_TRUE(unit->softReset());
+    EXPECT_TRUE(unit->startPeriodicMeasurement());
+    EXPECT_TRUE(unit->inPeriodic());
+
+    // Measurement actually flows again
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    bool updated{};
+    for (int i = 0; i < 50; ++i) {
+        unit->update();
+        if (unit->updated()) {
+            updated = true;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    EXPECT_TRUE(updated);
+}

@@ -61,13 +61,14 @@ TEST_F(TestBMM350, PeriodicMeasurement)
 
     const auto d = unit->latest();
     // 補償済み uT を 16 LSB/uT に量子化した値 (readImuRaw と同じスケール) で
-    // 地磁気の常識的な範囲 (10-100uT -> 160-1600) に収まることを確認
+    // 10-200uT (-> 160-3200) に収まることを確認。上限は他の mag テスト群 (MAG3110/AK8963/BMM150)
+    // と同じ 200uT: 室内環境磁場 (実測 ~100uT の環境あり) とユニット筐体の残留磁化を許容する
     const float mx   = d.x_ut() * 16.0f;
     const float my   = d.y_ut() * 16.0f;
     const float mz   = d.z_ut() * 16.0f;
     const float norm = std::sqrt(mx * mx + my * my + mz * mz);
     EXPECT_GT(norm, 160.0f);
-    EXPECT_LT(norm, 1600.0f);
+    EXPECT_LT(norm, 3200.0f);
 }
 
 TEST_F(TestBMM350, ReadImuRawPopSemantics)
@@ -185,4 +186,72 @@ TEST_F(TestBMM350, ConfigRoundTrip)
     EXPECT_FALSE(cfg2.start_periodic);
     EXPECT_EQ(cfg2.rate, cfg.rate);
     EXPECT_EQ(cfg2.avg, cfg.avg);
+}
+
+TEST_F(TestBMM350, SoftReset)
+{
+    SCOPED_TRACE(ustr);
+
+    // Running: rejected
+    EXPECT_TRUE(unit->inPeriodic());
+    EXPECT_FALSE(unit->softReset());
+
+    // Stopped: accepted; startPeriodicMeasurement() reconfigures and resumes
+    EXPECT_TRUE(unit->stopPeriodicMeasurement());
+    EXPECT_TRUE(unit->softReset());
+    EXPECT_TRUE(unit->startPeriodicMeasurement());
+    EXPECT_TRUE(unit->inPeriodic());
+
+    // Measurement actually flows again
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    bool updated{};
+    for (int i = 0; i < 50; ++i) {
+        unit->update();
+        if (unit->updated()) {
+            updated = true;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    EXPECT_TRUE(updated);
+}
+
+TEST_F(TestBMM350, StartPeriodicWithArgs)
+{
+    SCOPED_TRACE(ustr);
+
+    EXPECT_TRUE(unit->stopPeriodicMeasurement());
+
+    // Non-default settings are written to the chip and synced to config()
+    // (Rate50Hz accepts up to X8, so X2 is not clamped)
+    EXPECT_TRUE(unit->startPeriodicMeasurement(DataRate::Rate50Hz, Averaging::X2));
+    EXPECT_TRUE(unit->inPeriodic());
+
+    DataRate rate{};
+    Averaging avg{};
+    EXPECT_TRUE(unit->readDataRate(rate));
+    EXPECT_EQ(rate, DataRate::Rate50Hz);
+    EXPECT_TRUE(unit->readAveraging(avg));
+    EXPECT_EQ(avg, Averaging::X2);
+
+    const auto cfg = unit->config();
+    EXPECT_EQ(cfg.rate, DataRate::Rate50Hz);
+    EXPECT_EQ(cfg.avg, Averaging::X2);
+
+    // Measurement actually flows with the new settings
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    bool updated{};
+    for (int i = 0; i < 50; ++i) {
+        unit->update();
+        if (unit->updated()) {
+            updated = true;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    EXPECT_TRUE(updated);
+
+    // The no-argument overload resumes with the settings synced by the call above
+    EXPECT_TRUE(unit->stopPeriodicMeasurement());
+    EXPECT_TRUE(unit->startPeriodicMeasurement());
+    EXPECT_TRUE(unit->inPeriodic());
+    EXPECT_EQ(unit->config().rate, DataRate::Rate50Hz);
 }

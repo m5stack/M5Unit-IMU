@@ -6,10 +6,11 @@
 /*
   UnitTest for AhrsController (real hardware)
 
-  UnitMiniIMU (UnitMPU6886, GROVE) is used as the IMU source, matching
+  Default: UnitMiniIMU (UnitMPU6886, GROVE) is the single 6-axis IMU source, matching
   test_mpu6886/mpu6886_test.cpp's fixture (default I2CComponentTestBase<UnitMPU6886>
-  wiring). The unit is assumed static and level on the bench, as in
-  TestMPU6886::PeriodicMeasurement.
+  wiring). With -DTEST_DOF9 a Unit DoF9 (or DoF10) on the Grove port feeds TWO sources
+  (BMI270 accel/gyro + BMM350 mag) into the controller -- the on-hardware 9-axis
+  multi-source merge path. The unit is assumed static and level on the bench.
 */
 #include <gtest/gtest.h>
 #include <Wire.h>
@@ -17,7 +18,11 @@
 #include <M5UnitUnified.hpp>
 #include <googletest/test_template.hpp>
 #include <googletest/test_helper.hpp>
+#if defined(TEST_DOF9)
+#include <unit/unit_dof9.hpp>
+#else
 #include <unit/unit_mpu6886.hpp>
+#endif
 #include <imu/ahrs_controller.hpp>
 #include <chrono>
 #include <thread>
@@ -26,6 +31,28 @@
 using namespace m5::unit::googletest;
 using namespace m5::unit;
 
+#if defined(TEST_DOF9)
+#ifndef DOF_BMI270_ADDRESS
+#define DOF_BMI270_ADDRESS 0x68
+#endif
+class TestAHRS : public I2CComponentTestBase<UnitDoF9> {
+protected:
+    virtual UnitDoF9* get_instance() override
+    {
+        auto ptr = new m5::unit::UnitDoF9(DOF_BMI270_ADDRESS);
+        if (ptr) {
+            auto ccfg = ptr->component_config();
+            ptr->component_config(ccfg);
+        }
+        return ptr;
+    }
+
+    //! @brief Feed both composite children (accel/gyro + mag) into the controller
+    bool add_sources()
+    {
+        return ahrs.add(unit->imu()) && ahrs.add(unit->mag());
+    }
+#else
 class TestAHRS : public I2CComponentTestBase<UnitMPU6886> {
 protected:
     virtual UnitMPU6886* get_instance() override
@@ -37,6 +64,13 @@ protected:
         }
         return ptr;
     }
+
+    //! @brief Single 6-axis source
+    bool add_sources()
+    {
+        return ahrs.add(*unit);
+    }
+#endif
 
     m5::imu::AhrsController ahrs{};
 };
@@ -85,7 +119,7 @@ TEST_F(TestAHRS, AhrsBeginWithRealUnit)
 {
     SCOPED_TRACE(ustr);
 
-    EXPECT_TRUE(ahrs.add(*unit));
+    EXPECT_TRUE(add_sources());
     EXPECT_EQ(ahrs.filter(), nullptr);
     EXPECT_TRUE(ahrs.begin());
     // begin() selects FilterType::Madgwick if no filter has been chosen yet (see
@@ -98,7 +132,7 @@ TEST_F(TestAHRS, StaticConvergence)
 {
     SCOPED_TRACE(ustr);
 
-    ASSERT_TRUE(ahrs.add(*unit));
+    ASSERT_TRUE(add_sources());
     ASSERT_TRUE(ahrs.begin());
 
     run_updates(Units, ahrs, STATIC_DURATION_MS);
@@ -119,7 +153,7 @@ TEST_F(TestAHRS, AllFiltersConverge)
 {
     SCOPED_TRACE(ustr);
 
-    ASSERT_TRUE(ahrs.add(*unit));
+    ASSERT_TRUE(add_sources());
     ASSERT_TRUE(ahrs.begin());
 
     constexpr m5::imu::FilterType filter_table[] = {
@@ -141,3 +175,28 @@ TEST_F(TestAHRS, AllFiltersConverge)
         EXPECT_NEAR(pitch, 0.0f, FILTER_TOLERANCE_DEG);
     }
 }
+
+#if defined(TEST_DOF9)
+TEST_F(TestAHRS, NineAxisMergesMagFromSecondSource)
+{
+    SCOPED_TRACE(ustr);
+
+    ASSERT_TRUE(add_sources());
+    ASSERT_TRUE(ahrs.begin());
+
+    // The BMM350 child must contribute Mag through the controller's multi-source merge on the
+    // real shared bus. No absolute yaw check: the bench's magnetic environment is uncontrolled.
+    bool saw_mag{};
+    const auto start_at = m5::utility::millis();
+    while (m5::utility::millis() - start_at < STATIC_DURATION_MS) {
+        Units.update();
+        const auto cap = ahrs.update();
+        if (m5::imu::any(cap & m5::imu::Capability::Mag)) {
+            saw_mag = true;
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(UPDATE_INTERVAL_MS));
+    }
+    EXPECT_TRUE(saw_mag);
+}
+#endif

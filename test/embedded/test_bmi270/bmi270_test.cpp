@@ -29,6 +29,12 @@ using namespace m5::unit::googletest;
 using namespace m5::unit;
 using namespace m5::unit::bmi270;
 
+// GROVE path: the DoF boards' SW1 ships at 0x68 (UnitBMI270's class default is 0x69, matching the
+// CoreS3 built-in) -- follow the DoF suites' convention: -D DOF_BMI270_ADDRESS=0x69 when flipped.
+#ifndef DOF_BMI270_ADDRESS
+#define DOF_BMI270_ADDRESS 0x68
+#endif
+
 class TestBMI270 : public I2CComponentTestBase<UnitBMI270> {
 protected:
     virtual UnitBMI270* get_instance() override
@@ -45,7 +51,9 @@ protected:
             addr);
         auto ptr = new m5::unit::UnitBMI270(addr);
 #else
-        auto ptr = new m5::unit::UnitBMI270();
+        // GROVE: the bus is not connected yet at get_instance() time, so no probe -- use the
+        // build-time address (see DOF_BMI270_ADDRESS above).
+        auto ptr = new m5::unit::UnitBMI270(DOF_BMI270_ADDRESS);
 #endif
         if (ptr) {
             auto ccfg = ptr->component_config();
@@ -256,4 +264,74 @@ TEST_F(TestBMI270, ConfigRoundTrip)
     EXPECT_EQ(cfg2.accel_odr, cfg.accel_odr);
     EXPECT_EQ(cfg2.gyro_odr, cfg.gyro_odr);
     EXPECT_EQ(cfg2.enable_aux_bmm150, cfg.enable_aux_bmm150);
+}
+
+TEST_F(TestBMI270, SoftReset)
+{
+    SCOPED_TRACE(ustr);
+
+    // Running: rejected
+    EXPECT_TRUE(unit->inPeriodic());
+    EXPECT_FALSE(unit->softReset());
+
+    // Stopped: accepted; startPeriodicMeasurement() reconfigures and resumes
+    EXPECT_TRUE(unit->stopPeriodicMeasurement());
+    EXPECT_TRUE(unit->softReset());
+    EXPECT_TRUE(unit->startPeriodicMeasurement());
+    EXPECT_TRUE(unit->inPeriodic());
+
+    // Measurement actually flows again
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    bool updated{};
+    for (int i = 0; i < 50; ++i) {
+        unit->update();
+        if (unit->updated()) {
+            updated = true;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    EXPECT_TRUE(updated);
+}
+
+TEST_F(TestBMI270, StartPeriodicWithArgs)
+{
+    SCOPED_TRACE(ustr);
+
+    EXPECT_TRUE(unit->stopPeriodicMeasurement());
+
+    // Non-default settings are written to the chip and synced to config()
+    EXPECT_TRUE(
+        unit->startPeriodicMeasurement(AccelRange::G4, GyroRange::DPS500, AccelODR::Rate50Hz, GyroODR::Rate50Hz));
+    EXPECT_TRUE(unit->inPeriodic());
+
+    AccelRange ar{};
+    GyroRange gr{};
+    EXPECT_TRUE(unit->readAccelRange(ar));
+    EXPECT_EQ(ar, AccelRange::G4);
+    EXPECT_TRUE(unit->readGyroRange(gr));
+    EXPECT_EQ(gr, GyroRange::DPS500);
+
+    const auto cfg = unit->config();
+    EXPECT_EQ(cfg.accel_range, AccelRange::G4);
+    EXPECT_EQ(cfg.gyro_range, GyroRange::DPS500);
+    EXPECT_EQ(cfg.accel_odr, AccelODR::Rate50Hz);
+    EXPECT_EQ(cfg.gyro_odr, GyroODR::Rate50Hz);
+
+    // Measurement actually flows with the new settings
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    bool updated{};
+    for (int i = 0; i < 50; ++i) {
+        unit->update();
+        if (unit->updated()) {
+            updated = true;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    EXPECT_TRUE(updated);
+
+    // The no-argument overload resumes with the settings synced by the call above
+    EXPECT_TRUE(unit->stopPeriodicMeasurement());
+    EXPECT_TRUE(unit->startPeriodicMeasurement());
+    EXPECT_TRUE(unit->inPeriodic());
+    EXPECT_EQ(unit->config().gyro_odr, GyroODR::Rate50Hz);
 }

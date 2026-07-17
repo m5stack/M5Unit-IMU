@@ -13,6 +13,9 @@
 #include <googletest/test_template.hpp>
 #include <googletest/test_helper.hpp>
 #include <unit/unit_mpu6886.hpp>
+#if defined(TEST_PORT_C)
+#include <wiring/m5_unit_imu_wiring.hpp>
+#endif
 #include <chrono>
 #include <thread>
 #include <cmath>
@@ -39,6 +42,14 @@ protected:
     bool begin() override
     {
         return Units.add(*unit, M5.In_I2C) && Units.begin();
+    }
+#elif defined(TEST_PORT_C)
+    // With -DTEST_PORT_C the external unit is routed to GROVE Port C on a classic Core (needs the
+    // M5GO/Fire base), exercising this library's i2cPortC() lgfx-port-1 rebind path -- the only way
+    // an external 0x68 unit can coexist with the internal bus there (Port A IS the internal bus).
+    bool begin() override
+    {
+        return m5::unit::imu::wiring::i2cPortC(Units, *unit) && Units.begin();
     }
 #endif
 };
@@ -197,4 +208,73 @@ TEST_F(TestMPU6886, ConfigRoundTrip)
     EXPECT_EQ(cfg2.gyro_range, cfg.gyro_range);
     EXPECT_EQ(cfg2.dlpf, cfg.dlpf);
     EXPECT_EQ(cfg2.sample_rate_div, cfg.sample_rate_div);
+}
+
+TEST_F(TestMPU6886, SoftReset)
+{
+    SCOPED_TRACE(ustr);
+
+    // Running: rejected
+    EXPECT_TRUE(unit->inPeriodic());
+    EXPECT_FALSE(unit->softReset());
+
+    // Stopped: accepted; startPeriodicMeasurement() reconfigures and resumes
+    EXPECT_TRUE(unit->stopPeriodicMeasurement());
+    EXPECT_TRUE(unit->softReset());
+    EXPECT_TRUE(unit->startPeriodicMeasurement());
+    EXPECT_TRUE(unit->inPeriodic());
+
+    // Measurement actually flows again
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    bool updated{};
+    for (int i = 0; i < 50; ++i) {
+        unit->update();
+        if (unit->updated()) {
+            updated = true;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    EXPECT_TRUE(updated);
+}
+
+TEST_F(TestMPU6886, StartPeriodicWithArgs)
+{
+    SCOPED_TRACE(ustr);
+
+    EXPECT_TRUE(unit->stopPeriodicMeasurement());
+
+    // Non-default settings are written to the chip and synced to config()
+    EXPECT_TRUE(unit->startPeriodicMeasurement(AccelRange::G4, GyroRange::DPS500, Dlpf::BW92, 7));
+    EXPECT_TRUE(unit->inPeriodic());
+
+    AccelRange ar{};
+    GyroRange gr{};
+    EXPECT_TRUE(unit->readAccelRange(ar));
+    EXPECT_EQ(ar, AccelRange::G4);
+    EXPECT_TRUE(unit->readGyroRange(gr));
+    EXPECT_EQ(gr, GyroRange::DPS500);
+
+    const auto cfg = unit->config();
+    EXPECT_EQ(cfg.accel_range, AccelRange::G4);
+    EXPECT_EQ(cfg.gyro_range, GyroRange::DPS500);
+    EXPECT_EQ(cfg.dlpf, Dlpf::BW92);
+    EXPECT_EQ(cfg.sample_rate_div, 7);
+
+    // Measurement actually flows with the new settings
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    bool updated{};
+    for (int i = 0; i < 50; ++i) {
+        unit->update();
+        if (unit->updated()) {
+            updated = true;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    EXPECT_TRUE(updated);
+
+    // The no-argument overload resumes with the settings synced by the call above
+    EXPECT_TRUE(unit->stopPeriodicMeasurement());
+    EXPECT_TRUE(unit->startPeriodicMeasurement());
+    EXPECT_TRUE(unit->inPeriodic());
+    EXPECT_EQ(unit->config().sample_rate_div, 7);
 }

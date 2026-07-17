@@ -131,3 +131,75 @@ TEST_F(TestSH200Q, PeriodicMeasurement)
     }
     EXPECT_GT(checked, 0);
 }
+
+TEST_F(TestSH200Q, SoftReset)
+{
+    SCOPED_TRACE(ustr);
+
+    // Running: rejected
+    EXPECT_TRUE(unit->inPeriodic());
+    EXPECT_FALSE(unit->softReset());
+
+    // Stopped: accepted; startPeriodicMeasurement() reconfigures and resumes
+    EXPECT_TRUE(unit->stopPeriodicMeasurement());
+    EXPECT_TRUE(unit->softReset());
+    EXPECT_TRUE(unit->startPeriodicMeasurement());
+    EXPECT_TRUE(unit->inPeriodic());
+
+    // Measurement actually flows again
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    bool updated{};
+    for (int i = 0; i < 50; ++i) {
+        unit->update();
+        if (unit->updated()) {
+            updated = true;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    EXPECT_TRUE(updated);
+}
+
+TEST_F(TestSH200Q, StartPeriodicWithArgs)
+{
+    SCOPED_TRACE(ustr);
+
+    EXPECT_TRUE(unit->stopPeriodicMeasurement());
+
+    // Non-default settings are written to the chip and synced to config()
+    EXPECT_TRUE(unit->startPeriodicMeasurement(sh200q::AccelRange::G4, sh200q::GyroRange::DPS1000,
+                                               sh200q::AccelOdr::HZ512, sh200q::GyroOdr::HZ250,
+                                               sh200q::GyroDlpf::BW100));
+    EXPECT_TRUE(unit->inPeriodic());
+
+    sh200q::AccelRange ar{};
+    sh200q::GyroRange gr{};
+    EXPECT_TRUE(unit->readAccelRange(ar));
+    EXPECT_EQ(ar, sh200q::AccelRange::G4);
+    EXPECT_TRUE(unit->readGyroRange(gr));
+    EXPECT_EQ(gr, sh200q::GyroRange::DPS1000);
+
+    const auto cfg = unit->config();
+    EXPECT_EQ(cfg.accel_range, sh200q::AccelRange::G4);
+    EXPECT_EQ(cfg.gyro_range, sh200q::GyroRange::DPS1000);
+    EXPECT_EQ(cfg.accel_odr, sh200q::AccelOdr::HZ512);
+    EXPECT_EQ(cfg.gyro_odr, sh200q::GyroOdr::HZ250);
+    EXPECT_EQ(cfg.gyro_dlpf, sh200q::GyroDlpf::BW100);
+
+    // Measurement actually flows with the new settings
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    bool updated{};
+    for (int i = 0; i < 50; ++i) {
+        unit->update();
+        if (unit->updated()) {
+            updated = true;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    EXPECT_TRUE(updated);
+
+    // The no-argument overload resumes with the settings synced by the call above
+    EXPECT_TRUE(unit->stopPeriodicMeasurement());
+    EXPECT_TRUE(unit->startPeriodicMeasurement());
+    EXPECT_TRUE(unit->inPeriodic());
+    EXPECT_EQ(unit->config().gyro_odr, sh200q::GyroOdr::HZ250);
+}

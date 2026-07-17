@@ -218,3 +218,70 @@ TEST_F(TestBMM150, ConfigRoundTrip)
     EXPECT_EQ(cfg2.preset, cfg.preset);
     EXPECT_EQ(cfg2.rate, cfg.rate);
 }
+
+TEST_F(TestBMM150, SoftReset)
+{
+    SCOPED_TRACE(ustr);
+
+    // Running: rejected
+    EXPECT_TRUE(unit->inPeriodic());
+    EXPECT_FALSE(unit->softReset());
+
+    // Stopped: accepted; startPeriodicMeasurement() reconfigures and resumes
+    EXPECT_TRUE(unit->stopPeriodicMeasurement());
+    EXPECT_TRUE(unit->softReset());
+    EXPECT_TRUE(unit->startPeriodicMeasurement());
+    EXPECT_TRUE(unit->inPeriodic());
+
+    // Measurement actually flows again
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    bool updated{};
+    for (int i = 0; i < 50; ++i) {
+        unit->update();
+        if (unit->updated()) {
+            updated = true;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    EXPECT_TRUE(updated);
+}
+
+TEST_F(TestBMM150, StartPeriodicWithArgs)
+{
+    SCOPED_TRACE(ustr);
+
+    EXPECT_TRUE(unit->stopPeriodicMeasurement());
+
+    // Non-default settings are written to the chip and synced to config()
+    EXPECT_TRUE(unit->startPeriodicMeasurement(DataRate::Rate10Hz, Preset::HighAccuracy));
+    EXPECT_TRUE(unit->inPeriodic());
+
+    DataRate rate{};
+    Preset preset{};
+    EXPECT_TRUE(unit->readDataRate(rate));
+    EXPECT_EQ(rate, DataRate::Rate10Hz);
+    EXPECT_TRUE(unit->readPreset(preset));
+    EXPECT_EQ(preset, Preset::HighAccuracy);
+
+    const auto cfg = unit->config();
+    EXPECT_EQ(cfg.rate, DataRate::Rate10Hz);
+    EXPECT_EQ(cfg.preset, Preset::HighAccuracy);
+
+    // Measurement actually flows with the new settings
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    bool updated{};
+    for (int i = 0; i < 50; ++i) {
+        unit->update();
+        if (unit->updated()) {
+            updated = true;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    EXPECT_TRUE(updated);
+
+    // The no-argument overload resumes with the settings synced by the call above
+    EXPECT_TRUE(unit->stopPeriodicMeasurement());
+    EXPECT_TRUE(unit->startPeriodicMeasurement());
+    EXPECT_TRUE(unit->inPeriodic());
+    EXPECT_EQ(unit->config().rate, DataRate::Rate10Hz);
+}
