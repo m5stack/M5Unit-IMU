@@ -33,9 +33,9 @@ Unit BMM350 (TBD)
 
 ### SKU:U171
 
-Unit Mini IMU-Pro is a 9-axis motion sensor unit: a BMI270 6-axis accel/gyro (0x68) and a BMM150
-3-axis magnetometer (0x10), both directly on the GROVE I2C bus (driver: `UnitMiniIMUPro`
-composite). The on-board BMP280 barometer (0x76) is out of this library's scope (see M5Unit-ENV).
+Unit Mini IMU-Pro is a 10-axis motion sensor unit: a BMI270 6-axis accel/gyro (0x68), a BMM150
+3-axis magnetometer (0x10), and a BMP280 barometer (0x76), all directly on the GROVE I2C bus
+(driver: `UnitMiniIMUPro` composite; the BMP280 driver `UnitBMP280` comes from M5Unit-ENV).
 
 > **Multiple DoF units on one bus:** BMM350 (0x14) and SPA06-003 (0x76) have fixed addresses; only the
 > BMI270 is switchable (SW1 0x68/0x69, `DOF_BMI270_ADDRESS` in the examples). To use more than one
@@ -111,6 +111,8 @@ orientation differs per board -- see the
 - [M5UnitUnified](https://github.com/m5stack/M5UnitUnified)
 - [M5Utility](https://github.com/m5stack/M5Utility)
 - [M5HAL](https://github.com/m5stack/M5HAL)
+- [M5Unit-ENV](https://github.com/m5stack/M5Unit-ENV) — barometer drivers (UnitSPA06 / UnitBMP280)
+  used by Unit DoF10 / Unit Mini IMU-Pro
 
 ## License
 
@@ -176,7 +178,7 @@ You must choose a define symbol for the unit/device you will use. (Uncomment the
 // #define USING_UNIT_DOF9
 // For UnitDoF10 (U230) -- 10-axis BMI270 + BMM350 + SPA06 barometer
 // #define USING_UNIT_DOF10
-// For UnitMiniIMUPro (U171) -- 9-axis BMI270 + BMM150 (its BMP280 is out of scope, see M5Unit-ENV)
+// For UnitMiniIMUPro (U171) -- 10-axis BMI270 + BMM150 + BMP280 barometer
 // #define USING_UNIT_MINI_IMU_PRO
 #endif
 ```
@@ -204,7 +206,7 @@ and warns if the build target does not match the switch position.
 // #define USING_UNIT_DOF9
 // For UnitDoF10 (U230) -- 10-axis BMI270 + BMM350 + SPA06 barometer
 // #define USING_UNIT_DOF10
-// For UnitMiniIMUPro (U171) -- 9-axis BMI270 + BMM150 (its BMP280 is out of scope, see M5Unit-ENV)
+// For UnitMiniIMUPro (U171) -- 10-axis BMI270 + BMM150 + BMP280 barometer
 // #define USING_UNIT_MINI_IMU_PRO
 #endif
 ```
@@ -229,7 +231,7 @@ idf.py menuconfig
 #      UnitMiniIMU (U095, MPU6886) / UnitBMM350 (U231) /
 #      UnitDoF6 (U228, BMI270) / UnitDoF9 (U229, BMI270+BMM350) /
 #      UnitDoF10 (U230, BMI270+BMM350+SPA06) /
-#      UnitMiniIMUPro (U171, BMI270+BMM150) /
+#      UnitMiniIMUPro (U171, BMI270+BMM150+BMP280) /
 #      UnitMiniIMU + UnitBMM350, 9-axis GROVE (AhrsDemo only) /
 #      Built-in IMU, M5.getBoard() auto-detect (AhrsDemo only)
 #    For the DoF units, "DoF BMI270 I2C address (SW1 switch)" selects 0x68 (default) / 0x69.

@@ -4,12 +4,11 @@
  * SPDX-License-Identifier: MIT
  */
 /*
-  UnitTest for UnitMiniIMUPro (composite: BMI270 parent + BMM150 framework child)
+  UnitTest for UnitMiniIMUPro (composite: BMI270 parent + BMM150 + BMP280 framework children)
 
   Plug a Unit Mini IMU-Pro (U171) into the Grove port. Same ENV3-style composite checks as
-  test_dof9, with the BMM150 (0x10) as the mag child instead of the BMM350; the on-board BMP280
-  (0x76) is out of this library's scope and left untouched. The BMI270 address is fixed at 0x68
-  (no SW1 on this board).
+  test_dof10, with the BMM150 (0x10) / BMP280 (0x76, driver from M5Unit-ENV) as the mag/baro
+  children instead of the BMM350/SPA06. The BMI270 address is fixed at 0x68 (no SW1 on this board).
 */
 #include <gtest/gtest.h>
 #include <Wire.h>
@@ -43,6 +42,7 @@ TEST_F(TestMiniIMUPro, ChildrenBegunByFramework)
     SCOPED_TRACE(ustr);
     EXPECT_TRUE(unit->imu().inPeriodic());
     EXPECT_TRUE(unit->mag().inPeriodic());
+    EXPECT_TRUE(unit->baro().inPeriodic());
 }
 
 TEST_F(TestMiniIMUPro, ImuGravityThroughSharedAdapter)
@@ -75,6 +75,32 @@ TEST_F(TestMiniIMUPro, ImuGravityThroughSharedAdapter)
         ++checked;
     }
     EXPECT_GT(checked, 0);
+}
+
+TEST_F(TestMiniIMUPro, BaroThroughSharedAdapter)
+{
+    SCOPED_TRACE(ustr);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    int updated{};
+    for (int i = 0; i < 50; ++i) {
+        unit->baro().update();
+        if (unit->baro().updated()) {
+            ++updated;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    EXPECT_GT(updated, 0);
+
+    const float hpa = unit->baro().pressure();
+    EXPECT_TRUE(std::isfinite(hpa));
+    EXPECT_GT(hpa, 300.0f);
+    EXPECT_LT(hpa, 1100.0f);
+
+    const float celsius = unit->baro().temperature();
+    EXPECT_TRUE(std::isfinite(celsius));
+    EXPECT_GT(celsius, -20.0f);
+    EXPECT_LT(celsius, 60.0f);
 }
 
 TEST_F(TestMiniIMUPro, MagThroughSharedAdapter)

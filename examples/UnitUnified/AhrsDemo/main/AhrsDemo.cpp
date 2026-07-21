@@ -45,7 +45,7 @@
 // #define USING_UNIT_DOF9
 // For UnitDoF10 (U230) -- 10-axis BMI270 + BMM350 + SPA06 barometer
 // #define USING_UNIT_DOF10
-// For UnitMiniIMUPro (U171) -- 9-axis BMI270 + BMM150 (its BMP280 is out of scope, see M5Unit-ENV)
+// For UnitMiniIMUPro (U171) -- 10-axis BMI270 + BMM150 + BMP280 barometer
 // #define USING_UNIT_MINI_IMU_PRO
 #endif
 
@@ -85,8 +85,8 @@ m5::unit::UnitDoF9 unit{DOF_BMI270_ADDRESS};
 // SPA06 barometer is 0x76.
 m5::unit::UnitDoF10 unit{DOF_BMI270_ADDRESS};
 #elif defined(USING_UNIT_MINI_IMU_PRO)
-// BMI270 is fixed at 0x68 (no address switch on this board); BMM150 is 0x10. The on-board BMP280
-// (0x76) is out of this library's scope and left untouched.
+// BMI270 is fixed at 0x68 (no address switch on this board); BMM150 is 0x10, BMP280 barometer is
+// 0x76 (driver from M5Unit-ENV).
 m5::unit::UnitMiniIMUPro unit{};
 #else
 #error Please choose unit!
@@ -704,12 +704,18 @@ void draw_gizmo(const float roll, const float pitch, const float yaw)
     } else {
         text_canvas.printf("Temp:%6.2f C %s", ahrs.latest().temp, auto_cal_enabled ? "Cal:ON" : "Cal:--");
     }
+#if defined(USING_UNIT_DOF10) || defined(USING_UNIT_MINI_IMU_PRO)
 #if defined(USING_UNIT_DOF10)
+    const float baro_alt = unit.baro().altitude();
+#else
+    // UnitBMP280 has no altitude(); reuse M5Unit-ENV's chip-agnostic barometric-formula helper
+    const float baro_alt = m5::unit::spa06::altitude_m(unit.baro().pressure(), 1013.25f);
+#endif
     text_canvas.setCursor(4, 38);
     if (compact) {
-        text_canvas.printf("P:%.0f A:%.0fm", unit.baro().pressure(), unit.baro().altitude());
+        text_canvas.printf("P:%.0f A:%.0fm", unit.baro().pressure(), baro_alt);
     } else {
-        text_canvas.printf("P:%.1fhPa Alt:%.1fm", unit.baro().pressure(), unit.baro().altitude());
+        text_canvas.printf("P:%.1fhPa Alt:%.1fm", unit.baro().pressure(), baro_alt);
     }
 #endif
     text_canvas.pushSprite(0, 0);
@@ -839,13 +845,19 @@ void handle_quaternion()
 {
     float w{1.0f}, x{}, y{}, z{};
     ahrs.quaternion(w, x, y, z);
+#if defined(USING_UNIT_DOF10) || defined(USING_UNIT_MINI_IMU_PRO)
 #if defined(USING_UNIT_DOF10)
+    const float baro_alt = unit.baro().altitude();
+#else
+    // UnitBMP280 has no altitude(); reuse M5Unit-ENV's chip-agnostic barometric-formula helper
+    const float baro_alt = m5::unit::spa06::altitude_m(unit.baro().pressure(), 1013.25f);
+#endif
     char buf[220];
     std::snprintf(buf, sizeof(buf),
                   "{\"w\":%.4f,\"x\":%.4f,\"y\":%.4f,\"z\":%.4f,\"filter\":\"%s\",\"temp\":%.1f,\"press\":%.1f,"
                   "\"alt\":%.1f,\"cal\":%s}",
-                  w, x, y, z, filter_name(current_filter), ahrs.latest().temp, unit.baro().pressure(),
-                  unit.baro().altitude(), auto_cal_enabled ? "true" : "false");
+                  w, x, y, z, filter_name(current_filter), ahrs.latest().temp, unit.baro().pressure(), baro_alt,
+                  auto_cal_enabled ? "true" : "false");
 #else
     char buf[180];
     std::snprintf(buf, sizeof(buf),
@@ -1096,7 +1108,7 @@ void setup()
         ok = m5::unit::wiring::addI2C(Units, unit, 400 * 1000U);
     }
     ok              = ok && Units.begin() && ahrs.add(unit.imu()) && ahrs.add(unit.mag());
-    diag.unit_label = "UnitMiniIMUPro (BMI270+BMM150)";
+    diag.unit_label = "UnitMiniIMUPro (BMI270+BMM150+BMP280)";
     diag.accel_src  = &unit.imu();
     diag.mag_src    = &unit.mag();
     diag.mag_label  = "BMM150 (0x10)";

@@ -30,7 +30,7 @@
 // #define USING_UNIT_DOF9
 // For UnitDoF10 (U230) -- 10-axis BMI270 + BMM350 + SPA06 barometer
 // #define USING_UNIT_DOF10
-// For UnitMiniIMUPro (U171) -- 9-axis BMI270 + BMM150 (its BMP280 is out of scope, see M5Unit-ENV)
+// For UnitMiniIMUPro (U171) -- 10-axis BMI270 + BMM150 + BMP280 barometer
 // #define USING_UNIT_MINI_IMU_PRO
 // Following devices will be supported in later plans:
 // USING_BUILTIN_IMU
@@ -66,8 +66,8 @@ m5::imu::imu_convert_param_t param{};
 m5::unit::UnitDoF10 unit{DOF_BMI270_ADDRESS};
 m5::imu::imu_convert_param_t param{};
 #elif defined(USING_UNIT_MINI_IMU_PRO)
-// BMI270 is fixed at 0x68 (no address switch on this board); BMM150 is 0x10. The on-board BMP280
-// (0x76) is out of this library's scope and left untouched.
+// BMI270 is fixed at 0x68 (no address switch on this board); BMM150 is 0x10, BMP280 barometer is
+// 0x76 (driver from M5Unit-ENV).
 m5::unit::UnitMiniIMUPro unit{};
 m5::imu::imu_convert_param_t param{};
 #else
@@ -220,6 +220,12 @@ void draw_lcd()
     canvas.printf("My:%+.1f", m.comp_y() / 16.0f);
     canvas.setCursor(4, 2 + line++ * line_height);
     canvas.printf("Mz:%+.1f", m.comp_z() / 16.0f);
+    canvas.setCursor(4, 2 + line++ * line_height);
+    canvas.printf("P:%.1fhPa", unit.baro().pressure());
+    canvas.setCursor(4, 2 + line++ * line_height);
+    // UnitBMP280 has no altitude(); reuse M5Unit-ENV's chip-agnostic barometric-formula helper
+    canvas.printf("Alt:%.1fm bT:%.1fC", m5::unit::spa06::altitude_m(unit.baro().pressure(), 1013.25f),
+                  unit.baro().temperature());
 #endif
 
     canvas.pushSprite(0, 0);
@@ -373,7 +379,7 @@ void loop()
     }
 #elif defined(USING_UNIT_MINI_IMU_PRO)
     // UnitMiniIMUPro is a composite with no measurement of its own; gate on its sub-units instead.
-    if (unit.imu().updated() || unit.mag().updated()) {
+    if (unit.imu().updated() || unit.mag().updated() || unit.baro().updated()) {
         if (unit.imu().updated()) {
             const auto a = unit.imu().latest();
             // Teleplot format (https://github.com/nesnes/teleplot): one ">name:value" per line.
@@ -385,6 +391,11 @@ void loop()
             const auto m = unit.mag().latest();
             // BMM150's compensated output is 16 LSB/uT (see unit_bmm150_data.hpp)
             M5.Log.printf(">mx:%.3f\n>my:%.3f\n>mz:%.3f\n", m.comp_x() / 16.0f, m.comp_y() / 16.0f, m.comp_z() / 16.0f);
+        }
+        if (unit.baro().updated()) {
+            // UnitBMP280 has no altitude(); reuse M5Unit-ENV's chip-agnostic barometric-formula helper
+            M5.Log.printf(">press:%.2f\n>alt:%.2f\n>btemp:%.2f\n", unit.baro().pressure(),
+                          m5::unit::spa06::altitude_m(unit.baro().pressure(), 1013.25f), unit.baro().temperature());
         }
     }
 #else

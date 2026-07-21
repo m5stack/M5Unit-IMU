@@ -39,7 +39,6 @@
 #include "unit/unit_mag3110.hpp"
 #include "unit/unit_sh200q.hpp"
 #include "unit/unit_dof9.hpp"
-#include "unit/unit_spa06.hpp"
 #include "unit/unit_dof10.hpp"
 #include "unit/unit_mini_imu_pro.hpp"
 

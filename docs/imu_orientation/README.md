@@ -27,8 +27,9 @@ Notes:
 
 ## Unit Mini IMU-Pro (U171) — BMI270 (0x68) + BMM150 (0x10) + BMP280 (0x76)
 
-The predecessor of the DoF series: BMI270 + BMM150 directly on the GROVE main bus (driver:
-`UnitMiniIMUPro` composite). The BMP280 barometer is out of this library's scope (see M5Unit-ENV).
+The predecessor of the DoF series: BMI270 + BMM150 + BMP280 directly on the GROVE main bus
+(driver: `UnitMiniIMUPro` composite). Pressure is read directly via `UnitMiniIMUPro::baro()`
+(not part of the attitude AHRS; the UnitBMP280 driver comes from M5Unit-ENV).
 
 <img src="imu-unitminiimupro.jpg" width="480" alt="Unit Mini IMU-Pro orientation">
 
