@@ -61,7 +61,7 @@ jobs:
           - PlotToSerial
 
         build-properties:
-          - "-DUSING_UNIT_IMU_MINI"
+          - "-DUSING_UNIT_MINI_IMU"
 
         board:
           - arduino_nesso_n1

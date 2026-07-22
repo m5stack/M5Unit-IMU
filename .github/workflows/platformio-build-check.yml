@@ -57,7 +57,7 @@ jobs:
           - PlotToSerial
 
         unit:
-          - UnitIMU
+          - UnitMiniIMU
 
         board:
           - Core
@@ -109,18 +109,21 @@ jobs:
             framework: Arduino
             espressif32: latest
           # AhrsDemo: own source (AhrsController + LCD gizmo), not the M5.getBoard()-agnostic
-          # PlotToSerial.cpp -- Core2 covers the GROVE USING_UNIT_IMU_MINI path, CoreS3 covers the
-          # USING_BUILTIN_IMU path (M5.In_I2C built-in BMI270).
+          # PlotToSerial.cpp -- Core2 covers the GROVE USING_UNIT_MINI_IMU path, CoreS3 covers the
+          # USING_BUILTIN_IMU path (M5.In_I2C built-in BMI270). The built-in env uses the BuiltIn_*
+          # naming, so give both entries an explicit `env`.
           - example: AhrsDemo
-            unit: UnitIMU
+            unit: UnitMiniIMU
             board: Core2
             framework: Arduino
             espressif32: latest
+            env: UnitMiniIMU_AhrsDemo_Core2_Arduino_latest
           - example: AhrsDemo
-            unit: UnitIMU
+            unit: BuiltIn
             board: CoreS3
             framework: Arduino
             espressif32: latest
+            env: BuiltIn_CoreS3_AhrsDemo_Arduino_latest
 
     steps:
       - name: Checkout
@@ -137,7 +140,7 @@ jobs:
       - name: Build examples
         uses: karniv00l/platformio-run-action@v1
         with:
-          environments: ${{ matrix.unit != '' && format('{0}_{1}_{2}_{3}_{4}', matrix.unit, matrix.example, matrix.board, matrix.framework, matrix.espressif32) || format('{0}_{1}_{2}_{3}', matrix.example, matrix.board, matrix.framework, matrix.espressif32) }}
+          environments: ${{ matrix.env || format('{0}_{1}_{2}_{3}_{4}', matrix.unit, matrix.example, matrix.board, matrix.framework, matrix.espressif32) }}
 #         targets:
           project-dir: "./"
           project-conf: "./platformio.ini"
