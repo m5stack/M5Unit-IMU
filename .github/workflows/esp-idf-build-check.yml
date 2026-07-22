@@ -82,6 +82,12 @@ jobs:
           - label: AhrsDemo-BuiltinIMU
             variant: USING_BUILTIN_IMU
             path: examples/UnitUnified/AhrsDemo
+          # DoF10 (BMI270 + BMM350 + SPA06): the only variant that pulls the barometer driver from
+          # M5Unit-ENV, so this exercises the ESP-IDF component-manager fetch of ENV and the native
+          # build of UnitSPA06 (the reason the idf_component.yml ENV dependency exists).
+          - label: AhrsDemo-UnitDoF10
+            variant: USING_UNIT_DOF10
+            path: examples/UnitUnified/AhrsDemo
     steps:
       - name: Checkout
         uses: actions/checkout@v4

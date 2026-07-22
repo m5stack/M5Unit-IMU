@@ -64,29 +64,32 @@ jobs:
           - "-DUSING_UNIT_MINI_IMU"
 
         board:
-          - arduino_nesso_n1
-          - m5stack_atom
-          - m5stack_atoms3
-          - m5stack_capsule
-          - m5stack_cardputer
-          - m5stack_core
-          - m5stack_core2
-          - m5stack_coreink
-          - m5stack_cores3
-          - m5stack_dial
-          - m5stack_dinmeter
-          - m5stack_fire
-          - m5stack_nanoc6
-          - m5stack_paper
+          # Reduced to chip-arch reps + distinct-build-property boards. This workflow verifies the
+          # arduino-esp32 core-3.x toolchain; unit/ifdef coverage lives in platformio-build-check.yml.
+          # Pure variant siblings below compile identical code -> covered by the reps.
+          - m5stack_core         # ESP32 representative
+          - m5stack_cores3       # ESP32-S3 representative
+          - m5stack_nanoc6       # ESP32-C6 representative
+          - m5stack_tab5         # ESP32-P4 representative
+          - m5stack_cardputer    # ESP32-S3, distinct FQBN build property (PSRAM / USB / memory_type)
+#          - arduino_nesso_n1    # ESP32-C6: represented by nanoc6
+#          - m5stack_atom        # ESP32: represented by core
+#          - m5stack_atoms3      # ESP32-S3: represented by cores3
+#          - m5stack_capsule     # ESP32-S3: represented by cores3
+#          - m5stack_core2       # ESP32: represented by core
+#          - m5stack_coreink     # ESP32: represented by core
+#          - m5stack_dial        # ESP32-S3: represented by cores3
+#          - m5stack_dinmeter    # ESP32-S3: represented by cores3
+#          - m5stack_fire        # ESP32: represented by core
+#          - m5stack_paper       # ESP32 (original M5Paper): represented by core
+#          - m5stack_stamp_s3    # ESP32-S3: represented by cores3
+#          - m5stack_stickc_plus  # ESP32: represented by core
+#          - m5stack_stickc_plus2 # ESP32: represented by core
 #          - m5stack_poe_cam
 #          - m5stack_stamp_c3
 #          - m5stack_stamp_pico
-          - m5stack_stamp_s3
 #          - m5stack_station
 #          - m5stack_stickc
-          - m5stack_stickc_plus
-          - m5stack_stickc_plus2
-          - m5stack_tab5
 #          - m5stack_timer_cam
 #          - m5stack_tough
 #          - m5stack_unit_cam
@@ -111,6 +114,15 @@ jobs:
             platform-version: 3.3.6
             board: m5stack_core2
             build-properties: "-DUSING_UNIT_BMM350"
+          # AhrsDemo: own source (WiFi web viewer + LCD gizmo + begin_builtin dispatch). BUILTIN
+          # compiles the most AhrsDemo-unique code; verifies it builds on the core-3.x toolchain.
+          - sketch: AhrsDemo
+            platform-url: https://espressif.github.io/arduino-esp32/package_esp32_index.json
+            platform: esp32
+            archi: esp32
+            platform-version: 3.3.6
+            board: m5stack_cores3
+            build-properties: "-DUSING_BUILTIN_IMU"
 
     steps:
       - name: Checkout

@@ -87,43 +87,93 @@ jobs:
           - latest
 
         include:
-          # UnitBMM350 (U231, GROVE): 4 representative boards only, not the full UnitIMU board list
-          - example: PlotToSerial
-            unit: UnitBMM350
-            board: CoreS3
-            framework: Arduino
-            espressif32: latest
+          # PlotToSerial's other units (each a distinct USING_* ifdef branch) on ONE representative
+          # board (Core2): the branch only needs to compile once. Board/variant-header and toolchain
+          # coverage (espressif32 + pioarduino C6/H2/P4) all come from the full UnitMiniIMU list above.
           - example: PlotToSerial
             unit: UnitBMM350
             board: Core2
             framework: Arduino
             espressif32: latest
           - example: PlotToSerial
-            unit: UnitBMM350
+            unit: UnitDoF6
+            board: Core2
+            framework: Arduino
+            espressif32: latest
+          - example: PlotToSerial
+            unit: UnitDoF9
+            board: Core2
+            framework: Arduino
+            espressif32: latest
+          - example: PlotToSerial
+            unit: UnitDoF10
+            board: Core2
+            framework: Arduino
+            espressif32: latest
+          - example: PlotToSerial
+            unit: UnitMiniIMUPro
+            board: Core2
+            framework: Arduino
+            espressif32: latest
+          # AhrsDemo has its OWN source (AhrsController + LCD gizmo + WiFi web viewer) with seven
+          # ifdef branches and SoC-specific WiFi code (H2 no-radio guard, P4 co-processor routing).
+          # Build each branch once, spread across SoCs/toolchains so H2 / P4 WiFi and pioarduino are
+          # all exercised. The BuiltIn_* / *_BMM350_* envs do not follow the format() pattern, so
+          # every entry pins an explicit `env`.
+          - example: AhrsDemo  # MINI_IMU, ESP32, normal WiFi
+            unit: UnitMiniIMU
+            board: Core
+            framework: Arduino
+            espressif32: latest
+            env: UnitMiniIMU_AhrsDemo_Core_Arduino_latest
+          - example: AhrsDemo  # MINI_IMU + BMM350, 9-axis GROVE pair
+            unit: UnitMiniIMU_BMM350
+            board: Core2
+            framework: Arduino
+            espressif32: latest
+            env: UnitMiniIMU_BMM350_AhrsDemo_Core2_Arduino_latest
+          - example: AhrsDemo  # DOF6 composite
+            unit: UnitDoF6
+            board: Core2
+            framework: Arduino
+            espressif32: latest
+            env: UnitDoF6_AhrsDemo_Core2_Arduino_latest
+          - example: AhrsDemo  # DOF9 composite
+            unit: UnitDoF9
+            board: Core2
+            framework: Arduino
+            espressif32: latest
+            env: UnitDoF9_AhrsDemo_Core2_Arduino_latest
+          - example: AhrsDemo  # DOF10 composite + baro, C6 pioarduino toolchain
+            unit: UnitDoF10
             board: NanoC6
             framework: Arduino
             espressif32: latest
-          - example: PlotToSerial
-            unit: UnitBMM350
-            board: NessoN1
+            env: UnitDoF10_AhrsDemo_NanoC6_Arduino_latest
+          - example: AhrsDemo  # DOF10, H2 WiFi guard (no on-die radio)
+            unit: UnitDoF10
+            board: NanoH2
             framework: Arduino
             espressif32: latest
-          # AhrsDemo: own source (AhrsController + LCD gizmo), not the M5.getBoard()-agnostic
-          # PlotToSerial.cpp -- Core2 covers the GROVE USING_UNIT_MINI_IMU path, CoreS3 covers the
-          # USING_BUILTIN_IMU path (M5.In_I2C built-in BMI270). The built-in env uses the BuiltIn_*
-          # naming, so give both entries an explicit `env`.
-          - example: AhrsDemo
-            unit: UnitMiniIMU
+            env: UnitDoF10_AhrsDemo_NanoH2_Arduino_latest
+          - example: AhrsDemo  # MINI_IMU_PRO composite + BMP280
+            unit: UnitMiniIMUPro
             board: Core2
             framework: Arduino
             espressif32: latest
-            env: UnitMiniIMU_AhrsDemo_Core2_Arduino_latest
-          - example: AhrsDemo
+            env: UnitMiniIMUPro_AhrsDemo_Core2_Arduino_latest
+          - example: AhrsDemo  # BUILTIN dispatch (M5.In_I2C), S3
             unit: BuiltIn
             board: CoreS3
             framework: Arduino
             espressif32: latest
             env: BuiltIn_CoreS3_AhrsDemo_Arduino_latest
+          - example: AhrsDemo  # BUILTIN + P4 co-processor WiFi (Tab5)
+            unit: BuiltIn
+            board: Tab5
+            framework: Arduino
+            espressif32: latest
+            env: BuiltIn_Tab5_AhrsDemo_Arduino_latest
 
     steps:
       - name: Checkout
