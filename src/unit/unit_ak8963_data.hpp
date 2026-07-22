@@ -47,8 +47,8 @@ constexpr float OUTPUT_LSB_PER_UT{16.0f};
   16 LSB/µT convention (so imu_convert_param_t::mag_res stays a uniform 1/16).
  */
 struct Data {
-    std::array<uint8_t, 8> raw{};   //!< @brief ST1 + X/Y/Z (LE) + ST2
-    std::array<uint8_t, 3> asa{};   //!< @brief Per-axis sensitivity adjustment (device constant)
+    std::array<uint8_t, 8> raw{};  //!< @brief ST1 + X/Y/Z (LE) + ST2
+    std::array<uint8_t, 3> asa{};  //!< @brief Per-axis sensitivity adjustment (device constant)
 
     //! @brief Data ready (ST1 bit0)
     inline bool drdy() const

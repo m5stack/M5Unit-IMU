@@ -42,9 +42,8 @@ std::shared_ptr<Adapter> UnitMPU9250::ensure_adapter(const uint8_t ch)
     return ad ? std::shared_ptr<Adapter>(ad->duplicate(unit->address())) : std::make_shared<Adapter>();
 }
 
-bool UnitMPU9250::start_periodic_measurement(const mpu6886::AccelRange accel_range,
-                                             const mpu6886::GyroRange gyro_range, const mpu6886::Dlpf dlpf,
-                                             const uint8_t sample_rate_div)
+bool UnitMPU9250::start_periodic_measurement(const mpu6886::AccelRange accel_range, const mpu6886::GyroRange gyro_range,
+                                             const mpu6886::Dlpf dlpf, const uint8_t sample_rate_div)
 {
     if (!UnitMPU6xxx::start_periodic_measurement(accel_range, gyro_range, dlpf, sample_rate_div)) {
         return false;

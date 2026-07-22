@@ -341,10 +341,10 @@ void AhrsController::quaternion(float& w, float& x, float& y, float& z) const
     if (_filter) {
         _filter->quaternion(w, x, y, z);
         const m5::math::Quaternion composed = _yaw_tare * m5::math::Quaternion(w, x, y, z);
-        w = composed.w;
-        x = composed.x;
-        y = composed.y;
-        z = composed.z;
+        w                                   = composed.w;
+        x                                   = composed.x;
+        y                                   = composed.y;
+        z                                   = composed.z;
         return;
     }
     w = 1.0f;

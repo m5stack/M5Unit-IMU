@@ -24,8 +24,8 @@ UnitDoF10::UnitDoF10(const uint8_t bmi_addr) : Component(0xFF), _bmi(bmi_addr), 
 {
     auto cfg         = component_config();
     cfg.max_children = 3;
-    cfg.clock        = std::min(std::min(_bmi.component_config().clock, _bmm.component_config().clock),
-                                 _spa.component_config().clock);
+    cfg.clock =
+        std::min(std::min(_bmi.component_config().clock, _bmm.component_config().clock), _spa.component_config().clock);
     component_config(cfg);
 
     // The DoF's BMM350 is a real device on the main bus, not a BMI270 AUX magnetometer -- disable the
