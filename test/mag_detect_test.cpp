@@ -43,47 +43,42 @@ TEST(MagDetect, FindsBmm150ByAddressAck)
 {
     FakeBus bus;
     bus.mem[{0x10, 0x40}] = 0x32;  // BMM150 present
-    EXPECT_EQ(detectBuiltinMag([&](uint8_t a, uint8_t r, uint8_t& o) { return bus.read(a, r, o); }),
-              MagKind::BMM150);
+    EXPECT_EQ(detectBuiltinMag([&](uint8_t a, uint8_t r, uint8_t& o) { return bus.read(a, r, o); }), MagKind::BMM150);
 }
 
 TEST(MagDetect, FindsBmm150EvenWhenChipIdReadsZeroSuspended)
 {
     FakeBus bus;
     bus.mem[{0x10, 0x4B}] = 0x00;  // device present at 0x10 but CHIP_ID(0x40) not in map -> reads 0x00 with ACK
-    EXPECT_EQ(detectBuiltinMag([&](uint8_t a, uint8_t r, uint8_t& o) { return bus.read(a, r, o); }),
-              MagKind::BMM150);
+    EXPECT_EQ(detectBuiltinMag([&](uint8_t a, uint8_t r, uint8_t& o) { return bus.read(a, r, o); }), MagKind::BMM150);
 }
 
 TEST(MagDetect, FindsAk8963ByWhoAmI)
 {
     FakeBus bus;
     bus.mem[{0x0C, 0x00}] = 0x48;  // AK8963 present
-    EXPECT_EQ(detectBuiltinMag([&](uint8_t a, uint8_t r, uint8_t& o) { return bus.read(a, r, o); }),
-              MagKind::AK8963);
+    EXPECT_EQ(detectBuiltinMag([&](uint8_t a, uint8_t r, uint8_t& o) { return bus.read(a, r, o); }), MagKind::AK8963);
 }
 
 TEST(MagDetect, FindsMag3110ByWhoAmI)
 {
     FakeBus bus;
     bus.mem[{0x0E, 0x07}] = 0xC4;  // MAG3110 present
-    EXPECT_EQ(detectBuiltinMag([&](uint8_t a, uint8_t r, uint8_t& o) { return bus.read(a, r, o); }),
-              MagKind::MAG3110);
+    EXPECT_EQ(detectBuiltinMag([&](uint8_t a, uint8_t r, uint8_t& o) { return bus.read(a, r, o); }), MagKind::MAG3110);
 }
 
 TEST(MagDetect, NoneWhenBusEmpty)
 {
     FakeBus bus;
-    EXPECT_EQ(detectBuiltinMag([&](uint8_t a, uint8_t r, uint8_t& o) { return bus.read(a, r, o); }),
-              MagKind::None);
+    EXPECT_EQ(detectBuiltinMag([&](uint8_t a, uint8_t r, uint8_t& o) { return bus.read(a, r, o); }), MagKind::None);
 }
 
 TEST(MagDetect, EnableAuxBypassNoOpWithoutMpu9250)
 {
     FakeBus bus;
     bus.mem[{0x68, 0x75}] = 0x19;  // MPU6886, not MPU9250
-    const bool enabled = enableAuxBypass([&](uint8_t a, uint8_t r, uint8_t& o) { return bus.read(a, r, o); },
-                                         [&](uint8_t a, uint8_t r, uint8_t v) { return bus.write(a, r, v); });
+    const bool enabled    = enableAuxBypass([&](uint8_t a, uint8_t r, uint8_t& o) { return bus.read(a, r, o); },
+                                            [&](uint8_t a, uint8_t r, uint8_t v) { return bus.write(a, r, v); });
     EXPECT_FALSE(enabled);
     EXPECT_TRUE(bus.writes.empty());  // must not touch a non-MPU9250 host's registers
 }
@@ -93,8 +88,8 @@ TEST(MagDetect, EnableAuxBypassSetsBypassOnMpu9250)
     FakeBus bus;
     bus.mem[{0x68, 0x75}] = 0x71;  // MPU9250
     bus.mem[{0x68, 0x6A}] = 0x20;  // USER_CTRL with I2C_MST_EN set
-    const bool enabled = enableAuxBypass([&](uint8_t a, uint8_t r, uint8_t& o) { return bus.read(a, r, o); },
-                                         [&](uint8_t a, uint8_t r, uint8_t v) { return bus.write(a, r, v); });
+    const bool enabled    = enableAuxBypass([&](uint8_t a, uint8_t r, uint8_t& o) { return bus.read(a, r, o); },
+                                            [&](uint8_t a, uint8_t r, uint8_t v) { return bus.write(a, r, v); });
     EXPECT_TRUE(enabled);
     EXPECT_EQ((bus.writes[{0x68, 0x6A}]), 0x00);  // I2C_MST_EN cleared
     EXPECT_EQ((bus.writes[{0x68, 0x37}]), 0x02);  // BYPASS_EN set
