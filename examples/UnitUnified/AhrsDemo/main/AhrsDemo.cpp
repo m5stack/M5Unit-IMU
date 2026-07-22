@@ -31,7 +31,7 @@
 // Choose one define symbol to match the unit you are using
 // *************************************************************
 #if !defined(USING_UNIT_MINI_IMU) && !defined(USING_UNIT_MINI_IMU_WITH_BMM350) && !defined(USING_BUILTIN_IMU) && \
-    !defined(USING_UNIT_DOF6) && !defined(USING_UNIT_DOF9) && !defined(USING_UNIT_DOF10) &&                     \
+    !defined(USING_UNIT_DOF6) && !defined(USING_UNIT_DOF9) && !defined(USING_UNIT_DOF10) &&                      \
     !defined(USING_UNIT_MINI_IMU_PRO)
 // For UnitMiniIMU (SKU: TBD) - 6-axis, GROVE
 #define USING_UNIT_MINI_IMU
