@@ -77,7 +77,9 @@ responds. All chips below have drivers in this library.
 | | v2.6 / v2.7 (2021.8 -) | MPU6886 (0x68) | none (removed) |
 | Core2 / for AWS / v1.1 | | MPU6886 (0x68) | none |
 | Core2 v1.3 | | BMI270 (0x68) | none |
-| CoreS3 / SE | | BMI270 (0x69) | BMM150 (via BMI270 AUX) |
+| CoreS3 / CoreS3 Lite | | BMI270 (0x69) | BMM150 (via BMI270 AUX) |
+| CoreS3 SE | | none | none |
+| Station (Bat) | | MPU6886 (0x68) | none |
 | M5StickC | 2019.3 (original) | SH200Q (0x6C) | none |
 | | 2019.8 - | MPU6886 (0x68) | none |
 | StickC Plus / Plus2 / T2 | | MPU6886 (0x68) | none |
@@ -87,6 +89,7 @@ responds. All chips below have drivers in this library.
 | AtomS3 | | MPU6886 (0x68) | none |
 | AtomS3R | | BMI270 (0x68) | BMM150 (via BMI270 AUX) |
 | Capsule | | BMI270 (0x69) | none |
+| Cardputer-Adv | | BMI270 (0x68) | none |
 | PaperS3 | | BMI270 (0x68) | none |
 | Tab5 | | BMI270 (0x68) | none |
 | Nesso N1 | | BMI270 (0x68) | none |
@@ -152,6 +155,23 @@ The AHRS layer vendors two third-party filter implementations (unmodified, under
 
 The Complementary / Madgwick / Mahony / EKF filters are original implementations, re-derived from
 their published papers (Madgwick 2010; Mahony, Hamel & Pflimlin 2008).
+
+## Magnetometer interference
+
+All magnetometers this library drives — BMM150, BMM350, AK8963, MAG3110, whether on a GROVE unit
+or built into a host — are affected by nearby magnetic fields, which distort or saturate the
+reading and throw off the AHRS heading (yaw). M5Stack's own note for the BMM150 applies to every
+magnetometer here:
+
+> Products containing magnets may interfere with the magnetic sensor, resulting in abnormal
+> readings. Remove any magnets and keep the sensor away from strong magnetic fields.
+
+In practice this means keeping the sensor clear of speaker/charger magnets (including a host's own
+magnetic back), motors, and **steel desks or metal enclosures** — a steel surface alone can push a
+magnetometer into saturation. After relocating away from interference, perform a figure-eight
+motion so the auto-calibration can re-estimate the hard-iron offset (AhrsDemo does this via its
+hold-to-calibrate control). A 6-axis (accel + gyro) attitude estimate is unaffected; only the
+magnetic heading depends on a clean field.
 
 ## Examples
 
