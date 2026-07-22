@@ -113,6 +113,22 @@ void run_updates(m5::unit::UnitUnified& Units, m5::imu::AhrsController& ahrs, co
     }
 }
 
+// Capture and remove the static gyro bias before checking convergence. Without this, a filter with
+// a long accelerometer time constant (VQF: basicvqf tauAcc = 3 s, no internal bias estimation)
+// balances gyro bias against its slow accel correction and settles at a bias*tauAcc tilt offset
+// (~8 deg at rest on a typical MPU6886), which grows toward that wrong equilibrium the longer it
+// runs. AhrsController::calibrateGyro() drains the periodic buffer and averages it into the offset,
+// so we first stream a few frames WITHOUT draining (ahrs.update()) to fill the buffer with fresh
+// at-rest samples for it to average.
+void calibrate_gyro_static(m5::unit::UnitUnified& Units, m5::imu::AhrsController& ahrs)
+{
+    for (int i = 0; i < 32; ++i) {
+        Units.update();
+        std::this_thread::sleep_for(std::chrono::milliseconds(UPDATE_INTERVAL_MS));
+    }
+    ahrs.calibrateGyro(50);
+}
+
 }  // namespace
 
 TEST_F(TestAHRS, AhrsBeginWithRealUnit)
@@ -134,6 +150,7 @@ TEST_F(TestAHRS, StaticConvergence)
 
     ASSERT_TRUE(add_sources());
     ASSERT_TRUE(ahrs.begin());
+    calibrate_gyro_static(Units, ahrs);
 
     run_updates(Units, ahrs, STATIC_DURATION_MS);
 
@@ -155,6 +172,7 @@ TEST_F(TestAHRS, AllFiltersConverge)
 
     ASSERT_TRUE(add_sources());
     ASSERT_TRUE(ahrs.begin());
+    calibrate_gyro_static(Units, ahrs);
 
     constexpr m5::imu::FilterType filter_table[] = {
         m5::imu::FilterType::Complementary, m5::imu::FilterType::Madgwick, m5::imu::FilterType::Mahony,
