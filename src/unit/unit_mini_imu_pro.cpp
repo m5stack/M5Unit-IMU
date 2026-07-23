@@ -20,21 +20,17 @@ const char UnitMiniIMUPro::name[] = "UnitMiniIMUPro";
 const types::uid_t UnitMiniIMUPro::uid{"UnitMiniIMUPro"_mmh3};
 const types::attr_t UnitMiniIMUPro::attr{attribute::AccessI2C};
 
-UnitMiniIMUPro::UnitMiniIMUPro(const uint8_t bmi_addr) : Component(0xFF), _bmi(bmi_addr), _bmm(0x10), _baro(0x76)
+UnitMiniIMUPro::UnitMiniIMUPro(const uint8_t bmi_addr) : Component(0xFF), _bmi(bmi_addr), _baro(0x76)
 {
     auto cfg         = component_config();
-    cfg.max_children = 3;
-    cfg.clock        = std::min(std::min(_bmi.component_config().clock, _bmm.component_config().clock),
-                                _baro.component_config().clock);
+    cfg.max_children = 2;
+    cfg.clock        = std::min(_bmi.component_config().clock, _baro.component_config().clock);
     component_config(cfg);
 
-    // The board's BMM150 is a real device on the main bus, not a BMI270 AUX magnetometer -- disable
-    // the BMI270's AUX BMM150 probe so begin() does not waste an AUX transaction looking for one.
-    auto bcfg              = _bmi.config();
-    bcfg.enable_aux_bmm150 = false;
-    _bmi.config(bcfg);
-
-    _valid = add(_bmi, 0) && add(_bmm, 1) && add(_baro, 2);
+    // Only the BMI270 and the BMP280 sit on the main bus. The board's BMM150 is wired to the
+    // BMI270's AUX interface (ASDX/ASCX), so it is reached through UnitBMI270's AUX bridge
+    // (config_t::enable_aux_bmm150, on by default) rather than as a child of its own.
+    _valid = add(_bmi, 0) && add(_baro, 1);
 }
 
 std::shared_ptr<Adapter> UnitMiniIMUPro::ensure_adapter(const uint8_t ch)

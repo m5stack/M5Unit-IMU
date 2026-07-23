@@ -14,17 +14,19 @@
 // UnitBMP280 is provided by M5Unit-ENV (the barometer drivers live there)
 #include <unit/unit_BMP280.hpp>
 #include "unit_bmi270.hpp"
-#include "unit_bmm150.hpp"
 
 namespace m5 {
 namespace unit {
 
 /*!
   @class UnitMiniIMUPro
-  @brief Unit Mini IMU-Pro (U171): BMI270 (0x68, fixed -- no address switch) + BMM150 (0x10) + BMP280
-  (0x76), all directly on the GROVE main bus (no AUX bypass). The predecessor of Unit DoF9/DoF10, with
-  a BMM150/BMP280 instead of the BMM350/SPA06. Add imu() and mag() to an AhrsController; read baro()
-  directly (not AHRS-fused). The barometer driver (UnitBMP280) comes from M5Unit-ENV.
+  @brief Unit Mini IMU-Pro (U171): BMI270 (0x68, fixed -- no address switch) + BMP280 (0x76) on the
+  GROVE main bus, with a BMM150 magnetometer wired to the BMI270's AUX interface (ASDX/ASCX), not to
+  the main bus. The predecessor of Unit DoF9/DoF10, with a BMM150/BMP280 instead of the BMM350/SPA06.
+  @details Because the BMM150 hangs off the BMI270's AUX bridge -- the same topology as CoreS3 and
+  AtomS3R -- imu() alone provides all nine axes (UnitBMI270 probes and drives the AUX BMM150, and
+  reports Capability::Mag once it answers). Add imu() to an AhrsController; read baro() directly (it
+  is not AHRS-fused). The barometer driver (UnitBMP280) comes from M5Unit-ENV.
  */
 class UnitMiniIMUPro : public Component {
     M5_UNIT_COMPONENT_HPP_BUILDER(UnitMiniIMUPro, 0xFF /* dummy: parent has no device of its own */);
@@ -35,15 +37,11 @@ public:
     {
     }
 
-    //! @brief Accel/gyro sub-unit (add to an AhrsController)
+    //! @brief Accel/gyro/mag sub-unit (add to an AhrsController; the magnetometer arrives through
+    //! this unit's AUX BMM150 bridge, so there is no separate mag sub-unit)
     UnitBMI270& imu()
     {
         return _bmi;
-    }
-    //! @brief Magnetometer sub-unit (add to an AhrsController)
-    UnitBMM150& mag()
-    {
-        return _bmm;
     }
     //! @brief Barometer sub-unit (read directly; not AHRS-fused)
     UnitBMP280& baro()
@@ -63,7 +61,6 @@ protected:
 
 private:
     UnitBMI270 _bmi;
-    UnitBMM150 _bmm;
     UnitBMP280 _baro;
     bool _valid{};
 };

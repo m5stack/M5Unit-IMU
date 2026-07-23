@@ -33,9 +33,11 @@ Unit BMM350 (TBD)
 
 ### SKU:U171
 
-Unit Mini IMU-Pro is a 10-axis motion sensor unit: a BMI270 6-axis accel/gyro (0x68), a BMM150
-3-axis magnetometer (0x10), and a BMP280 barometer (0x76), all directly on the GROVE I2C bus
-(driver: `UnitMiniIMUPro` composite; the BMP280 driver `UnitBMP280` comes from M5Unit-ENV).
+Unit Mini IMU-Pro is a 10-axis motion sensor unit: a BMI270 6-axis accel/gyro (0x68) and a BMP280
+barometer (0x76) on the GROVE I2C bus, plus a BMM150 3-axis magnetometer wired to the BMI270's AUX
+interface rather than to the GROVE bus (driver: `UnitMiniIMUPro` composite; the BMP280 driver
+`UnitBMP280` comes from M5Unit-ENV). Because the magnetometer is an AUX target, `imu()` alone
+provides all nine axes -- the same arrangement as the built-in IMU on CoreS3 and AtomS3R.
 
 > **Multiple DoF units on one bus:** BMM350 (0x14) and SPA06-003 (0x76) have fixed addresses; only the
 > BMI270 is switchable (SW1 0x68/0x69, `DOF_BMI270_ADDRESS` in the examples). To use more than one

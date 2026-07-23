@@ -85,8 +85,9 @@ m5::unit::UnitDoF9 unit{DOF_BMI270_ADDRESS};
 // SPA06 barometer is 0x76.
 m5::unit::UnitDoF10 unit{DOF_BMI270_ADDRESS};
 #elif defined(USING_UNIT_MINI_IMU_PRO)
-// BMI270 is fixed at 0x68 (no address switch on this board); BMM150 is 0x10, BMP280 barometer is
-// 0x76 (driver from M5Unit-ENV).
+// BMI270 is fixed at 0x68 (no address switch on this board) and the BMP280 barometer is 0x76
+// (driver from M5Unit-ENV). The BMM150 is not on the main bus: it is an AUX target of the BMI270,
+// so imu() carries the magnetometer too.
 m5::unit::UnitMiniIMUPro unit{};
 #else
 #error Please choose unit!
@@ -1107,11 +1108,12 @@ void setup()
     } else {
         ok = m5::unit::wiring::addI2C(Units, unit, 400 * 1000U);
     }
-    ok              = ok && Units.begin() && ahrs.add(unit.imu()) && ahrs.add(unit.mag());
+    // The BMM150 is an AUX target of the BMI270, so imu() alone carries all nine axes
+    ok              = ok && Units.begin() && ahrs.add(unit.imu());
     diag.unit_label = "UnitMiniIMUPro (BMI270+BMM150+BMP280)";
     diag.accel_src  = &unit.imu();
-    diag.mag_src    = &unit.mag();
-    diag.mag_label  = "BMM150 (0x10)";
+    diag.mag_src    = &unit.imu();
+    diag.mag_label  = "BMM150 (BMI270 AUX)";
     if (!ok) {
         fail_reason     = "UnitMiniIMUPro not found (check GROVE cable)";
         diag.unit_label = fail_reason;  // /info "source" reports the reason

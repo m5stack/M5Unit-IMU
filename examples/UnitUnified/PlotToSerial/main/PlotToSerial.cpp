@@ -66,8 +66,9 @@ m5::imu::imu_convert_param_t param{};
 m5::unit::UnitDoF10 unit{DOF_BMI270_ADDRESS};
 m5::imu::imu_convert_param_t param{};
 #elif defined(USING_UNIT_MINI_IMU_PRO)
-// BMI270 is fixed at 0x68 (no address switch on this board); BMM150 is 0x10, BMP280 barometer is
-// 0x76 (driver from M5Unit-ENV).
+// BMI270 is fixed at 0x68 (no address switch on this board) and the BMP280 barometer is 0x76
+// (driver from M5Unit-ENV). The BMM150 is not on the main bus: it is an AUX target of the BMI270,
+// so imu() carries the magnetometer too.
 m5::unit::UnitMiniIMUPro unit{};
 m5::imu::imu_convert_param_t param{};
 #else
@@ -212,7 +213,8 @@ void draw_lcd()
     canvas.printf("Gy:%+.1f", a.gyro_y() * param.gyro_res);
     canvas.setCursor(4, 2 + line++ * line_height);
     canvas.printf("Gz:%+.1f", a.gyro_z() * param.gyro_res);
-    const auto m = unit.mag().latest();
+    // The BMM150 is an AUX target of the BMI270, so its sample rides along in the same Data
+    const auto& m = a.mag;
     // BMM150's compensated output is 16 LSB/uT (see unit_bmm150_data.hpp)
     canvas.setCursor(4, 2 + line++ * line_height);
     canvas.printf("Mx:%+.1f", m.comp_x() / 16.0f);
@@ -379,18 +381,19 @@ void loop()
     }
 #elif defined(USING_UNIT_MINI_IMU_PRO)
     // UnitMiniIMUPro is a composite with no measurement of its own; gate on its sub-units instead.
-    if (unit.imu().updated() || unit.mag().updated() || unit.baro().updated()) {
+    if (unit.imu().updated() || unit.baro().updated()) {
         if (unit.imu().updated()) {
             const auto a = unit.imu().latest();
             // Teleplot format (https://github.com/nesnes/teleplot): one ">name:value" per line.
             M5.Log.printf(">ax:%.3f\n>ay:%.3f\n>az:%.3f\n>gx:%.2f\n>gy:%.2f\n>gz:%.2f\n", a.accel_x() * param.accel_res,
                           a.accel_y() * param.accel_res, a.accel_z() * param.accel_res, a.gyro_x() * param.gyro_res,
                           a.gyro_y() * param.gyro_res, a.gyro_z() * param.gyro_res);
-        }
-        if (unit.mag().updated()) {
-            const auto m = unit.mag().latest();
-            // BMM150's compensated output is 16 LSB/uT (see unit_bmm150_data.hpp)
-            M5.Log.printf(">mx:%.3f\n>my:%.3f\n>mz:%.3f\n", m.comp_x() / 16.0f, m.comp_y() / 16.0f, m.comp_z() / 16.0f);
+            if (a.aux_mag) {
+                // The BMM150 is an AUX target of the BMI270, so its sample arrives in the same Data.
+                // BMM150's compensated output is 16 LSB/uT (see unit_bmm150_data.hpp)
+                M5.Log.printf(">mx:%.3f\n>my:%.3f\n>mz:%.3f\n", a.mag.comp_x() / 16.0f, a.mag.comp_y() / 16.0f,
+                              a.mag.comp_z() / 16.0f);
+            }
         }
         if (unit.baro().updated()) {
             // UnitBMP280 has no altitude(); reuse M5Unit-ENV's chip-agnostic barometric-formula helper
