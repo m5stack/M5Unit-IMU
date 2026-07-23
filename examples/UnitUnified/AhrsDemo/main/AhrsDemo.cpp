@@ -125,6 +125,34 @@ constexpr float MAHONY_KP_DEFAULT{1.0f};
 uint32_t settle_until_ms{};  // 0: no boost active
 
 //! @brief Start the settle boost if the just-selected filter needs one (call right after selectFilter())
+/*!
+  @brief Remove the gyroscope's static bias once, at boot, before any filter integrates it
+  @details Every filter accumulates an uncorrected gyro bias straight into yaw, so a few dps of
+  zero-rate offset shows up as a heading that creeps even while the device sits still. VQF can
+  estimate and remove the bias by itself, but only while it detects rest -- and upstream refuses
+  to call a sample "at rest" whenever a low-passed gyro axis exceeds VQFParams::biasClip (2 dps
+  by default), which several M5 IMUs exceed outright (the MPU6886's zero-rate output is
+  specified around +-5 dps). Calibrating here brings the residual inside that window so VQF's
+  own estimator engages, and helps the five filters that have no bias estimation at all.
+  @note AhrsController::calibrateGyro() consumes samples the sources have already buffered, so
+  Units.update() has to run first to fill them.
+  @warning Assumes the device is stationary during boot; anything else calibrates in the motion.
+ */
+void calibrate_gyro_at_boot()
+{
+    constexpr int PRIME_SAMPLES{32};  // fill the source buffers before draining them
+    constexpr uint32_t PRIME_INTERVAL_MS{10};
+    constexpr uint32_t CALIBRATE_DURATION_MS{50};
+
+    for (int i = 0; i < PRIME_SAMPLES; ++i) {
+        Units.update();
+        m5::utility::delay(PRIME_INTERVAL_MS);
+    }
+    if (!ahrs.calibrateGyro(CALIBRATE_DURATION_MS)) {
+        M5_LOGW("Gyro calibration skipped (no gyro source or no samples)");
+    }
+}
+
 void begin_settle_boost()
 {
     settle_until_ms = 0;
@@ -1136,6 +1164,7 @@ void setup()
         M5_LOGW("IMU unavailable: %s", fail_reason);
         M5_LOGW("%s", Units.debugInfo().c_str());
     } else {
+        calibrate_gyro_at_boot();           // keep the raw bias out of every filter's integrator
         ahrs.selectFilter(current_filter);  // FilterType::Madgwick
         begin_settle_boost();               // the boot-time convergence benefits the same way
 
