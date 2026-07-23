@@ -97,6 +97,80 @@ struct AxisOrder {
     }
 };
 
+/*!
+  @brief Source-axis index feeding each output slot, for a given permutation
+  @param p Permutation
+  @return Pointer to a static 3-element array: out[i] = src[result[i]]
+ */
+inline const uint8_t* axis_permutation_indices(const AxisPermutation p)
+{
+    static const uint8_t table[6][3] = {
+        {0, 1, 2},  // XYZ
+        {0, 2, 1},  // XZY
+        {1, 0, 2},  // YXZ
+        {1, 2, 0},  // YZX
+        {2, 0, 1},  // ZXY
+        {2, 1, 0},  // ZYX
+    };
+    return table[static_cast<uint8_t>(p)];
+}
+
+/*!
+  @brief Map a source-axis index triplet back to an AxisPermutation
+  @param p 3-element array holding a permutation of {0,1,2} (out[i] = src[p[i]])
+  @return The matching AxisPermutation; AxisPermutation::XYZ if p is not a valid permutation
+ */
+inline AxisPermutation permutation_from_indices(const uint8_t (&p)[3])
+{
+    const uint8_t code = static_cast<uint8_t>((p[0] << 4) | (p[1] << 2) | p[2]);
+    switch (code) {
+        case (0 << 4) | (1 << 2) | 2:
+            return AxisPermutation::XYZ;
+        case (0 << 4) | (2 << 2) | 1:
+            return AxisPermutation::XZY;
+        case (1 << 4) | (0 << 2) | 2:
+            return AxisPermutation::YXZ;
+        case (1 << 4) | (2 << 2) | 0:
+            return AxisPermutation::YZX;
+        case (2 << 4) | (0 << 2) | 1:
+            return AxisPermutation::ZXY;
+        case (2 << 4) | (1 << 2) | 0:
+            return AxisPermutation::ZYX;
+        default:
+            return AxisPermutation::XYZ;
+    }
+}
+
+/*!
+  @brief Compose two axis orders into one
+  @param first Axis order applied first
+  @param second Axis order applied second
+  @return An AxisOrder R such that R.apply(v) == second.apply(first.apply(v)) for every v
+  @details AxisOrder is a signed axis permutation, so the composition is itself an AxisOrder
+  (no information is lost). Used by AhrsController to fold a global user axis order onto each
+  source's fixed board correction without applying two transforms per sample.
+ */
+inline AxisOrder compose(const AxisOrder& first, const AxisOrder& second)
+{
+    const uint8_t* pa = axis_permutation_indices(first.permutation);
+    const uint8_t* pb = axis_permutation_indices(second.permutation);
+    const bool inv_a[3] = {first.invert_x, first.invert_y, first.invert_z};
+    const bool inv_b[3] = {second.invert_x, second.invert_y, second.invert_z};
+
+    uint8_t pc[3]{};
+    bool inv_c[3]{};
+    for (int i = 0; i < 3; ++i) {
+        pc[i]    = pa[pb[i]];
+        inv_c[i] = inv_b[i] != inv_a[pb[i]];
+    }
+    AxisOrder result;
+    result.permutation = permutation_from_indices(pc);
+    result.invert_x    = inv_c[0];
+    result.invert_y    = inv_c[1];
+    result.invert_z    = inv_c[2];
+    return result;
+}
+
 }  // namespace imu
 }  // namespace m5
 #endif

@@ -138,6 +138,7 @@ bool AhrsController::add(IMUDataSource& src)
             _temp_src = &src;
         }
     }
+    recompute_composed(_source_count - 1);
     return true;
 }
 
@@ -160,6 +161,7 @@ bool AhrsController::writeAxisOrder(const IMUDataSource& src, const AxisOrder& o
         return false;
     }
     _axis_orders[index] = order;
+    recompute_composed(index);
     return true;
 }
 
@@ -181,6 +183,7 @@ bool AhrsController::writeMagAxisOrder(const IMUDataSource& src, const AxisOrder
         return false;
     }
     _mag_axis_orders[index] = order;
+    recompute_composed(index);
     return true;
 }
 
@@ -192,6 +195,30 @@ bool AhrsController::readMagAxisOrder(const IMUDataSource& src, AxisOrder& out) 
     }
     out = _mag_axis_orders[index];
     return true;
+}
+
+void AhrsController::writeUserAxisOrder(const AxisOrder& order)
+{
+    _user_axis_order = order;
+    recompute_all_composed();
+}
+
+void AhrsController::readUserAxisOrder(AxisOrder& out) const
+{
+    out = _user_axis_order;
+}
+
+void AhrsController::recompute_composed(const size_t index)
+{
+    _composed_axis_orders[index]     = compose(_axis_orders[index], _user_axis_order);
+    _composed_mag_axis_orders[index] = compose(_mag_axis_orders[index], _user_axis_order);
+}
+
+void AhrsController::recompute_all_composed()
+{
+    for (size_t i = 0; i < _source_count; ++i) {
+        recompute_composed(i);
+    }
 }
 
 void AhrsController::writeAutoCalibration(const uint8_t accel, const uint8_t gyro, const uint8_t mag)
@@ -481,8 +508,8 @@ Capability AhrsController::drain_and_fuse(const float dt)
             continue;
         }
         const imu_convert_param_t& param = params[i];
-        const AxisOrder& order           = _axis_orders[i];
-        const AxisOrder& mag_order       = _mag_axis_orders[i];
+        const AxisOrder& order           = _composed_axis_orders[i];
+        const AxisOrder& mag_order       = _composed_mag_axis_orders[i];
         imu_raw_data_t raw{};
         while (any(src->readImuRaw(raw))) {
             if (src == _accel_src) {
@@ -532,8 +559,8 @@ Capability AhrsController::drain_and_fuse(const float dt)
             }
         }
         const imu_convert_param_t& gyro_param = params[gyro_index];
-        const AxisOrder& gyro_order           = _axis_orders[gyro_index];
-        const AxisOrder& gyro_mag_order       = _mag_axis_orders[gyro_index];
+        const AxisOrder& gyro_order           = _composed_axis_orders[gyro_index];
+        const AxisOrder& gyro_mag_order       = _composed_mag_axis_orders[gyro_index];
 
         imu_raw_data_t gyro_buf[AHRS_MAX_DRAIN_SAMPLES]{};
         size_t gyro_count{};

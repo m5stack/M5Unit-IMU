@@ -564,6 +564,169 @@ TEST(AhrsController, MagAxisOrderAppliedIndependentlyOfAccelGyroAxisOrderOnSameS
     EXPECT_FLOAT_EQ(latest.mag[2], -9.0f);
 }
 
+TEST(AhrsController, UserAxisOrderRoundTripDefaultsToIdentity)
+{
+    AhrsController ahrs;
+
+    AxisOrder readback;
+    ahrs.readUserAxisOrder(readback);
+    EXPECT_EQ(readback.permutation, AxisPermutation::XYZ);
+    EXPECT_FALSE(readback.invert_x);
+    EXPECT_FALSE(readback.invert_y);
+    EXPECT_FALSE(readback.invert_z);
+
+    AxisOrder user;
+    user.permutation = AxisPermutation::ZXY;
+    user.invert_z    = true;
+    ahrs.writeUserAxisOrder(user);
+
+    ahrs.readUserAxisOrder(readback);
+    EXPECT_EQ(readback.permutation, AxisPermutation::ZXY);
+    EXPECT_FALSE(readback.invert_x);
+    EXPECT_FALSE(readback.invert_y);
+    EXPECT_TRUE(readback.invert_z);
+}
+
+TEST(AhrsController, UserAxisOrderComposesOnTopOfFixedAxisOrder)
+{
+    MockSource ag(Capability::Accel | Capability::Gyro);
+    ag.pushAccelGyro(1, 2, 3, 4, 5, 6);
+
+    AhrsController ahrs;
+    EXPECT_TRUE(ahrs.add(ag));
+
+    AxisOrder fixed;  // board correction, as a preset would install it
+    fixed.permutation = AxisPermutation::YXZ;
+    fixed.invert_y    = true;
+    EXPECT_TRUE(ahrs.writeAxisOrder(ag, fixed));
+
+    AxisOrder user;  // user reassignment layered on top
+    user.invert_x = true;
+    ahrs.writeUserAxisOrder(user);
+
+    EXPECT_TRUE(ahrs.begin());
+    ahrs.update(0.01f);
+
+    const imu_physical_data_t& latest = ahrs.latest();
+    // fixed: (1,2,3) -> (2,-1,3); user then negates X -> (-2,-1,3)
+    EXPECT_FLOAT_EQ(latest.accel[0], -2.0f);
+    EXPECT_FLOAT_EQ(latest.accel[1], -1.0f);
+    EXPECT_FLOAT_EQ(latest.accel[2], 3.0f);
+    EXPECT_FLOAT_EQ(latest.gyro[0], -5.0f);
+    EXPECT_FLOAT_EQ(latest.gyro[1], -4.0f);
+    EXPECT_FLOAT_EQ(latest.gyro[2], 6.0f);
+
+    // readAxisOrder still reports the fixed order, never the composed one
+    AxisOrder readback;
+    EXPECT_TRUE(ahrs.readAxisOrder(ag, readback));
+    EXPECT_EQ(readback.permutation, AxisPermutation::YXZ);
+    EXPECT_TRUE(readback.invert_y);
+    EXPECT_FALSE(readback.invert_x);
+}
+
+TEST(AhrsController, UserAxisOrderAppliesToMagAsWell)
+{
+    MockSource agm(Capability::Accel | Capability::Gyro | Capability::Mag);
+    agm.pushAccelGyroMag(1, 2, 3, 4, 5, 6, 7, 8, 9);
+
+    AhrsController ahrs;
+    EXPECT_TRUE(ahrs.add(agm));
+
+    AxisOrder mag_fixed;  // AUX die mounted differently, accel/gyro left at identity
+    mag_fixed.invert_x = true;
+    mag_fixed.invert_z = true;
+    EXPECT_TRUE(ahrs.writeMagAxisOrder(agm, mag_fixed));
+
+    AxisOrder user;
+    user.permutation = AxisPermutation::YXZ;
+    ahrs.writeUserAxisOrder(user);
+
+    EXPECT_TRUE(ahrs.begin());
+    ahrs.update(0.01f);
+
+    const imu_physical_data_t& latest = ahrs.latest();
+    // accel has no fixed correction, so the user swap alone applies: (1,2,3) -> (2,1,3)
+    EXPECT_FLOAT_EQ(latest.accel[0], 2.0f);
+    EXPECT_FLOAT_EQ(latest.accel[1], 1.0f);
+    EXPECT_FLOAT_EQ(latest.accel[2], 3.0f);
+    // mag fixed: (7,8,9) -> (-7,8,-9); user swap of X/Y -> (8,-7,-9)
+    EXPECT_FLOAT_EQ(latest.mag[0], 8.0f);
+    EXPECT_FLOAT_EQ(latest.mag[1], -7.0f);
+    EXPECT_FLOAT_EQ(latest.mag[2], -9.0f);
+}
+
+TEST(AhrsController, UserAxisOrderSetBeforeAddAppliesToLaterSources)
+{
+    AhrsController ahrs;
+
+    AxisOrder user;
+    user.permutation = AxisPermutation::YXZ;
+    ahrs.writeUserAxisOrder(user);  // installed before any source exists
+
+    MockSource ag(Capability::Accel | Capability::Gyro);
+    ag.pushAccelGyro(1, 2, 3, 4, 5, 6);
+    EXPECT_TRUE(ahrs.add(ag));
+    EXPECT_TRUE(ahrs.begin());
+    ahrs.update(0.01f);
+
+    const imu_physical_data_t& latest = ahrs.latest();
+    EXPECT_FLOAT_EQ(latest.accel[0], 2.0f);
+    EXPECT_FLOAT_EQ(latest.accel[1], 1.0f);
+    EXPECT_FLOAT_EQ(latest.accel[2], 3.0f);
+}
+
+TEST(AhrsController, CapabilityQueriesReflectAddedSources)
+{
+    AhrsController ahrs;
+    EXPECT_FALSE(ahrs.hasAccel());
+    EXPECT_FALSE(ahrs.hasGyro());
+    EXPECT_FALSE(ahrs.hasTemp());
+    EXPECT_FALSE(ahrs.hasValidMag());
+
+    MockSource ag(Capability::Accel | Capability::Gyro | Capability::Temp);
+    EXPECT_TRUE(ahrs.add(ag));
+    EXPECT_TRUE(ahrs.hasAccel());
+    EXPECT_TRUE(ahrs.hasGyro());
+    EXPECT_TRUE(ahrs.hasTemp());
+    EXPECT_FALSE(ahrs.hasValidMag());  // no magnetometer source at all
+}
+
+TEST(AhrsController, HasValidMagTurnsTrueOnlyAfterAValidMagSample)
+{
+    MockSource ag(Capability::Accel | Capability::Gyro);
+    MockSource mag(Capability::Mag);
+    ag.pushAccelGyro(0, 0, 1, 0, 0, 0);
+
+    AhrsController ahrs;
+    EXPECT_TRUE(ahrs.add(ag));
+    EXPECT_TRUE(ahrs.add(mag));
+    EXPECT_TRUE(ahrs.begin());
+
+    ahrs.update(0.01f);
+    EXPECT_FALSE(ahrs.hasValidMag());  // mag source present, but no sample has arrived yet
+
+    mag.pushMag(20, 0, -40);
+    ahrs.update(0.01f);
+    EXPECT_TRUE(ahrs.hasValidMag());
+}
+
+TEST(AhrsController, LastMicrosIsStampedOnlyBySelfClockedUpdate)
+{
+    MockSource ag(Capability::Accel | Capability::Gyro);
+    ag.pushAccelGyro(0, 0, 1, 0, 0, 0);
+
+    AhrsController ahrs;
+    EXPECT_TRUE(ahrs.add(ag));
+    EXPECT_TRUE(ahrs.begin());
+    EXPECT_EQ(ahrs.lastMicros(), 0u);
+
+    ahrs.update(0.01f);  // explicit-dt overload bypasses the clock
+    EXPECT_EQ(ahrs.lastMicros(), 0u);
+
+    ahrs.update();  // self-clocked overload stamps it
+    EXPECT_NE(ahrs.lastMicros(), 0u);
+}
+
 // ---------------------------------------------------------------------------------------
 // Auto-calibration (Task 9)
 // ---------------------------------------------------------------------------------------

@@ -129,6 +129,25 @@ public:
     bool readMagAxisOrder(const IMUDataSource& src, AxisOrder& out) const;
 
     /*!
+      @brief Set a global user axis remap composed on top of every source's fixed order
+      @param order Permutation and per-axis sign flip the caller wants applied to the reported frame
+      @details Mirrors M5Unified's IMU_Class::setAxisOrder user layer. writeAxisOrder()/
+      writeMagAxisOrder() carry the fixed, per-board correction (chip frame to a unified body
+      frame); this order is applied *after* that, reorienting the whole device output frame, and
+      so it affects Accel, Gyro, Temp and Mag of every source alike. The two are folded together
+      internally (see compose() in axis_order.hpp), so no extra per-sample transform is paid.
+      Defaults to the identity transform. Composition is recomputed here and on every
+      writeAxisOrder()/writeMagAxisOrder()/add().
+     */
+    void writeUserAxisOrder(const AxisOrder& order);
+
+    /*!
+      @brief Read back the current global user axis remap
+      @param[out] out Destination for the current user AxisOrder (identity by default)
+     */
+    void readUserAxisOrder(AxisOrder& out) const;
+
+    /*!
       @brief Enable/disable continuous background auto-calibration per capability
       @param accel Accelerometer strength, 0 = off, 1-255 = adjustment speed (higher = faster)
       @param gyro Gyroscope strength, 0 = off, 1-255 = adjustment speed
@@ -287,6 +306,46 @@ public:
         return _latest;
     }
 
+    //! @brief Whether an accelerometer source has been registered (see add())
+    inline bool hasAccel() const
+    {
+        return _accel_src != nullptr;
+    }
+
+    //! @brief Whether a gyroscope source has been registered (see add())
+    inline bool hasGyro() const
+    {
+        return _gyro_src != nullptr;
+    }
+
+    //! @brief Whether a temperature source has been registered (see add())
+    inline bool hasTemp() const
+    {
+        return _temp_src != nullptr;
+    }
+
+    /*!
+      @brief Whether at least one valid magnetometer sample has been seen
+      @details False on a 6-axis setup, or before the first non-overflow mag sample arrives
+      (see the "Magnetometer overflow" note on this class). latest().mag stays at its last
+      valid value (or zero) while this reads false.
+     */
+    inline bool hasValidMag() const
+    {
+        return _has_valid_mag;
+    }
+
+    /*!
+      @brief Microsecond timestamp of the most recent self-clocked update()
+      @details Stamped only by the update() overload that measures dt itself; update(const float
+      dt) leaves it untouched, so this stays 0 for callers driving the controller entirely from
+      their own timebase.
+     */
+    inline unsigned long lastMicros() const
+    {
+        return _last_micros;
+    }
+
 private:
     // Per-capability auto-calibration state (M5Unified IMU_Class::offset_point_t, ported to
     // physical-unit floats -- see ahrs_controller.cpp for update_stillness()/calibrate()).
@@ -314,10 +373,17 @@ private:
     Capability drain_and_fuse(const float dt);
     void begin_gyro_collect();
     bool end_gyro_collect();
+    void recompute_composed(const size_t index);  // Fold _user_axis_order onto one source's fixed order
+    void recompute_all_composed();                // ...for every added source
 
     IMUDataSource* _sources[MAX_SOURCES]{};
-    AxisOrder _axis_orders[MAX_SOURCES]{};      // Applied to Accel/Gyro/Temp
-    AxisOrder _mag_axis_orders[MAX_SOURCES]{};  // Applied to Mag only (see writeMagAxisOrder())
+    AxisOrder _axis_orders[MAX_SOURCES]{};      // Fixed board correction for Accel/Gyro/Temp
+    AxisOrder _mag_axis_orders[MAX_SOURCES]{};  // Fixed board correction for Mag (writeMagAxisOrder())
+    AxisOrder _user_axis_order{};               // Global user remap (writeUserAxisOrder())
+
+    // Fixed order folded with the user order; these are what update() actually applies.
+    AxisOrder _composed_axis_orders[MAX_SOURCES]{};
+    AxisOrder _composed_mag_axis_orders[MAX_SOURCES]{};
     size_t _source_count{};
 
     IMUDataSource* _accel_src{};
