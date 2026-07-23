@@ -17,6 +17,7 @@
 #include "imu/imu_data_source.hpp"
 #include "imu/axis_order.hpp"
 #include "imu/ahrs_controller.hpp"
+#include "imu/ahrs_imu.hpp"
 #include "imu/presets.hpp"
 #include "imu/mag_detect.hpp"
 #include "imu/imu_detect.hpp"
