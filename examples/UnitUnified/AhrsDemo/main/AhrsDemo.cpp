@@ -16,6 +16,10 @@
    - BtnA double-click: zero the displayed yaw at the current heading (tare; roll/pitch unaffected,
      the filter's own internal heading is untouched)
    - BtnA hold (long press): toggle magnetometer auto-calibration (sphere-fit hard-iron) ON/OFF
+   - BtnB click (boards that have a BtnB): with VQF selected, toggle its magnetic disturbance
+     rejection, which this library leaves off by default. Watch the MagDis field: it reads 1
+     until VQF adopts a magnetic reference, which needs several seconds of sustained rotation,
+     and returns to 1 whenever the field is disturbed afterwards (hold a magnet nearby to see it)
 */
 #include <M5Unified.h>
 #include <M5UnitUnified.h>
@@ -728,8 +732,26 @@ void draw_gizmo(const float roll, const float pitch, const float yaw)
         text_canvas.printf("R:%7.2f P:%7.2f Y:%7.2f", roll, pitch, yaw);
     }
     text_canvas.setCursor(4, 26);
+    // With VQF selected, spend the spare room on its internal state as well: R = rest detected
+    // (gyro bias is being estimated), D = magnetic disturbance detected (mag ignored for heading),
+    // "-" when rejection is off and the flag therefore means nothing. Both are invisible
+    // otherwise, and they explain behaviour that otherwise looks like a bug. The mag
+    // auto-calibration state stays on the line either way -- it is what BtnA hold toggles.
+    const bool show_vqf_state = (current_filter == m5::imu::FilterType::VQF) && (ahrs.filter() != nullptr);
     if (compact) {
-        text_canvas.printf("T:%.1fC", ahrs.latest().temp);
+        if (show_vqf_state) {
+            const auto* vqf = static_cast<m5::imu::VQFFilter*>(ahrs.filter());
+            text_canvas.printf("T:%.0fC C%d R%d D%c", ahrs.latest().temp, auto_cal_enabled ? 1 : 0,
+                               vqf->restDetected() ? 1 : 0,
+                               vqf->readMagDisturbanceRejection() ? (vqf->magDisturbanceDetected() ? '1' : '0') : '-');
+        } else {
+            text_canvas.printf("T:%.1fC", ahrs.latest().temp);
+        }
+    } else if (show_vqf_state) {
+        const auto* vqf = static_cast<m5::imu::VQFFilter*>(ahrs.filter());
+        text_canvas.printf("T:%4.1fC %s Rest:%d MagDis:%c", ahrs.latest().temp,
+                           auto_cal_enabled ? "Cal:ON" : "Cal:--", vqf->restDetected() ? 1 : 0,
+                           vqf->readMagDisturbanceRejection() ? (vqf->magDisturbanceDetected() ? '1' : '0') : '-');
     } else {
         text_canvas.printf("Temp:%6.2f C %s", ahrs.latest().temp, auto_cal_enabled ? "Cal:ON" : "Cal:--");
     }
@@ -1218,8 +1240,46 @@ void loop()
     if (m5::imu::any(cap)) {
         float roll{}, pitch{}, yaw{};
         ahrs.euler(roll, pitch, yaw);
-        M5.Log.printf("[%s]: %.2f,%.2f,%.2f  temp:%.1f\n", filter_name(current_filter), roll, pitch, yaw,
-                      ahrs.latest().temp);
+        if (current_filter == m5::imu::FilterType::VQF) {
+            // VQF is the only filter that reports what it is doing internally; surfacing it makes
+            // the two behaviours that are otherwise invisible observable: whether the gyro bias is
+            // actually being estimated (rest), and whether the magnetometer is currently being
+            // ignored because the field looks disturbed (magdist). See VQFFilter's Doxygen.
+            const auto* vqf              = static_cast<m5::imu::VQFFilter*>(ahrs.filter());
+            const m5::math::Vector3 bias = vqf->readGyroBias();
+            // The disturbance flag is only maintained while rejection is enabled (off by
+            // default); print "-" rather than a stale value that would read as a real detection
+            char magdist[48]{"-"};
+            if (vqf->readMagDisturbanceRejection()) {
+                // Also report the field VQF is judging: the magnitude is rotation-invariant, but a
+                // dip that swings while the device turns means the magnetometer's axes disagree
+                // with the accel/gyro's -- and then no reference can ever be adopted.
+                float mag_norm{}, mag_dip{};
+                vqf->readMagNormDip(mag_norm, mag_dip);
+                snprintf(magdist, sizeof(magdist), "%d norm:%.1f dip:%.1f",
+                         vqf->magDisturbanceDetected() ? 1 : 0, mag_norm, mag_dip);
+            }
+            // dev:<gyro>,<accel> are the rest-detection deviations relative to their thresholds:
+            // both must stay below 1.0 for rest (and therefore rest bias estimation) to arm, so
+            // they show which sensor is holding a seemingly stationary device back.
+            float dev_gyro{}, dev_accel{};
+            vqf->readRestDeviations(dev_gyro, dev_accel);
+            // |mag| straight from the controller's calibrated sample: unlike VQF's norm it is
+            // computed whatever the filter is doing, so it stays readable while hard-iron
+            // auto-calibration converges. A well-calibrated magnetometer holds it constant at the
+            // local field strength (~25-65uT) however the device is turned; a value that swings as
+            // you rotate is the signature of a hard-iron offset.
+            const m5::imu::imu_physical_data_t& s = ahrs.latest();
+            const float mag_magnitude = std::sqrt(s.mag[0] * s.mag[0] + s.mag[1] * s.mag[1] + s.mag[2] * s.mag[2]);
+            M5.Log.printf(
+                "[%s]: %.2f,%.2f,%.2f  temp:%.1f  cal:%d |mag|:%.1f rest:%d dev:%.2f,%.2f magdist:%s "
+                "bias:%.3f,%.3f,%.3f\n",
+                filter_name(current_filter), roll, pitch, yaw, s.temp, auto_cal_enabled ? 1 : 0, mag_magnitude,
+                vqf->restDetected() ? 1 : 0, dev_gyro, dev_accel, magdist, bias.x, bias.y, bias.z);
+        } else {
+            M5.Log.printf("[%s]: %.2f,%.2f,%.2f  temp:%.1f\n", filter_name(current_filter), roll, pitch, yaw,
+                          ahrs.latest().temp);
+        }
 
         if (has_lcd) {
             const auto now = m5::utility::millis();
@@ -1242,6 +1302,21 @@ void loop()
         ahrs.writeAutoCalibration(0, 0, auto_cal_enabled ? 64 : 0);
         M5_LOGI("Mag auto-calibration %s%s", auto_cal_enabled ? "ON" : "OFF",
                 auto_cal_enabled ? " (wave the device in a figure-eight to converge)" : " (converged offset kept)");
+    }
+
+    // BtnB: let VQF's magnetic disturbance rejection be tried out. It is off by default in this
+    // library (see VQFFilter::writeMagDisturbanceRejection()), so without a control like this
+    // there is no way to experience it short of editing and reflashing. Single-button boards
+    // (AtomS3, StickC, ...) still build and run -- M5.BtnB simply never fires there, and the
+    // MagDis field keeps reading "-".
+    // Note that selectFilter() constructs a fresh VQFFilter, so switching filters and coming back
+    // returns the setting to its default.
+    if (M5.BtnB.wasClicked() && current_filter == m5::imu::FilterType::VQF && ahrs.filter() != nullptr) {
+        auto* vqf            = static_cast<m5::imu::VQFFilter*>(ahrs.filter());
+        const bool enable_it = !vqf->readMagDisturbanceRejection();
+        vqf->writeMagDisturbanceRejection(enable_it);
+        M5_LOGI("VQF mag disturbance rejection %s%s", enable_it ? "ON" : "OFF",
+                enable_it ? " (rotate smoothly >20dps for 5s to let it adopt a reference)" : "");
     }
 }
 
