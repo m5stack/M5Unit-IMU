@@ -46,10 +46,13 @@ public:
         bmi270::AccelRange accel_range{bmi270::AccelRange::G8};
         //! Gyroscope range
         bmi270::GyroRange gyro_range{bmi270::GyroRange::DPS2000};
-        //! Accelerometer output data rate
-        bmi270::AccelODR accel_odr{bmi270::AccelODR::Rate100Hz};
-        //! Gyroscope output data rate (periodic measurement interval is derived from this)
-        bmi270::GyroODR gyro_odr{bmi270::GyroODR::Rate100Hz};
+        //! Accelerometer output data rate (the chip's power-on default; matches gyro_odr so the
+        //! AHRS layer gets accel and gyro at the same cadence)
+        bmi270::AccelODR accel_odr{bmi270::AccelODR::Rate200Hz};
+        //! Gyroscope output data rate (periodic measurement interval is derived from this). 200Hz is
+        //! the chip's power-on default and keeps hand-speed motion out of the under-sampled regime;
+        //! lower it if power matters more than tracking fast rotation
+        bmi270::GyroODR gyro_odr{bmi270::GyroODR::Rate200Hz};
         //! Probe for an on-chip BMM150 magnetometer via the AUX interface on startPeriodicMeasurement()?
         //! If no BMM150 responds, the start still succeeds with 6-axis (accel/gyro) only
         bool enable_aux_bmm150{true};
