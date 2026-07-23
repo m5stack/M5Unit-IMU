@@ -298,6 +298,44 @@ bool UnitBMM350::stopPeriodicMeasurement()
     return PeriodicMeasurementAdapter<UnitBMM350, bmm350::Data>::stopPeriodicMeasurement();
 }
 
+bool UnitBMM350::sleep()
+{
+    // A suspended chip must not be polled, so stop measuring first
+    if (inPeriodic() && !stopPeriodicMeasurement()) {
+        M5_LIB_LOGE("Failed to stop before sleep");
+        return false;
+    }
+    if (!writeRegister8(REG_PMU_CMD, PMU_CMD_SUS)) {
+        M5_LIB_LOGE("Failed to suspend");
+        return false;
+    }
+    return true;
+}
+
+bool UnitBMM350::wakeup()
+{
+    if (!writeRegister8(REG_PMU_CMD, PMU_CMD_NM)) {
+        M5_LIB_LOGE("Failed to enter normal mode");
+        return false;
+    }
+    m5::utility::delay(38);  // Suspend to normal mode transition (same budget as commit_odr_avg())
+
+    uint8_t status0{};
+    if (!read_register8(REG_PMU_CMD_STATUS_0, status0)) {
+        M5_LIB_LOGE("Failed to read REG_PMU_CMD_STATUS_0");
+        return false;
+    }
+    if (status0 & PMU_CMD_STATUS_0_CMD_ILLEGAL) {
+        M5_LIB_LOGE("PMU command illegal (REG_PMU_CMD_STATUS_0:%02X)", status0);
+        return false;
+    }
+    if (!(status0 & PMU_CMD_STATUS_0_PWR_MODE_NORMAL)) {
+        M5_LIB_LOGE("Not in normal mode (REG_PMU_CMD_STATUS_0:%02X)", status0);
+        return false;
+    }
+    return true;
+}
+
 bool UnitBMM350::writeDataRate(const bmm350::DataRate rate)
 {
     if (!writeRegister8(REG_PMU_CMD, PMU_CMD_SUS)) {

@@ -122,6 +122,28 @@ public:
     bool stopPeriodicMeasurement();
     ///@}
 
+    ///@name Power
+    ///@{
+    /*!
+      @brief Put the chip into suspend mode (REG_POWER_CONTROL power bit cleared)
+      @return True if successful
+      @details Works while periodic measurement is running: it is stopped first, since a
+      suspended chip must not be polled. Suspend is the BMM150's lowest power state.
+      @warning Suspend resets the register map, so the measurement settings do not survive it;
+      startPeriodicMeasurement() re-applies the preset and data rate.
+     */
+    bool sleep() override;
+    /*!
+      @brief Bring the chip out of suspend
+      @return True if successful
+      @details Sets the power bit and waits for the chip to reach sleep mode, where its
+      registers are writable again -- measurement stays stopped. Call
+      startPeriodicMeasurement() to reconfigure and resume sampling. Harmless without a
+      preceding sleep().
+     */
+    bool wakeup() override;
+    ///@}
+
     ///@name IMUDataSource
     ///@{
     //! @brief Capability of this unit

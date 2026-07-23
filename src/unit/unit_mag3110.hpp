@@ -84,6 +84,25 @@ public:
     bool stopPeriodicMeasurement();
     ///@}
 
+    ///@name Power
+    ///@{
+    /*!
+      @brief Enter STANDBY mode (REG_CTRL_REG1 AC cleared)
+      @return True if successful
+      @details Works while periodic measurement is running: it is stopped first, since a
+      standby chip produces no data. STANDBY is the MAG3110's low-power state.
+     */
+    bool sleep() override;
+    /*!
+      @brief Leave STANDBY
+      @return True (always)
+      @details No-op by design: on the MAG3110 STANDBY is also the state the chip has to be in
+      to be configured, so there is nothing to undo here. Call startPeriodicMeasurement() to
+      enter ACTIVE continuous measurement.
+     */
+    bool wakeup() override;
+    ///@}
+
     ///@name IMUDataSource
     ///@{
     //! @brief Capability of this unit

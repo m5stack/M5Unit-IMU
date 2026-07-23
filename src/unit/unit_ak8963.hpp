@@ -84,6 +84,25 @@ public:
     bool stopPeriodicMeasurement();
     ///@}
 
+    ///@name Power
+    ///@{
+    /*!
+      @brief Enter power-down mode (REG_CNTL1 mode 0)
+      @return True if successful
+      @details Works while periodic measurement is running: it is stopped first, since a
+      powered-down chip must not be polled. Power-down is the AK8963's only low-power state.
+     */
+    bool sleep() override;
+    /*!
+      @brief Leave power-down
+      @return True (always)
+      @details No-op by design: on the AK8963 power-down is also the state every mode change
+      has to pass through, so there is nothing to undo here. Call startPeriodicMeasurement() to
+      re-enter continuous measurement.
+     */
+    bool wakeup() override;
+    ///@}
+
     ///@name IMUDataSource
     ///@{
     //! @brief Capability of this unit

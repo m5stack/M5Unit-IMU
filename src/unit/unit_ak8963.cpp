@@ -158,6 +158,28 @@ bool UnitAK8963::stopPeriodicMeasurement()
     return PeriodicMeasurementAdapter<UnitAK8963, ak8963::Data>::stopPeriodicMeasurement();
 }
 
+bool UnitAK8963::sleep()
+{
+    // A powered-down chip must not be polled, so stop measuring first
+    if (inPeriodic() && !stopPeriodicMeasurement()) {
+        M5_LIB_LOGE("Failed to stop before sleep");
+        return false;
+    }
+    if (!writeRegister8(REG_CNTL1, static_cast<uint8_t>(Mode::PowerDown))) {
+        M5_LIB_LOGE("Failed to power down");
+        return false;
+    }
+    m5::utility::delay(10);
+    return true;
+}
+
+bool UnitAK8963::wakeup()
+{
+    // Power-down is also the state every mode change has to pass through on this chip, so the
+    // device is already in a configurable state; startPeriodicMeasurement() sets the mode.
+    return true;
+}
+
 bool UnitAK8963::read_measurement(ak8963::Data& d)
 {
     // Burst from ST1: ST1 + X/Y/Z(LE) + ST2. Reading ST2 unlatches the sample.

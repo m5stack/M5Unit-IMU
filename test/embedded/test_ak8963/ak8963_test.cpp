@@ -136,6 +136,41 @@ TEST_F(TestAK8963, PeriodicMeasurement)
     EXPECT_GT(checked, 0);
 }
 
+TEST_F(TestAK8963, SleepWakeup)
+{
+    SCOPED_TRACE(ustr);
+
+    // Powering down while running is allowed; it stops measurement itself
+    EXPECT_TRUE(unit->inPeriodic());
+    EXPECT_TRUE(unit->sleep());
+    EXPECT_FALSE(unit->inPeriodic());
+
+    // Nothing is sampled while powered down
+    for (int i = 0; i < 10; ++i) {
+        unit->update();
+        EXPECT_FALSE(unit->updated());
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    // wakeup() is a no-op on this chip (power-down is the configurable state)
+    EXPECT_TRUE(unit->wakeup());
+    EXPECT_FALSE(unit->inPeriodic());
+
+    EXPECT_TRUE(unit->startPeriodicMeasurement());
+    EXPECT_TRUE(unit->inPeriodic());
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    bool updated{};
+    for (int i = 0; i < 50; ++i) {
+        unit->update();
+        if (unit->updated()) {
+            updated = true;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    EXPECT_TRUE(updated);
+}
+
 TEST_F(TestAK8963, SoftReset)
 {
     SCOPED_TRACE(ustr);

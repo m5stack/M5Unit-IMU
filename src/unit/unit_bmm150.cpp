@@ -22,6 +22,7 @@ constexpr uint32_t WRITE_VERIFY_RETRY{16};
 // REG_CHIP_ID expected value / REG_POWER_CONTROL, REG_OP_MODE command values
 constexpr uint8_t WHOAMI_VALUE{0x32};
 constexpr uint8_t POWER_ON{0x01};
+constexpr uint8_t SUSPEND{0x00};  // Power bit cleared: lowest power state (resets the register map)
 // bit7 SoftReset + bit1 SoftReset + bit0 PowerControl combined.
 // Not modeled as an enum because it aliases distinct bit fields (m5-cpp-rules)
 constexpr uint8_t SOFT_RESET_AND_POWER_ON{0x83};
@@ -178,6 +179,30 @@ bool UnitBMM150::startPeriodicMeasurement()
 bool UnitBMM150::stopPeriodicMeasurement()
 {
     return PeriodicMeasurementAdapter<UnitBMM150, bmm150::Data>::stopPeriodicMeasurement();
+}
+
+bool UnitBMM150::sleep()
+{
+    // A suspended chip must not be polled, so stop measuring first
+    if (inPeriodic() && !stopPeriodicMeasurement()) {
+        M5_LIB_LOGE("Failed to stop before sleep");
+        return false;
+    }
+    if (!writeRegister8(REG_POWER_CONTROL, SUSPEND)) {
+        M5_LIB_LOGE("Failed to suspend");
+        return false;
+    }
+    return true;
+}
+
+bool UnitBMM150::wakeup()
+{
+    if (!writeRegister8(REG_POWER_CONTROL, POWER_ON)) {
+        M5_LIB_LOGE("Failed to wake");
+        return false;
+    }
+    m5::utility::delay(3);  // Suspend to sleep mode transition (datasheet: 3ms max)
+    return true;
 }
 
 bool UnitBMM150::writePreset(const bmm150::Preset preset)

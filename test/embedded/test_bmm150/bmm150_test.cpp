@@ -219,6 +219,42 @@ TEST_F(TestBMM150, ConfigRoundTrip)
     EXPECT_EQ(cfg2.rate, cfg.rate);
 }
 
+TEST_F(TestBMM150, SleepWakeup)
+{
+    SCOPED_TRACE(ustr);
+
+    // Suspending while running is allowed; it stops measurement itself
+    EXPECT_TRUE(unit->inPeriodic());
+    EXPECT_TRUE(unit->sleep());
+    EXPECT_FALSE(unit->inPeriodic());
+
+    // Nothing is sampled while suspended
+    for (int i = 0; i < 10; ++i) {
+        unit->update();
+        EXPECT_FALSE(unit->updated());
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    // Waking only makes the registers writable again; measurement stays stopped
+    EXPECT_TRUE(unit->wakeup());
+    EXPECT_FALSE(unit->inPeriodic());
+
+    // Suspend cleared the register map, so this is also what restores preset/data rate
+    EXPECT_TRUE(unit->startPeriodicMeasurement());
+    EXPECT_TRUE(unit->inPeriodic());
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    bool updated{};
+    for (int i = 0; i < 50; ++i) {
+        unit->update();
+        if (unit->updated()) {
+            updated = true;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    EXPECT_TRUE(updated);
+}
+
 TEST_F(TestBMM150, SoftReset)
 {
     SCOPED_TRACE(ustr);

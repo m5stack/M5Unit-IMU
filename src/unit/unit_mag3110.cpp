@@ -136,6 +136,27 @@ bool UnitMAG3110::stopPeriodicMeasurement()
     return PeriodicMeasurementAdapter<UnitMAG3110, mag3110::Data>::stopPeriodicMeasurement();
 }
 
+bool UnitMAG3110::sleep()
+{
+    // A standby chip produces no data, so stop measuring first
+    if (inPeriodic() && !stopPeriodicMeasurement()) {
+        M5_LIB_LOGE("Failed to stop before sleep");
+        return false;
+    }
+    if (!writeRegister8(REG_CTRL_REG1, CTRL_REG1_STANDBY)) {
+        M5_LIB_LOGE("Failed to enter standby");
+        return false;
+    }
+    return true;
+}
+
+bool UnitMAG3110::wakeup()
+{
+    // STANDBY is also the state the chip has to be in to be configured, so it is already
+    // ready; startPeriodicMeasurement() enters ACTIVE.
+    return true;
+}
+
 bool UnitMAG3110::read_measurement(mag3110::Data& d)
 {
     // Burst from DR_STATUS: DR_STATUS + X/Y/Z (big-endian). Reading the data MSBs clears ZYXDR.

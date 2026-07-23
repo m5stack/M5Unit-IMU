@@ -119,6 +119,27 @@ public:
     bool stopPeriodicMeasurement();
     ///@}
 
+    ///@name Power
+    ///@{
+    /*!
+      @brief Put the chip into suspend mode (REG_PMU_CMD suspend)
+      @return True if successful
+      @details Works while periodic measurement is running: it is stopped first, since a
+      suspended chip must not be polled. Suspend is the BMM350's lowest power state and
+      preserves the register map, so the OTP compensation data and the configured ODR/averaging
+      survive it.
+     */
+    bool sleep() override;
+    /*!
+      @brief Return the chip to normal mode
+      @return True if successful
+      @details Issues the normal-mode PMU command and verifies that the power mode actually
+      switched -- measurement stays stopped. Call startPeriodicMeasurement() to resume sampling.
+      Harmless without a preceding sleep().
+     */
+    bool wakeup() override;
+    ///@}
+
     ///@name IMUDataSource
     ///@{
     //! @brief Capability of this unit

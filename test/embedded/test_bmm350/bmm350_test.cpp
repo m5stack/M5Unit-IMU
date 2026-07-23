@@ -188,6 +188,41 @@ TEST_F(TestBMM350, ConfigRoundTrip)
     EXPECT_EQ(cfg2.avg, cfg.avg);
 }
 
+TEST_F(TestBMM350, SleepWakeup)
+{
+    SCOPED_TRACE(ustr);
+
+    // Suspending while running is allowed; it stops measurement itself
+    EXPECT_TRUE(unit->inPeriodic());
+    EXPECT_TRUE(unit->sleep());
+    EXPECT_FALSE(unit->inPeriodic());
+
+    // Nothing is sampled while suspended
+    for (int i = 0; i < 10; ++i) {
+        unit->update();
+        EXPECT_FALSE(unit->updated());
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    // Waking verifies the power mode actually returned to normal; measurement stays stopped
+    EXPECT_TRUE(unit->wakeup());
+    EXPECT_FALSE(unit->inPeriodic());
+
+    EXPECT_TRUE(unit->startPeriodicMeasurement());
+    EXPECT_TRUE(unit->inPeriodic());
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    bool updated{};
+    for (int i = 0; i < 50; ++i) {
+        unit->update();
+        if (unit->updated()) {
+            updated = true;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    EXPECT_TRUE(updated);
+}
+
 TEST_F(TestBMM350, SoftReset)
 {
     SCOPED_TRACE(ustr);
