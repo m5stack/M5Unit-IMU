@@ -58,12 +58,18 @@ constexpr float GYRO_CAL_NOISE_DPS{2.0f};
 constexpr uint8_t GYRO_CAL_SHIFT{6};
 
 //! @note Mag calibration thresholds are retune values: M5Unified's raw-based constants
-//! (384/64/96) converted to physical units using this library's mag scale (16 LSB/µT).
-//! Conversion: 384×(1/16)=24µT, 64×(1/16)=4µT, 96×(1/16)=6µT.
-//! These values reasonably cover Earth's magnetic field range (25–65µT).
+//! (64/96) converted to physical units using this library's mag scale (16 LSB/µT).
+//! Conversion: 64×(1/16)=4µT, 96×(1/16)=6µT.
 //! WARNING: Unlike accel/gyro thresholds, these magnetometer values are NOT numerically
 //! verified during auto-calibration convergence testing (only accel/gyro are verified).
-constexpr float MAG_CAL_RADIUS_UT{24.0f};
+//! @note The sphere's *radius* is deliberately not a constant here. M5Unified assumes a fixed
+//! one (its 384 LSB = 24µT), but the geomagnetic field ranges over ~25-65µT depending on where
+//! on the planet the device is, so any fixed choice mis-scales the calibration everywhere else --
+//! measured on a DoF9 in Japan (~48µT field), the 24µT target pulled the calibrated magnitude
+//! down to ~27µT and never converged. The radius is therefore learned from the data instead
+//! (MAG_CAL_RADIUS_SHIFT), and writeMagCalibrationRadius() can pin it when the local field
+//! strength is known.
+constexpr uint8_t MAG_CAL_RADIUS_SHIFT{8};  // radius += (observed - radius) / 256 per calibrate()
 constexpr float MAG_CAL_TOLERANCE_UT{4.0f};
 constexpr float MAG_CAL_NOISE_UT{6.0f};
 constexpr uint8_t MAG_CAL_SHIFT{1};
@@ -90,7 +96,7 @@ AhrsController::AhrsController()
     _gyro_cal.noise           = GYRO_CAL_NOISE_DPS;
     _gyro_cal.average_shifter = GYRO_CAL_SHIFT;
 
-    _mag_cal.radius          = MAG_CAL_RADIUS_UT;
+    _mag_cal.radius_shift    = MAG_CAL_RADIUS_SHIFT;  // learn the local field strength
     _mag_cal.tolerance       = MAG_CAL_TOLERANCE_UT;
     _mag_cal.noise           = MAG_CAL_NOISE_UT;
     _mag_cal.average_shifter = MAG_CAL_SHIFT;
@@ -256,6 +262,24 @@ void AhrsController::readAutoCalibration(uint8_t& accel, uint8_t& gyro, uint8_t&
     accel = _accel_cal.strength;
     gyro  = _gyro_cal.strength;
     mag   = _mag_cal.strength;
+}
+
+void AhrsController::writeMagCalibrationRadius(const float radius_ut)
+{
+    if (radius_ut > 0.0f) {
+        _mag_cal.radius        = radius_ut;
+        _mag_cal.radius_shift  = 0;  // pinned: stop tracking the observed magnitude
+        _mag_cal.radius_seeded = true;
+    } else {
+        _mag_cal.radius        = 0.0f;
+        _mag_cal.radius_shift  = MAG_CAL_RADIUS_SHIFT;
+        _mag_cal.radius_seeded = false;  // re-seed from the next usable sample
+    }
+}
+
+float AhrsController::readMagCalibrationRadius() const
+{
+    return _mag_cal.radius;
 }
 
 void AhrsController::begin_gyro_collect()
@@ -480,6 +504,20 @@ void AhrsController::axis_offset_state_t::calibrate()
     const float distance = std::sqrt(distance_sq);
     if (distance < CAL_MIN_DISTANCE) {
         return;
+    }
+
+    if (radius_shift != 0) {
+        // Learn the sphere's size instead of assuming it (see axis_offset_state_t). Seeding from
+        // the first usable sample avoids dragging the estimate up from zero, after which the
+        // deliberately slow update makes `radius` settle on the average magnitude across the
+        // orientations seen so far -- the offset correction below still sees a non-zero error for
+        // any individual sample that sits off that average, which is what moves the offset.
+        if (!radius_seeded) {
+            radius        = distance;
+            radius_seeded = true;
+        } else {
+            radius += (distance - radius) / static_cast<float>(1u << radius_shift);
+        }
     }
 
     const float measure_error = distance - radius;

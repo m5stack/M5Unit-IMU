@@ -872,6 +872,50 @@ TEST(AhrsController, AutoCalibrationConvergesGyroBias)
     EXPECT_NEAR(ahrs.latest().gyro[2], 0.0f, 0.3f);
 }
 
+TEST(AhrsController, MagCalibrationRadiusIsLearnedFromTheFieldByDefault)
+{
+    MockSource ag(Capability::Accel | Capability::Gyro);
+    MockSource mag(Capability::Mag);
+
+    AhrsController ahrs;
+    EXPECT_TRUE(ahrs.add(ag));
+    EXPECT_TRUE(ahrs.add(mag));
+    EXPECT_TRUE(ahrs.begin());
+    EXPECT_FLOAT_EQ(ahrs.readMagCalibrationRadius(), 0.0f);  // unseeded until data arrives
+    ahrs.writeAutoCalibration(0, 0, 128);
+
+    // A 50uT field, i.e. roughly what a magnetometer sees in Japan and twice the fixed 24uT
+    // sphere M5Unified assumes. Sweeping the direction keeps the samples on that sphere.
+    constexpr float FIELD_UT{50.0f};
+    for (int i = 0; i < 3000; ++i) {
+        const float angle = static_cast<float>(i) * 0.02f;
+        ag.pushAccelGyro(0, 0, 1, 0, 0, 0);
+        mag.pushMag(static_cast<int32_t>(FIELD_UT * std::cos(angle)),
+                    static_cast<int32_t>(FIELD_UT * std::sin(angle)), 0);
+        ahrs.update(0.01f);
+    }
+
+    // The estimate must land on the field actually present, not on a hard-coded radius
+    EXPECT_NEAR(ahrs.readMagCalibrationRadius(), FIELD_UT, 10.0f);
+}
+
+TEST(AhrsController, MagCalibrationRadiusCanBePinnedAndReleased)
+{
+    AhrsController ahrs;
+
+    ahrs.writeMagCalibrationRadius(48.0f);
+    EXPECT_FLOAT_EQ(ahrs.readMagCalibrationRadius(), 48.0f);
+
+    // Back to estimating: the pinned value is dropped so the next samples re-seed it
+    ahrs.writeMagCalibrationRadius(0.0f);
+    EXPECT_FLOAT_EQ(ahrs.readMagCalibrationRadius(), 0.0f);
+
+    ahrs.writeMagCalibrationRadius(30.0f);
+    EXPECT_FLOAT_EQ(ahrs.readMagCalibrationRadius(), 30.0f);
+    ahrs.writeMagCalibrationRadius(-1.0f);  // negative is treated as "estimate it"
+    EXPECT_FLOAT_EQ(ahrs.readMagCalibrationRadius(), 0.0f);
+}
+
 TEST(AhrsController, AutoCalibrationOffWhenStrengthZero)
 {
     MockSource ag(Capability::Accel | Capability::Gyro);

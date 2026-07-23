@@ -172,6 +172,28 @@ public:
     void readAutoCalibration(uint8_t& accel, uint8_t& gyro, uint8_t& mag) const;
 
     /*!
+      @brief Pin the field strength the magnetometer auto-calibration fits its samples to
+      @param radius_ut Local geomagnetic field strength in uT; pass 0 (or less) to go back to
+      estimating it from the data, which is the default
+      @details The hard-iron fit works by pushing the offset until every sample sits on a sphere
+      of this radius, so the radius has to match the field the device is actually in. Unlike the
+      accelerometer's 1G sphere, that is not a universal constant: the geomagnetic field runs
+      from roughly 25uT to 65uT depending on location, and a mismatched radius mis-scales the
+      calibration rather than correcting it. By default the radius is therefore learned from the
+      samples themselves; set it here when the local value is known (national geomagnetic surveys
+      publish it) to skip the learning transient.
+      @note Changing this resets the learned estimate, not the offset itself; clear the offset via
+      writeCalibration() if a previous calibration converged against a different radius.
+     */
+    void writeMagCalibrationRadius(const float radius_ut);
+
+    /*!
+      @brief Field strength the magnetometer auto-calibration is currently fitting to
+      @return Radius in uT; 0 while the estimate is still unseeded (no calibration has run yet)
+     */
+    float readMagCalibrationRadius() const;
+
+    /*!
       @brief Collect gyro samples for the given duration (real clock) and set the gyro
       offset to their mean
       @param duration_ms Collection duration, milliseconds
@@ -380,6 +402,15 @@ private:
         uint8_t average_shifter{1};  // avg update rate: avg += diff / (1 << average_shifter)
         uint8_t stillness{};         // 0 = moving, saturates toward 255 while stationary
         uint8_t strength{};          // 0 = auto-calibration off, 1-255 = adjustment speed
+        // Radius adaptation: 0 keeps `radius` fixed (correct for accel, whose sphere is 1G
+        // everywhere, and for gyro, whose sphere is the origin). Non-zero makes `radius` track the
+        // observed magnitude at rate 1/(1 << radius_shift) per calibrate() call -- needed for the
+        // magnetometer, whose sphere is the local field strength and therefore varies by more than
+        // a factor of two across the planet (~25-65uT). Must stay much slower than the offset
+        // correction itself, so that it settles on the average over orientations rather than
+        // chasing each individual sample (which would cancel the correction entirely).
+        uint8_t radius_shift{};
+        bool radius_seeded{};  // First observed magnitude has been taken as the initial radius
 
         uint8_t update_stillness(const float sample[3]);
         void calibrate();
