@@ -134,6 +134,30 @@ public:
     bool stopPeriodicMeasurement();
     ///@}
 
+    ///@name Power
+    ///@{
+    /*!
+      @brief Suspend the chip (REG_PWR_CTRL off, REG_PWR_CONF adv_power_save)
+      @return True if successful
+      @details Works while periodic measurement is running: it is stopped first, since a
+      suspended chip must not be polled. An enabled AUX BMM150 is parked in its own suspend mode
+      (it would otherwise keep drawing current once the AUX bridge is disabled), then
+      accel/gyro/temp are powered down and advanced power save is enabled. The uploaded
+      configuration file survives suspend -- unlike softReset(), which requires the full
+      post-reset initialization again.
+     */
+    bool sleep() override;
+    /*!
+      @brief Resume the chip from sleep()
+      @return True if successful
+      @details Leaves advanced power save (configuration writes are ignored while it is active)
+      and powers accel/gyro/temp back on -- measurement stays stopped. Call
+      startPeriodicMeasurement() to resume sampling; that is also what re-probes the AUX BMM150
+      and brings it out of suspend. Harmless without a preceding sleep().
+     */
+    bool wakeup() override;
+    ///@}
+
     ///@name IMUDataSource
     ///@{
     //! @brief Capability of this unit

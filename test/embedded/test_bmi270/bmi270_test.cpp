@@ -244,6 +244,87 @@ TEST_F(TestBMI270, StopStartPeriodic)
     EXPECT_TRUE(updated);
 }
 
+TEST_F(TestBMI270, SleepWakeup)
+{
+    SCOPED_TRACE(ustr);
+
+    // Remember whether this board has an AUX BMM150, so the post-wake capability can be
+    // compared against the pre-sleep one
+    const bool had_mag = m5::imu::any(unit->imuSpec() & m5::imu::Capability::Mag);
+
+    // Unlike softReset(), suspending while running is allowed; it stops measurement itself
+    EXPECT_TRUE(unit->inPeriodic());
+    EXPECT_TRUE(unit->sleep());
+    EXPECT_FALSE(unit->inPeriodic());
+
+    // Nothing is sampled while suspended
+    for (int i = 0; i < 10; ++i) {
+        unit->update();
+        EXPECT_FALSE(unit->updated());
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+
+    // Waking only powers the chip back up; measurement deliberately stays stopped
+    EXPECT_TRUE(unit->wakeup());
+    EXPECT_FALSE(unit->inPeriodic());
+    for (int i = 0; i < 10; ++i) {
+        unit->update();
+        EXPECT_FALSE(unit->updated());
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+
+    // Restarting re-probes the AUX BMM150, so the capability set must come back unchanged
+    EXPECT_TRUE(unit->startPeriodicMeasurement());
+    EXPECT_TRUE(unit->inPeriodic());
+    EXPECT_EQ(m5::imu::any(unit->imuSpec() & m5::imu::Capability::Mag), had_mag);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    bool updated{};
+    for (int i = 0; i < 50; ++i) {
+        unit->update();
+        if (unit->updated()) {
+            updated = true;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    EXPECT_TRUE(updated);
+
+    // ...and the magnetometer must actually produce data again after its suspend
+    if (had_mag) {
+        m5::imu::imu_raw_data_t raw{};
+        bool saw_nonzero_mag{false};
+        while (m5::imu::any(unit->readImuRaw(raw))) {
+            if (raw.mag[0] != 0 || raw.mag[1] != 0 || raw.mag[2] != 0) {
+                saw_nonzero_mag = true;
+            }
+        }
+        EXPECT_TRUE(saw_nonzero_mag);
+    }
+}
+
+TEST_F(TestBMI270, SleepWhileStoppedAndRedundantWakeup)
+{
+    SCOPED_TRACE(ustr);
+
+    EXPECT_TRUE(unit->stopPeriodicMeasurement());
+    EXPECT_TRUE(unit->sleep());   // already stopped: still suspends
+    EXPECT_TRUE(unit->wakeup());
+    EXPECT_TRUE(unit->wakeup());  // waking an awake chip is harmless
+
+    EXPECT_TRUE(unit->startPeriodicMeasurement());
+    EXPECT_TRUE(unit->inPeriodic());
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    bool updated{};
+    for (int i = 0; i < 50; ++i) {
+        unit->update();
+        if (unit->updated()) {
+            updated = true;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    EXPECT_TRUE(updated);
+}
+
 TEST_F(TestBMI270, ConfigRoundTrip)
 {
     SCOPED_TRACE(ustr);

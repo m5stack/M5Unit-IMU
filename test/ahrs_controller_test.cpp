@@ -101,12 +101,39 @@ public:
         return _pop_count;
     }
 
+    // Optional IMUDataSource power hooks, counted so tests can assert on the forwarding
+    bool sleep() override
+    {
+        ++_sleep_count;
+        return _power_supported;
+    }
+    bool wakeup() override
+    {
+        ++_wakeup_count;
+        return _power_supported;
+    }
+    inline void powerSupported(const bool supported)
+    {
+        _power_supported = supported;
+    }
+    inline size_t sleepCount() const
+    {
+        return _sleep_count;
+    }
+    inline size_t wakeupCount() const
+    {
+        return _wakeup_count;
+    }
+
 private:
     Capability _cap;
     imu_convert_param_t _param{};
     std::vector<imu_raw_data_t> _samples{};
     size_t _pos{};
     size_t _pop_count{};
+    bool _power_supported{true};
+    size_t _sleep_count{};
+    size_t _wakeup_count{};
 };
 
 // Records every update()/reset() call so tests can assert on the AhrsController <-> filter
@@ -725,6 +752,84 @@ TEST(AhrsController, LastMicrosIsStampedOnlyBySelfClockedUpdate)
 
     ahrs.update();  // self-clocked overload stamps it
     EXPECT_NE(ahrs.lastMicros(), 0u);
+}
+
+TEST(AhrsController, SleepAndWakeupReachEverySource)
+{
+    MockSource ag(Capability::Accel | Capability::Gyro);
+    MockSource mag(Capability::Mag);
+
+    AhrsController ahrs;
+    EXPECT_TRUE(ahrs.add(ag));
+    EXPECT_TRUE(ahrs.add(mag));
+
+    EXPECT_TRUE(ahrs.sleep());
+    EXPECT_EQ(ag.sleepCount(), 1u);
+    EXPECT_EQ(mag.sleepCount(), 1u);
+
+    EXPECT_TRUE(ahrs.wakeup());
+    EXPECT_EQ(ag.wakeupCount(), 1u);
+    EXPECT_EQ(mag.wakeupCount(), 1u);
+}
+
+TEST(AhrsController, SleepAsksEverySourceEvenWhenNoneSupportsIt)
+{
+    MockSource ag(Capability::Accel | Capability::Gyro);
+    MockSource mag(Capability::Mag);
+    ag.powerSupported(false);
+    mag.powerSupported(false);
+
+    AhrsController ahrs;
+    EXPECT_TRUE(ahrs.add(ag));
+    EXPECT_TRUE(ahrs.add(mag));
+
+    EXPECT_FALSE(ahrs.sleep());  // nothing could be suspended...
+    EXPECT_EQ(ag.sleepCount(), 1u);
+    EXPECT_EQ(mag.sleepCount(), 1u);  // ...but both were still asked
+
+    EXPECT_FALSE(ahrs.wakeup());
+    EXPECT_EQ(ag.wakeupCount(), 1u);
+    EXPECT_EQ(mag.wakeupCount(), 1u);
+}
+
+TEST(AhrsController, SleepSucceedsIfAnySingleSourceSupportsIt)
+{
+    MockSource ag(Capability::Accel | Capability::Gyro);
+    MockSource mag(Capability::Mag);
+    ag.powerSupported(false);  // only the magnetometer can sleep
+
+    AhrsController ahrs;
+    EXPECT_TRUE(ahrs.add(ag));
+    EXPECT_TRUE(ahrs.add(mag));
+
+    EXPECT_TRUE(ahrs.sleep());
+    EXPECT_EQ(ag.sleepCount(), 1u);
+    EXPECT_EQ(mag.sleepCount(), 1u);
+}
+
+TEST(AhrsController, WakeupDiscardsTheClockSoTheNextUpdateReseeds)
+{
+    MockSource ag(Capability::Accel | Capability::Gyro);
+    ag.pushAccelGyro(0, 0, 1, 0, 0, 0);
+
+    AhrsController ahrs;
+    EXPECT_TRUE(ahrs.add(ag));
+    EXPECT_TRUE(ahrs.begin());
+
+    EXPECT_FALSE(any(ahrs.update()));  // seeds the clock
+    EXPECT_TRUE(any(ahrs.update() & Capability::Gyro));
+    EXPECT_EQ(ag.popCount(), 1u);
+
+    EXPECT_TRUE(ahrs.wakeup());
+
+    // The clock was discarded, so this behaves like the very first call again: no drain,
+    // no dt spanning the sleep handed to the filter.
+    ag.pushAccelGyro(0, 0, 1, 0, 0, 0);
+    EXPECT_FALSE(any(ahrs.update()));
+    EXPECT_EQ(ag.popCount(), 1u);
+
+    EXPECT_TRUE(any(ahrs.update() & Capability::Gyro));
+    EXPECT_EQ(ag.popCount(), 2u);
 }
 
 // ---------------------------------------------------------------------------------------

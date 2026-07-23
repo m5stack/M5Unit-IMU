@@ -65,6 +65,11 @@ constexpr uint8_t CONF_BWP_NORMAL{0x20};
 // REG_PWR_CTRL (0x7D): temp_en | acc_en | gyr_en (aux_en added separately once AUX probing succeeds)
 constexpr uint8_t PWR_CTRL_ACC_GYR_TEMP_ON{0x0E};
 constexpr uint8_t PWR_CTRL_ACC_GYR_TEMP_AUX_ON{0x0F};
+constexpr uint8_t PWR_CTRL_ALL_OFF{0x00};  // Suspend: every sensor domain disabled
+
+// REG_PWR_CONF (0x7C)
+constexpr uint8_t PWR_CONF_ADV_POWER_SAVE{0x01};  // bit0; must be cleared before configuration writes
+constexpr uint8_t PWR_CONF_ACTIVE{0x00};
 
 // REG_IF_CONF (0x6B)
 constexpr uint8_t IF_CONF_AUX_EN{0x20};  // bit5
@@ -85,6 +90,8 @@ constexpr uint8_t BMM150_CHIP_ID_VALUE{0x32};
 constexpr uint8_t BMM150_SOFT_RESET_AND_POWER_ON{0x83};
 // DataRate::Rate30Hz (0x07) << 3 | Opmode Normal (0x00)
 constexpr uint8_t BMM150_OP_MODE_NORMAL_ODR30HZ{0x38};
+// PowerControl bit0 cleared: BMM150 suspend mode (lowest power, registers reset on resume)
+constexpr uint8_t BMM150_SUSPEND{0x00};
 
 #include "unit_bmi270_config.inl"
 
@@ -291,6 +298,43 @@ bool UnitBMI270::startPeriodicMeasurement()
 bool UnitBMI270::stopPeriodicMeasurement()
 {
     return PeriodicMeasurementAdapter<UnitBMI270, bmi270::Data>::stopPeriodicMeasurement();
+}
+
+bool UnitBMI270::sleep()
+{
+    // A suspended chip must not be polled, so stop measuring first (unlike softReset(),
+    // suspending during periodic measurement is allowed)
+    if (inPeriodic() && !stopPeriodicMeasurement()) {
+        M5_LIB_LOGE("Failed to stop before sleep");
+        return false;
+    }
+    // The AUX BMM150 keeps running on its own once the bridge is gone, so park it first. Best
+    // effort: a failure here must not stop the BMI270 itself from being suspended.
+    if (_aux_mag && !aux_write_register8(REG_BMM150_POWER_CONTROL, BMM150_SUSPEND)) {
+        M5_LIB_LOGW("Failed to suspend the AUX BMM150");
+    }
+    if (!writeRegister8(REG_PWR_CTRL, PWR_CTRL_ALL_OFF) ||
+        !writeRegister8(REG_PWR_CONF, PWR_CONF_ADV_POWER_SAVE)) {
+        M5_LIB_LOGE("Failed to suspend");
+        return false;
+    }
+    _aux_mag = false;  // Re-probed by the next start_periodic_measurement()
+    return true;
+}
+
+bool UnitBMI270::wakeup()
+{
+    // Configuration writes are ignored while advanced power save is active, so clear it first
+    if (!writeRegister8(REG_PWR_CONF, PWR_CONF_ACTIVE)) {
+        M5_LIB_LOGE("Failed to leave power save");
+        return false;
+    }
+    m5::utility::delay(5);
+    if (!write_register8_verified(REG_PWR_CTRL, PWR_CTRL_ACC_GYR_TEMP_ON)) {
+        M5_LIB_LOGE("Failed to wake");
+        return false;
+    }
+    return true;
 }
 
 bool UnitBMI270::writeAccelRange(const bmi270::AccelRange range)

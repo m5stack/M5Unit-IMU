@@ -129,6 +129,26 @@ public:
     bool stopPeriodicMeasurement();
     ///@}
 
+    ///@name Power
+    ///@{
+    /*!
+      @brief Put the chip to sleep (REG_PWR_MGMT_1 SLEEP)
+      @return True if successful
+      @details Works while periodic measurement is running: it is stopped first, since a
+      sleeping chip must not be polled. The SLEEP bit then halts sampling and drops the chip to
+      its low-power state. Unlike softReset() the configuration is preserved.
+     */
+    bool sleep() override;
+    /*!
+      @brief Wake the chip from sleep()
+      @return True if successful
+      @details Only clears SLEEP (by selecting the PLL clock) and waits for the sensors to
+      start up -- measurement stays stopped. Call startPeriodicMeasurement() to resume
+      sampling. Harmless without a preceding sleep().
+     */
+    bool wakeup() override;
+    ///@}
+
     ///@name IMUDataSource
     ///@{
     //! @brief Capability of this unit

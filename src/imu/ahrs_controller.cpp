@@ -221,6 +221,29 @@ void AhrsController::recompute_all_composed()
     }
 }
 
+bool AhrsController::sleep()
+{
+    bool slept{false};
+    for (size_t i = 0; i < _source_count; ++i) {
+        // Left operand first: every source must be asked, even once one has succeeded
+        slept = _sources[i]->sleep() || slept;
+    }
+    return slept;
+}
+
+bool AhrsController::wakeup()
+{
+    bool woke{false};
+    for (size_t i = 0; i < _source_count; ++i) {
+        woke = _sources[i]->wakeup() || woke;
+    }
+    // Drop the clock state: without this the first self-clocked update() after waking would
+    // hand the filter a dt spanning the entire sleep.
+    _has_last_micros = false;
+    _has_dt_ema      = false;
+    return woke;
+}
+
 void AhrsController::writeAutoCalibration(const uint8_t accel, const uint8_t gyro, const uint8_t mag)
 {
     _accel_cal.strength = accel;

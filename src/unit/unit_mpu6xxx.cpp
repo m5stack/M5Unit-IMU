@@ -23,6 +23,7 @@ constexpr uint32_t WRITE_VERIFY_RETRY{16};
 // Not modeled as an enum because of duplicate values (m5-cpp-rules). Use 1 (auto PLL) for full performance
 constexpr uint8_t CLKSEL_AUTO_PLL{0x01};
 constexpr uint8_t DEVICE_RESET{0x80};
+constexpr uint8_t SLEEP_ENABLE{0x40};  // bit6 SLEEP, CLKSEL left at the internal oscillator
 }  // namespace
 
 namespace m5 {
@@ -158,6 +159,31 @@ bool UnitMPU6xxx::startPeriodicMeasurement()
 bool UnitMPU6xxx::stopPeriodicMeasurement()
 {
     return PeriodicMeasurementAdapter<UnitMPU6xxx, mpu6886::Data>::stopPeriodicMeasurement();
+}
+
+bool UnitMPU6xxx::sleep()
+{
+    // A sleeping chip must not be polled, so stop measuring first (unlike softReset(), sleeping
+    // during periodic measurement is allowed)
+    if (inPeriodic() && !stopPeriodicMeasurement()) {
+        M5_LIB_LOGE("Failed to stop before sleep");
+        return false;
+    }
+    if (!writeRegister8(REG_PWR_MGMT_1, SLEEP_ENABLE)) {
+        M5_LIB_LOGE("Failed to sleep");
+        return false;
+    }
+    return true;
+}
+
+bool UnitMPU6xxx::wakeup()
+{
+    if (!write_register8_verified(REG_PWR_MGMT_1, CLKSEL_AUTO_PLL)) {
+        M5_LIB_LOGE("Failed to wake");
+        return false;
+    }
+    m5::utility::delay(50);  // Wait for gyro (typ 35ms) / accel (typ 10ms) startup
+    return true;
 }
 
 bool UnitMPU6xxx::writeAccelRange(const mpu6886::AccelRange range)

@@ -191,6 +191,69 @@ TEST_F(TestMPU6886, StopStartPeriodic)
     EXPECT_TRUE(updated);
 }
 
+TEST_F(TestMPU6886, SleepWakeup)
+{
+    SCOPED_TRACE(ustr);
+
+    // Unlike softReset(), sleeping while running is allowed; it stops measurement itself
+    EXPECT_TRUE(unit->inPeriodic());
+    EXPECT_TRUE(unit->sleep());
+    EXPECT_FALSE(unit->inPeriodic());
+
+    // Nothing is sampled while asleep
+    for (int i = 0; i < 10; ++i) {
+        unit->update();
+        EXPECT_FALSE(unit->updated());
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+
+    // Waking only powers the chip back up; measurement deliberately stays stopped
+    EXPECT_TRUE(unit->wakeup());
+    EXPECT_FALSE(unit->inPeriodic());
+    for (int i = 0; i < 10; ++i) {
+        unit->update();
+        EXPECT_FALSE(unit->updated());
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+
+    // Sampling resumes only once the caller restarts it explicitly
+    EXPECT_TRUE(unit->startPeriodicMeasurement());
+    EXPECT_TRUE(unit->inPeriodic());
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    bool updated{};
+    for (int i = 0; i < 50; ++i) {
+        unit->update();
+        if (unit->updated()) {
+            updated = true;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    EXPECT_TRUE(updated);
+}
+
+TEST_F(TestMPU6886, SleepWhileStoppedAndRedundantWakeup)
+{
+    SCOPED_TRACE(ustr);
+
+    EXPECT_TRUE(unit->stopPeriodicMeasurement());
+    EXPECT_TRUE(unit->sleep());   // already stopped: still sleeps
+    EXPECT_TRUE(unit->wakeup());
+    EXPECT_TRUE(unit->wakeup());  // waking an awake chip is harmless
+
+    EXPECT_TRUE(unit->startPeriodicMeasurement());
+    EXPECT_TRUE(unit->inPeriodic());
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    bool updated{};
+    for (int i = 0; i < 50; ++i) {
+        unit->update();
+        if (unit->updated()) {
+            updated = true;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    EXPECT_TRUE(updated);
+}
+
 TEST_F(TestMPU6886, ConfigRoundTrip)
 {
     SCOPED_TRACE(ustr);

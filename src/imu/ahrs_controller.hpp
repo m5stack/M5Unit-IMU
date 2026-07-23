@@ -236,6 +236,27 @@ public:
     Capability update(const float dt);
 
     /*!
+      @brief Put every added source into its lowest reversible power state
+      @return True if at least one source actually slept
+      @details Calls IMUDataSource::sleep() on all sources, including those whose capability
+      was not claimed. Sources that do not implement sleeping report false and are skipped, so
+      a false return only means nothing could be suspended. Sleeping stops each source's
+      periodic measurement; wakeup() powers the hardware back up but does not restart
+      measurement -- restart it explicitly on the units you want sampling again.
+     */
+    bool sleep();
+
+    /*!
+      @brief Bring every added source back from sleep()
+      @return True if at least one source actually woke
+      @details Calls IMUDataSource::wakeup() on all sources and then discards the internal
+      clock state, so the first update() after waking re-seeds its timebase instead of handing
+      the filter one enormous dt spanning the whole sleep. Measurement is not restarted: call
+      startPeriodicMeasurement() on the units that should resume sampling.
+     */
+    bool wakeup();
+
+    /*!
       @brief Select and internally construct one of the built-in filters
       @param type Filter to construct
       @return True on success
