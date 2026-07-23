@@ -5,7 +5,7 @@
  */
 /*!
   @file vqf.cpp
-  @brief Adapter around the vendored basicvqf (Versatile Quaternion-based Filter) algorithm
+  @brief Adapter around the vendored VQF (Versatile Quaternion-based Filter) algorithm
 */
 #include "vqf.hpp"
 
@@ -17,9 +17,10 @@ namespace imu {
 namespace {
 constexpr float VQF_PI{3.14159265358979323846f};
 constexpr float VQF_DEG2RAD{VQF_PI / 180.0f};
-//! @brief Standard gravity, for converting accel from G (this repository's unit) to m/s^2 (basicvqf's unit)
+constexpr float VQF_RAD2DEG{180.0f / VQF_PI};
+//! @brief Standard gravity, for converting accel from G (this repository's unit) to m/s^2 (VQF's unit)
 constexpr float VQF_STANDARD_GRAVITY{9.80665f};
-//! @brief Nominal sample period BasicVQF is first constructed with, in seconds (100 Hz)
+//! @brief Nominal sample period VQF is first constructed with, in seconds (100 Hz)
 constexpr float VQF_DEFAULT_SAMPLE_PERIOD_S{0.01f};
 //! @brief Relative drift from the currently-built sample period that triggers a rebuild (see vqf.hpp)
 constexpr float VQF_RESAMPLE_THRESHOLD_RATIO{0.2f};
@@ -27,7 +28,7 @@ constexpr float VQF_RESAMPLE_THRESHOLD_RATIO{0.2f};
 
 VQFFilter::VQFFilter() : _built_dt(VQF_DEFAULT_SAMPLE_PERIOD_S)
 {
-    _vqf.reset(new ::BasicVQF(static_cast<vqf_real_t>(_built_dt)));
+    _vqf.reset(new ::VQF(static_cast<vqf_real_t>(_built_dt)));
 }
 
 void VQFFilter::reset()
@@ -48,9 +49,9 @@ void VQFFilter::update(const float dt, const float accel[3], const float gyro[3]
     ensureSamplePeriod(dt);
     _mag_seen = _mag_seen || (mag != nullptr);
 
-    // Unit conversion: this repository's gyro (dps)/accel (G) -> basicvqf's rad/s and m/s^2
+    // Unit conversion: this repository's gyro (dps)/accel (G) -> VQF's rad/s and m/s^2
     // (see vqf.hpp for the source citation); mag is passed through unscaled ("arbitrary
-    // units" per basicvqf, and this repository already supplies calibrated uT).
+    // units" per VQF, and this repository already supplies calibrated uT).
     const vqf_real_t gyr[3] = {
         static_cast<vqf_real_t>(gyro[0] * VQF_DEG2RAD),
         static_cast<vqf_real_t>(gyro[1] * VQF_DEG2RAD),
@@ -93,7 +94,7 @@ void VQFFilter::quaternion(float& w, float& x, float& y, float& z) const
         z = qz;
         return;
     }
-    // Convention fix (see vqf.hpp): basicvqf's heading correction converges the horizontal mag
+    // Convention fix (see vqf.hpp): VQF's heading correction converges the horizontal mag
     // component onto world +Y, this repository's contract puts it on +X -- a constant +90 degree
     // yaw offset once mag samples flow. Composing a fixed world-Z rotation of -90 degrees
     // (a pure heading rotation: roll/pitch are untouched) restores the shared convention.
@@ -124,20 +125,59 @@ bool VQFFilter::writeTauMag(const float tau_mag)
     return true;
 }
 
+void VQFFilter::writeRestBiasEstimation(const bool enabled)
+{
+    _vqf->setRestBiasEstEnabled(enabled);
+}
+
+void VQFFilter::writeMotionBiasEstimation(const bool enabled)
+{
+    _vqf->setMotionBiasEstEnabled(enabled);
+}
+
+void VQFFilter::writeMagDisturbanceRejection(const bool enabled)
+{
+    _vqf->setMagDistRejectionEnabled(enabled);
+}
+
+bool VQFFilter::writeBiasClip(const float bias_clip_dps)
+{
+    if (!(bias_clip_dps > 0.0f)) {
+        return false;
+    }
+    // VQFParams::biasClip is only read when the coefficients are derived, i.e. in VQF's
+    // constructors -- there is no setter for it (unlike tauAcc/tauMag). Rebuilding is the only
+    // way to honour a new value; see the warning on this function in vqf.hpp.
+    VQFParams params = _vqf->getParams();
+    params.biasClip  = static_cast<vqf_real_t>(bias_clip_dps);
+    _vqf.reset(new ::VQF(params, static_cast<vqf_real_t>(_built_dt)));
+    _mag_seen = false;  // the rebuild dropped delta back to 0, same as reset()
+    return true;
+}
+
+m5::math::Vector3 VQFFilter::readGyroBias() const
+{
+    vqf_real_t bias[3]{};
+    _vqf->getBiasEstimate(bias);
+    // VQF works in rad/s (see update()); this repository's contract is dps
+    return m5::math::Vector3(static_cast<float>(bias[0]) * VQF_RAD2DEG, static_cast<float>(bias[1]) * VQF_RAD2DEG,
+                             static_cast<float>(bias[2]) * VQF_RAD2DEG);
+}
+
 void VQFFilter::ensureSamplePeriod(const float dt)
 {
     const float diff_ratio = std::fabs(dt - _built_dt) / _built_dt;
     if (diff_ratio <= VQF_RESAMPLE_THRESHOLD_RATIO) {
         return;
     }
-    // BasicVQF's per-sample coefficients (BasicVQF::setup()) are only computed from the
+    // VQF's per-sample coefficients (VQF::setup()) are only computed from the
     // constructors, with no public API to recompute them for a new gyrTs afterwards -- so a
     // sample period drift beyond the threshold can only be honored by reconstructing the
     // instance (see vqf.hpp). This carries over the current tauAcc/tauMag tuning parameters
     // (user-configured) but loses the accumulated attitude/heading/low-pass state, the same
     // trade-off resetState() makes deliberately, just triggered implicitly here instead.
-    const BasicVQFParams params = _vqf->getParams();
-    _vqf.reset(new ::BasicVQF(params, static_cast<vqf_real_t>(dt)));
+    const VQFParams params = _vqf->getParams();
+    _vqf.reset(new ::VQF(params, static_cast<vqf_real_t>(dt)));
     _built_dt = dt;
     _mag_seen = false;  // the rebuild dropped delta back to 0, same as reset()
 }
