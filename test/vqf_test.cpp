@@ -202,13 +202,15 @@ void run_static_with_gyro_bias(AhrsFilterBase& filter, const float bias_dps, con
 
 }  // namespace
 
-TEST(VQFFilterTest, FeatureFlagsDefaultOnAndRoundTrip)
+TEST(VQFFilterTest, FeatureFlagDefaultsAndRoundTrip)
 {
     VQFFilter filter;
-    // Upstream's defaults; turning all three off makes this equivalent to the "basic" variant
+    // Both bias estimators default on; magnetic disturbance rejection deliberately does not
+    // (see writeMagDisturbanceRejection()). Turning all three off makes this equivalent to
+    // upstream's "basic" variant.
     EXPECT_TRUE(filter.readRestBiasEstimation());
     EXPECT_TRUE(filter.readMotionBiasEstimation());
-    EXPECT_TRUE(filter.readMagDisturbanceRejection());
+    EXPECT_FALSE(filter.readMagDisturbanceRejection());
 
     filter.writeRestBiasEstimation(false);
     filter.writeMotionBiasEstimation(false);
@@ -283,7 +285,7 @@ TEST(VQFFilterTest, StationaryDeviceCannotEstablishAMagneticReference)
     constexpr float dt{0.01f};
 
     VQFFilter filter;
-    EXPECT_TRUE(filter.readMagDisturbanceRejection());
+    filter.writeMagDisturbanceRejection(true);  // not the default here
     // VQF only accepts a magnetic reference once the field has been observed from several
     // orientations (VQFParams::magNewMinGyr, 20 deg/s) -- proof that it is a homogeneous
     // earth field rather than a local distortion. A device that never moves therefore keeps
@@ -298,6 +300,7 @@ TEST(VQFFilterTest, RotatingInAConsistentFieldEstablishesTheMagneticReference)
     constexpr float dps{30.0f};  // above VQFParams::magNewMinGyr (20 deg/s)
 
     VQFFilter filter;
+    filter.writeMagDisturbanceRejection(true);  // not the default here
     // Level body yawing at a constant rate through a fixed world field: the body-frame
     // reading rotates with it, so norm and dip angle stay constant (an undisturbed field)
     const float accel[3] = {0.0f, 0.0f, 1.0f};
@@ -316,7 +319,7 @@ TEST(VQFFilterTest, DisturbanceFlagIsOnlyMeaningfulWhileRejectionIsEnabled)
     constexpr float dt{0.01f};
 
     VQFFilter filter;
-    filter.writeMagDisturbanceRejection(false);
+    EXPECT_FALSE(filter.readMagDisturbanceRejection());  // the default
     run_with_mag(filter, 20.0f, dt);
     // With rejection off the detector never runs, so the flag keeps whatever value reset()
     // left it at (true) instead of tracking the field. It must not be read as "a disturbance
@@ -379,4 +382,29 @@ TEST(VQFFilterTest, RaisingTheBiasClipRestoresEstimationForALargeBias)
     float roll{}, pitch{}, yaw{};
     euler_of(filter, roll, pitch, yaw);
     EXPECT_LT(std::fabs(yaw), 20.0f);  // drift is suppressed again
+}
+
+TEST(VQFFilterTest, RestDetectionSurvivesASampleRateThatJitters)
+{
+    // AhrsController divides the elapsed time by however many gyro samples it drained that call,
+    // so the per-sample dt moves with the loop period. That jitter repeatedly crosses the
+    // rebuild threshold, and a rebuild that dropped the filter state would restart rest
+    // detection's 1.5s accumulation every time -- leaving bias estimation permanently disarmed.
+    constexpr float LOOP_S{0.030f};
+    const int batch_sizes[4] = {6, 5, 7, 6};  // 200Hz nominal, +-17% per-sample dt
+    const float accel[3]     = {0.0f, 0.0f, 1.0f};
+    const float gyro[3]      = {0.0f, 0.0f, 1.0f};  // a bias to be found, inside biasClip
+
+    VQFFilter filter;
+    for (int i = 0; i < 1000; ++i) {  // ~30 s
+        const int n    = batch_sizes[i % 4];
+        const float dt = LOOP_S / static_cast<float>(n);
+        for (int k = 0; k < n; ++k) {
+            filter.update(dt, accel, gyro, nullptr);
+        }
+    }
+
+    EXPECT_TRUE(filter.restDetected());
+    const m5::math::Vector3 bias = filter.readGyroBias();
+    EXPECT_NEAR(bias.z, 1.0f, 0.3f);
 }

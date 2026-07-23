@@ -40,8 +40,9 @@ namespace imu {
   @details The vendored code is the full C++ reference implementation of the VQF algorithm
   described in D. Laidig and T. Seel, "VQF: Highly Accurate IMU Orientation Estimation with
   Bias Estimation and Magnetic Disturbance Rejection", Information Fusion 2023 -- i.e. it
-  includes the three mechanisms the paper is named after, all enabled by default and
-  individually switchable here:
+  includes the three mechanisms the paper is named after, each individually switchable here.
+  The two bias estimators are on by default; magnetic disturbance rejection is off (see
+  writeMagDisturbanceRejection() for why this one deviates from upstream):
 
   - **Rest bias estimation** (writeRestBiasEstimation()): while the device is detected as
     resting, the gyroscope output *is* its bias, so it can be measured and removed directly.
@@ -64,7 +65,7 @@ namespace imu {
     **m/s^2** (`mag` is documented as "arbitrary units" and is passed through unscaled), which
     differs from this repository's dps/G unit contract (filter_base.hpp) -- update() converts
     gyro (dps -> rad/s, x pi/180) and accel (G -> m/s^2, x standard gravity) accordingly.
-  - Earth axes convention: basicvqf's world/earth frame is Z-up like this repository's (a
+  - Earth axes convention: VQF's world/earth frame is Z-up like this repository's (a
     static, level unit's accelerometer reading is rotated toward (0,0,+1) by the inclination
     correction in VQF::updateAcc(), the same sign as filter_base.hpp), so no flip is
     needed there. Its magnetometer heading reference, however, converges the *horizontal*
@@ -76,19 +77,23 @@ namespace imu {
     sample has been consumed (`_mag_seen`); a pure heading rotation, so roll/pitch (which
     already agree with this repository) are untouched. In the mag-less case no correction is
     applied (delta stays 0 and the 6D quaternion already matches the shared convention);
-    reset() and a sample-period rebuild clear `_mag_seen` along with basicvqf's delta.
+    reset() clears `_mag_seen` along with VQF's delta; a sample-period rebuild keeps both,
+    since the state is carried across (see below).
   - Sample period: VQF is constructed with a fixed nominal sampling period (`gyrTs`)
     and has no public API to change it afterwards (`VQF::setup()`, which derives the
     internal filter coefficients from it, is only called from the constructors). Since
     AhrsFilterBase::update() receives an explicit, potentially-varying `dt` every call, this
     adapter tracks the `dt` the underlying VQF was last (re)built with and, when a new
-    `dt` differs from it by more than 20%, reconstructs a fresh VQF for the new period
-    -- carrying over the current tauAcc/tauMag tuning parameters (see writeTauAcc/writeTauMag)
-    but losing the accumulated filter state (gyrQuat/accQuat/delta and the acc/mag low-pass
-    histories), as VQF exposes no API to resample that state either. This is expected to
-    be rare in practice (real IMU sample periods are effectively constant); small jitter
-    around the nominal period is absorbed without a rebuild.
-  - basicvqf has no public API to overwrite the attitude estimate directly (unlike
+    `dt` differs from it by more than 20%, reconstructs a fresh VQF for the new period,
+    carrying over both the tuning parameters (see writeTauAcc/writeTauMag) and the filter state
+    (getState()/setState()). Preserving the state is essential rather than merely nice: rest
+    detection has to accumulate 1.5s uninterrupted before it arms, and it shares the state
+    struct with the gyro bias estimate, so a caller whose loop drains a varying number of
+    samples per update() -- which makes the per-sample dt jitter past the threshold repeatedly
+    -- would otherwise never get any bias estimation at all. The low-pass histories inside the
+    state were built with the previous coefficients and upstream offers no way to resample
+    them, so this is an approximation, but a much smaller one than restarting the estimators.
+  - VQF has no public API to overwrite the attitude estimate directly (unlike
     Fusion/Complementary/Madgwick/Mahony's optional `writeQuaternion()`): `VQF::setState()`
     only accepts a full `VQFState`, whose `gyrQuat`/`accQuat`/`delta` split has no
     general inverse from a single desired output quaternion, so this adapter does not offer
@@ -156,11 +161,21 @@ public:
 
     /*!
       @brief Enable/disable magnetic disturbance detection and rejection
-      @param enabled True to reject disturbances (the default)
+      @param enabled True to reject disturbances
       @details Compares the measured field's magnitude and dip angle against a learned
       undisturbed reference; while they disagree the magnetometer is ignored for heading and
       the estimate coasts on the gyroscope, so nearby steel or motors cannot yank the yaw
       around. Has no effect on a 6-axis setup (no mag samples to reject).
+      @note **Off by default here, unlike upstream.** The protection only exists once a
+      reference has been adopted, and upstream only adopts one after the low-passed gyroscope
+      has held above 20 deg/s for five continuous seconds (VQFParams::magNewMinGyr /
+      magNewFirstTime) with a consistent field -- proof that the field was observed from
+      several orientations. A device sitting on a desk never satisfies that, so it stays
+      permanently "disturbed": the magnetometer is dropped entirely for the first minute
+      (magMaxRejectionTime) and then only applied at half gain (magRejectionFactor), which is
+      strictly worse than not rejecting at all -- weaker heading correction and still no
+      protection, since there is no reference to compare against. Enable it for devices that
+      genuinely move around (wearables, robots), where a reference does get established.
      */
     void writeMagDisturbanceRejection(const bool enabled);
     //! @brief Whether magnetic disturbance rejection is enabled
@@ -185,8 +200,7 @@ public:
       rotation (a level device turning steadily about yaw, where the accelerometer never moves)
       is absorbed as bias.
       @note VQF only accepts this through its constructor, so the underlying instance is rebuilt
-      here -- the accumulated attitude/bias state is lost, as with a sample-period change. Set
-      it during setup, before feeding samples.
+      here; the filter state is carried across, as with a sample-period change.
      */
     bool writeBiasClip(const float bias_clip_dps);
     //! @brief Current maximum expected gyroscope bias (dps)
@@ -202,6 +216,43 @@ public:
     inline bool restDetected() const
     {
         return _vqf->getRestDetected();
+    }
+
+    /*!
+      @brief The magnetic field as VQF currently measures it, in earth frame
+      @param[out] norm Field magnitude, in whatever unit the magnetometer supplies (uT here)
+      @param[out] dip_deg Dip (inclination) angle in degrees: how far the field tilts out of the
+      horizontal plane, derived from the field rotated into the earth frame by the current
+      accel/gyro attitude
+      @details Only updated while writeMagDisturbanceRejection() is enabled, since that is the
+      only consumer. Useful as an axis-consistency check: the magnitude is invariant under any
+      rotation, but the dip is only stable if the magnetometer's axes agree with the
+      accelerometer/gyroscope's. Rotating a device about the vertical must leave the dip
+      unchanged -- if it swings instead, the magnetometer needs an axis remap
+      (AhrsController::writeMagAxisOrder()), and VQF will never adopt a reference because the
+      dip cannot stay inside VQFParams::magDipTh.
+     */
+    inline void readMagNormDip(float& norm, float& dip_deg) const
+    {
+        const VQFState& state = _vqf->getState();
+        norm                  = static_cast<float>(state.magNormDip[0]);
+        dip_deg               = static_cast<float>(state.magNormDip[1]) * (180.0f / 3.14159265358979323846f);
+    }
+
+    /*!
+      @brief How close the last sample was to being accepted as "at rest"
+      @param[out] gyro_relative Gyroscope deviation relative to its threshold
+      @param[out] accel_relative Accelerometer deviation relative to its threshold
+      @details Both have to stay below 1.0 for restDetected() to arm (and stay armed). Reading
+      them tells you *which* sensor is keeping a device that looks stationary from resting --
+      the thresholds themselves are VQFParams::restThGyr / restThAcc.
+     */
+    inline void readRestDeviations(float& gyro_relative, float& accel_relative) const
+    {
+        vqf_real_t out[2]{};
+        _vqf->getRelativeRestDeviations(out);
+        gyro_relative  = static_cast<float>(out[0]);
+        accel_relative = static_cast<float>(out[1]);
     }
 
     /*!

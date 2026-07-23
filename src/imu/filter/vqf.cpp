@@ -28,7 +28,14 @@ constexpr float VQF_RESAMPLE_THRESHOLD_RATIO{0.2f};
 
 VQFFilter::VQFFilter() : _built_dt(VQF_DEFAULT_SAMPLE_PERIOD_S)
 {
-    _vqf.reset(new ::VQF(static_cast<vqf_real_t>(_built_dt)));
+    VQFParams params;
+    // Deliberately off, unlike upstream (see writeMagDisturbanceRejection() for the reasoning):
+    // rejection only protects anything once a magnetic reference has been adopted, and adopting one
+    // needs several seconds of sustained rotation that a typical desk-bound setup never performs.
+    // Until then it merely weakens the heading correction. The rebuild paths below carry the flag
+    // over via getParams(), so this stays the default for the lifetime of the filter.
+    params.magDistRejectionEnabled = false;
+    _vqf.reset(new ::VQF(params, static_cast<vqf_real_t>(_built_dt)));
 }
 
 void VQFFilter::reset()
@@ -148,10 +155,11 @@ bool VQFFilter::writeBiasClip(const float bias_clip_dps)
     // VQFParams::biasClip is only read when the coefficients are derived, i.e. in VQF's
     // constructors -- there is no setter for it (unlike tauAcc/tauMag). Rebuilding is the only
     // way to honour a new value; see the warning on this function in vqf.hpp.
-    VQFParams params = _vqf->getParams();
-    params.biasClip  = static_cast<vqf_real_t>(bias_clip_dps);
+    VQFParams params      = _vqf->getParams();
+    params.biasClip       = static_cast<vqf_real_t>(bias_clip_dps);
+    const VQFState state  = _vqf->getState();
     _vqf.reset(new ::VQF(params, static_cast<vqf_real_t>(_built_dt)));
-    _mag_seen = false;  // the rebuild dropped delta back to 0, same as reset()
+    _vqf->setState(state);  // keep the estimators armed, as ensureSamplePeriod() does
     return true;
 }
 
@@ -170,16 +178,24 @@ void VQFFilter::ensureSamplePeriod(const float dt)
     if (diff_ratio <= VQF_RESAMPLE_THRESHOLD_RATIO) {
         return;
     }
-    // VQF's per-sample coefficients (VQF::setup()) are only computed from the
-    // constructors, with no public API to recompute them for a new gyrTs afterwards -- so a
-    // sample period drift beyond the threshold can only be honored by reconstructing the
-    // instance (see vqf.hpp). This carries over the current tauAcc/tauMag tuning parameters
-    // (user-configured) but loses the accumulated attitude/heading/low-pass state, the same
-    // trade-off resetState() makes deliberately, just triggered implicitly here instead.
+    // VQF's per-sample coefficients (VQF::setup()) are only computed from the constructors, with
+    // no public API to recompute them for a new gyrTs afterwards -- so a sample period drift
+    // beyond the threshold can only be honored by reconstructing the instance (see vqf.hpp).
+    //
+    // The state is carried across the rebuild. That matters far more than it looks: rest
+    // detection only reports "at rest" after restMinT (1.5s) of uninterrupted accumulation, and
+    // the gyro bias estimate lives in the same struct. A caller whose loop drains a varying
+    // number of samples per update() feeds a dt that jitters by more than the threshold, so
+    // rebuilds recur -- and dropping the state each time would keep rest detection from ever
+    // arming, silently disabling the bias estimation this filter is chosen for. The low-pass
+    // histories inside the state were accumulated with the old coefficients, which upstream
+    // offers no way to resample; reusing them is an approximation, but a far smaller error than
+    // restarting the estimators.
     const VQFParams params = _vqf->getParams();
+    const VQFState state   = _vqf->getState();
     _vqf.reset(new ::VQF(params, static_cast<vqf_real_t>(dt)));
+    _vqf->setState(state);
     _built_dt = dt;
-    _mag_seen = false;  // the rebuild dropped delta back to 0, same as reset()
 }
 
 }  // namespace imu
