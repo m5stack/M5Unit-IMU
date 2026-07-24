@@ -90,7 +90,7 @@ responds. All chips below have drivers in this library.
 | | v1.1 | BMI270 (0x68) | none |
 | AtomS3 | | MPU6886 (0x68) | none |
 | AtomS3R | | BMI270 (0x68) | BMM150 (via BMI270 AUX) |
-| Capsule | | BMI270 (0x69) | none |
+| Capsule | v1.0 / v1.1 | BMI270 (0x69) | none |
 | Cardputer-Adv | | BMI270 (0x68) | none |
 | PaperS3 | | BMI270 (0x68) | none |
 | Tab5 | | BMI270 (0x68) | none |
@@ -174,6 +174,34 @@ magnetometer into saturation. After relocating away from interference, perform a
 motion so the auto-calibration can re-estimate the hard-iron offset (AhrsDemo does this via its
 hold-to-calibrate control). A 6-axis (accel + gyro) attitude estimate is unaffected; only the
 magnetic heading depends on a clean field.
+
+Note that calibration can only remove a distortion that is **fixed to the sensor** — a magnetised
+component on the board, which turns with it. A steel desk is fixed to the *world* instead, so what
+it does to the field changes as you move the device through it, and no amount of calibration
+removes it; measured on a DoF9, the field magnitude read 49 µT (the correct local value) in one
+spot and 88 µT after moving it a short distance across the same desk. If the magnitude changes
+when you *move* the sensor rather than when you *turn* it, the environment is the problem, not the
+calibration.
+
+## Drift and auto-calibration
+
+Yaw drift on a 6-axis (accel + gyro) setup comes almost entirely from the gyroscope's zero-rate
+offset, which integrates straight into the heading. **`AhrsController` therefore corrects the gyro
+offset by default** (`writeAutoCalibration()` starts at strength 1 for the gyro, 0 for accel and
+mag): it watches for the device being still and subtracts what it measures, which also follows the
+drift as the die warms up. `calibrateGyro()` does the same thing once, deterministically, if you
+would rather calibrate at a known moment — the AhrsDemo example calls it at boot.
+
+Accelerometer and magnetometer auto-calibration stay **off** by default: their calibration fits
+samples to a sphere of a known size, and only the gyro's (the origin) and the accelerometer's
+(1 G) are the same everywhere. The magnetometer's is the local field strength, which ranges over
+roughly 25–65 µT worldwide, so it has to be learned per location (see
+`writeMagCalibrationRadius()`).
+
+Roll and pitch do not drift — gravity gives them an absolute reference. Yaw on a 6-axis setup has
+no such reference and cannot be held indefinitely by any filter; removing the bias turns the error
+from something that grows linearly with time into something that grows like its square root. Add a
+magnetometer, or use `tareYaw()` to re-zero the reported heading, when an absolute heading matters.
 
 ## Examples
 
