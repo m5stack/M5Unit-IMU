@@ -28,8 +28,11 @@ UnitDoF10::UnitDoF10(const uint8_t bmi_addr) : Component(0xFF), _bmi(bmi_addr), 
         std::min(std::min(_bmi.component_config().clock, _bmm.component_config().clock), _spa.component_config().clock);
     component_config(cfg);
 
-    // The DoF's BMM350 is a real device on the main bus, not a BMI270 AUX magnetometer -- disable the
-    // BMI270's AUX BMM150 probe so begin() does not waste an AUX transaction looking for one.
+    // The DoF's BMM350 is a real device on the main bus, not a BMI270 AUX magnetometer.
+    // This is not an optimization -- do not remove it. The BMI270's AUX pins are tied to that same
+    // bus here, so enabling the AUX interface turns the BMI270 into a second I2C master and the bus
+    // collides: every transaction then times out, including the write that would disable AUX again.
+    // The unit has to be power-cycled to recover.
     auto bcfg              = _bmi.config();
     bcfg.enable_aux_bmm150 = false;
     _bmi.config(bcfg);

@@ -7,7 +7,14 @@
   UnitTest for UnitBMI270
 
   Default (no TEST_BUILTIN): external wiring via I2CComponentTestBase (GROVE / standard I2C),
-  e.g. a UnitDoF6/DoF9 plugged into a host's Grove port.
+  e.g. a UnitDoF6 plugged into a host's Grove port.
+
+  Attach only a UnitDoF6 or a Unit Mini IMU-Pro (U171) on that path -- NOT a DoF9/DoF10. This
+  suite builds a bare UnitBMI270, so enable_aux_bmm150 keeps its default and the AUX probe runs.
+  On DoF9/DoF10 the BMI270's AUX pins share the main bus, so enabling AUX makes the BMI270 a
+  second I2C master and the bus collides; recovery needs the unit to be power-cycled. The DoF9 /
+  DoF10 composites disable the probe themselves (see UnitDoF9's constructor), so test_dof9 /
+  test_dof10 are the safe way to exercise those boards.
 
   With -DTEST_BUILTIN: the board's built-in BMI270 is exercised over M5.In_I2C. The built-in
   BMI270 sits at either 0x68 or 0x69 depending on the board (CoreS3/CoreS3SE: 0x69;
