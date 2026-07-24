@@ -121,6 +121,10 @@ uint32_t last_gizmo_ms{};
 // until converged, then the operational value) and what the Fusion library bakes in as its
 // 3-second startup ramp; this mirrors that for the two filters without a built-in ramp. The
 // steady-state gains stay at the paper defaults.
+// Side effect: while boosted, accelerometer noise passes into the attitude far more strongly --
+// roll/pitch swing about +-3 deg for the first 3 seconds even when the device sits still, and do
+// so in a regular sample-to-sample alternation (a high-gain correction loop overshoots each noisy
+// sample and comes back). This is the cost of fast convergence, not a sensor or driver fault.
 constexpr uint32_t SETTLE_BOOST_MS{3000};
 constexpr float MADGWICK_BETA_BOOST{2.5f};  // initialization value suggested in Madgwick's report
 constexpr float MADGWICK_BETA_DEFAULT{0.1f};
