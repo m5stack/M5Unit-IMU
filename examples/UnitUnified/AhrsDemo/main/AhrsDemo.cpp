@@ -1137,7 +1137,10 @@ void setup()
         }
     }
 #endif
-    ok              = ok && Units.begin() && ahrs.add(unit.imu()) && ahrs.add(unit.mag());
+    // The BMM350's frame is rotated 180 degrees about X relative to the BMI270's; the preset
+    // registers both sources and applies that mag correction (see presets.hpp for how it was
+    // derived). Without it the heading is wrong in a way that changes with attitude.
+    ok              = ok && Units.begin() && m5::imu::presets::unitDoF(ahrs, unit.imu(), unit.mag());
 #if defined(USING_UNIT_DOF10)
     diag.unit_label = "UnitDoF10 (BMI270+BMM350+SPA06)";
 #else

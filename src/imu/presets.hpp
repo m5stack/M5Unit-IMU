@@ -5,7 +5,8 @@
  */
 /*!
   @file presets.hpp
-  @brief Board-specific AhrsController setup for M5Stack products with a built-in IMU
+  @brief Board-specific AhrsController setup for M5Stack products with a built-in IMU, and for
+  the GROVE units whose sensors need an axis remap
   @details Each function below only registers the given unit(s) with an AhrsController and
   applies the axis remap M5Unified's IMU_Class::begin() hard-codes for that board. None of
   these functions call unit.begin() themselves -- the caller must have already begun the
@@ -17,6 +18,7 @@
 
 #include "../unit/unit_bmi270.hpp"
 #include "../unit/unit_bmm150.hpp"
+#include "../unit/unit_bmm350.hpp"
 #include "../unit/unit_mpu6886.hpp"
 #include "../unit/unit_ak8963.hpp"
 #include "../unit/unit_sh200q.hpp"
@@ -133,6 +135,19 @@ bool atomMatrix(AhrsController& ahrs, m5::unit::UnitBMI270& bmi270);
   AhrsController::writeMagAxisOrder() (the mag remap path).
  */
 bool mpu9250Ak8963(AhrsController& ahrs, m5::unit::UnitAK8963& ak8963);
+
+/*!
+  @brief Unit DoF9 / DoF10's BMI270 + BMM350 pair (U229 / U230)
+  @param ahrs Controller to register both sources with
+  @param bmi270 UnitDoF9::imu() / UnitDoF10::imu() (must already be begin()'d)
+  @param bmm350 UnitDoF9::mag() / UnitDoF10::mag() (must already be begin()'d)
+  @return False if ahrs already holds the maximum number of sources (see AhrsController::add())
+  @details M5Unified has no case for these units, so unlike the other presets here this one was
+  determined on hardware. The BMI270 keeps the identity transform (its frame matches UnitMiniIMU);
+  only the BMM350 needs a correction, a 180-degree rotation about X applied through the mag remap
+  path: body = (mag_x, -mag_y, -mag_z). DoF6 (U228) is a bare BMI270 and needs no preset.
+ */
+bool unitDoF(AhrsController& ahrs, m5::unit::UnitBMI270& bmi270, m5::unit::UnitBMM350& bmm350);
 
 }  // namespace presets
 }  // namespace imu

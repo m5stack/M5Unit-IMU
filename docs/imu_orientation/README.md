@@ -35,20 +35,15 @@ The predecessor of the DoF series: BMI270 + BMM150 + BMP280 directly on the GROV
 
 [Source](https://docs.m5stack.com/en/unit/IMU%20Pro%20Mini%20Unit)
 
-## Unit DoF6 (U228) — BMI270 (0x68/0x69) (no orientation image)
+## Unit DoF6 / DoF9 / DoF10 (U228 / U229 / U230) — no orientation image
 
-Text-only (no orientation image yet). 6-axis BMI270; SW1 selects I2C address 0x68 (default) / 0x69.
-Axis remap for a shipped preset must be confirmed on hardware / a product IMU-axis image.
+No product orientation image is published. The BMI270's accel/gyro axes are the same as
+UnitMiniIMU's (confirmed by M5Stack, and measured on a DoF9): with the label facing up and the
+GROVE connector nearest to you, **+X points right, +Y away from the connector, +Z up out of the
+label face**. All three products share one PCB design, so this applies to DoF6, DoF9 and DoF10.
 
-## Unit DoF9 (U229) — BMI270 (0x68/0x69) + BMM350 (0x14) (no orientation image)
-
-Text-only. Adds a BMM350 magnetometer at 0x14 on the same bus (directly, not via the BMI270 AUX
-interface). Axis remap unverified.
-
-## Unit DoF10 (U230) — BMI270 (0x68/0x69) + BMM350 (0x14) + SPA06-003 (0x76) (no orientation image)
-
-Text-only. Adds an SPA06-003 barometer at 0x76. Pressure/altitude is read directly via
-`UnitDoF10::baro()` (not part of the attitude AHRS). Axis remap unverified.
+The BMM350 on DoF9/DoF10 does not share that frame -- its axes are rotated 180 degrees about X.
+`m5::imu::presets::unitDoF()` applies the correction. DoF6 needs no preset.
 
 # Built-in hosts
 

@@ -126,6 +126,22 @@ bool mpu9250Ak8963(AhrsController& ahrs, m5::unit::UnitAK8963& ak8963)
     return true;
 }
 
+bool unitDoF(AhrsController& ahrs, m5::unit::UnitBMI270& bmi270, m5::unit::UnitBMM350& bmm350)
+{
+    const bool added_bmi270 = ahrs.add(bmi270);
+    const bool added_bmm350 = ahrs.add(bmm350);
+    if (!added_bmi270 || !added_bmm350) {
+        return false;
+    }
+    // The BMI270 keeps the default identity (see presets.hpp). BMM350 is a pure-Mag source, so its
+    // 180-degree rotation about X goes through the mag remap path.
+    AxisOrder mag_order;
+    mag_order.invert_y = true;
+    mag_order.invert_z = true;
+    ahrs.writeMagAxisOrder(bmm350, mag_order);
+    return true;
+}
+
 }  // namespace presets
 }  // namespace imu
 }  // namespace m5
