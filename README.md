@@ -59,6 +59,17 @@ provides all nine axes -- the same arrangement as the built-in IMU on CoreS3 and
 > port with a hub (e.g. Unit HUB). 0x68 + 0x14 coexist without an address conflict. On a classic
 > M5Stack Core the shared bus is routed to GROVE Port C (needs the M5GO/Fire base) for the same
 > built-in-IMU reason; the example does this automatically.
+>
+> **Built-in IMU + UnitBMM350 (AhrsDemo `USING_BUILTIN_IMU_WITH_BMM350`):** most hosts with a
+> built-in IMU have no magnetometer (see the table below), so plugging a Unit BMM350 into the GROVE
+> port is the cheapest way to make them 9-axis. The magnetometer needs no bus juggling — 0x14
+> collides with nothing — except on a classic M5Stack Core, where the default GROVE port *is* the
+> internal bus the built-in IMU already uses, so the example routes it to Port C.
+>
+> Unlike the DoF units, the two devices are separate enclosures: **mount the Unit BMM350 in the same
+> orientation as the host**, or express the difference with `AhrsController::writeMagAxisOrder()`.
+> The library corrects the BMM350 chip against the unit's own case; how that case sits relative to
+> the host is a mounting decision only you know.
 
 ## Built-in IMUs by board revision
 

@@ -35,14 +35,16 @@
 // Choose one define symbol to match the unit you are using
 // *************************************************************
 #if !defined(USING_UNIT_MINI_IMU) && !defined(USING_UNIT_MINI_IMU_WITH_BMM350) && !defined(USING_BUILTIN_IMU) && \
-    !defined(USING_UNIT_DOF6) && !defined(USING_UNIT_DOF9) && !defined(USING_UNIT_DOF10) &&                      \
-    !defined(USING_UNIT_MINI_IMU_PRO)
+    !defined(USING_BUILTIN_IMU_WITH_BMM350) && !defined(USING_UNIT_DOF6) && !defined(USING_UNIT_DOF9) &&         \
+    !defined(USING_UNIT_DOF10) && !defined(USING_UNIT_MINI_IMU_PRO)
 // For UnitMiniIMU (SKU: TBD) - 6-axis, GROVE
 #define USING_UNIT_MINI_IMU
 // For UnitMiniIMU + UnitBMM350 (U231) - 9-axis on GROVE (0x68 + 0x14 coexist)
 // #define USING_UNIT_MINI_IMU_WITH_BMM350
 // For built-in IMU (Core2 / CoreS3 / AtomS3R / M5Stack Core/Fire)
 // #define USING_BUILTIN_IMU
+// For built-in IMU + UnitBMM350 (U231) on GROVE -- 9-axis for a host whose IMU has no magnetometer
+// #define USING_BUILTIN_IMU_WITH_BMM350
 // For UnitDoF6 (U228) -- 6-axis BMI270
 // #define USING_UNIT_DOF6
 // For UnitDoF9 (U229) -- 9-axis BMI270 + BMM350
@@ -51,6 +53,12 @@
 // #define USING_UNIT_DOF10
 // For UnitMiniIMUPro (U171) -- 10-axis BMI270 + BMM150 + BMP280 barometer
 // #define USING_UNIT_MINI_IMU_PRO
+#endif
+
+// The BMM350 variant runs the whole built-in path unchanged and adds the GROVE magnetometer on top,
+// so every USING_BUILTIN_IMU site below applies to it as well.
+#if defined(USING_BUILTIN_IMU_WITH_BMM350) && !defined(USING_BUILTIN_IMU)
+#define USING_BUILTIN_IMU
 #endif
 
 // Unit DoF BMI270 I2C address, selected by the board's SW1 switch (0x68 default / 0x69). Set this to
@@ -77,6 +85,9 @@ m5::unit::UnitSH200Q sh200q{};    // 2019.3 M5StickC / 2019.7 Fire (there paired
 m5::unit::UnitMPU6050 mpu6050{};  // 2017 Gray (paired with the MAG3110)
 m5::unit::UnitMAG3110 mag3110{};  // 2017 Gray's discrete magnetometer
 m5::unit::UnitMPU9250 mpu9250{};  // original Fire / 2017.12 Gray / some early Basic (internal AK8963)
+#if defined(USING_BUILTIN_IMU_WITH_BMM350)
+m5::unit::UnitBMM350 mag_unit{};  // GROVE Unit BMM350 (U231), 0x14 -- 9-axis for a mag-less host
+#endif
 #elif defined(USING_UNIT_DOF6)
 // UnitDoF6 is a plain alias of UnitBMI270. The BMI270 address (0x68/0x69) follows the DoF board's SW1
 // switch; build with DOF_BMI270_ADDRESS to match it (see the #define above).
@@ -696,6 +707,210 @@ bool begin_builtin()
 }
 #endif
 
+//! @brief Attach a GROVE unit to this board's external I2C bus
+//! @param u Unit to attach
+//! @param attach_to_open_bus Pass true for the second and later units sharing one bus
+//! @return False if the unit could not be attached
+//! @details Classic M5Stack Core is the exception every configuration has to make: its default GROVE
+//! port IS the internal bus, where a 0x68 unit collides with the built-in IMU, so those boards route
+//! to GROVE Port C (needs the M5GO/Fire base). Every other board takes the wiring helper's default
+//! port. Units carry their own clock, but 400kHz is forced here to match the DoF/MiniIMU defaults.
+bool wire_grove_unit(m5::unit::Component& u, const bool attach_to_open_bus = false)
+{
+    if (M5.getBoard() == m5::board_t::board_M5Stack) {
+        return m5::unit::imu::wiring::i2cPortC(Units, u, attach_to_open_bus);
+    }
+    return m5::unit::wiring::addI2C(Units, u, 400 * 1000U);
+}
+
+#if defined(USING_UNIT_DOF6) || defined(USING_UNIT_DOF9) || defined(USING_UNIT_DOF10)
+//! @brief Warn when the DoF board's SW1 address differs from the one this build targets
+//! @details The DoF BMI270 address is SW1-selectable (0x68 default / 0x69) and fixed at compile time
+//! via DOF_BMI270_ADDRESS, so a flipped switch shows up as a bare "not found". Probe both candidates
+//! once the bus is connected and name the mismatch instead. Arduino-only: the probe talks over Wire
+//! directly, and it is skipped on classic Core, where Port C runs on the lgfx I2C_Class and Wire is
+//! never begun. ESP-IDF builds and classic Core still see the mismatch as a begin failure.
+void warn_if_dof_address_differs()
+{
+#if defined(ARDUINO)
+    if (M5.getBoard() == m5::board_t::board_M5Stack) {
+        return;
+    }
+    uint8_t detected{DOF_BMI270_ADDRESS};
+    m5::unit::bmi270::detectAddress(
+        [](const uint8_t addr, const uint8_t reg, uint8_t& out) {
+            Wire.beginTransmission(addr);
+            Wire.write(reg);
+            if (Wire.endTransmission(false) != 0) {
+                return false;
+            }
+            if (Wire.requestFrom(addr, static_cast<size_t>(1)) != 1) {
+                return false;
+            }
+            out = static_cast<uint8_t>(Wire.read());
+            return true;
+        },
+        detected);
+    if (detected != DOF_BMI270_ADDRESS) {
+        M5_LOGW(
+            "DoF BMI270 detected at 0x%02X but this build targets 0x%02X; rebuild with "
+            "-D DOF_BMI270_ADDRESS=0x%02X",
+            detected, DOF_BMI270_ADDRESS, detected);
+    } else {
+        M5_LOGI("DoF BMI270 at 0x%02X", DOF_BMI270_ADDRESS);
+    }
+#endif
+}
+#endif
+
+//! @brief Record why a begin path failed, so the diagnostic mode and /info can report it
+//! @param reason Message shown on the LCD notice and in the web panel
+void note_begin_failure(const char* reason)
+{
+    fail_reason     = reason;
+    diag.unit_label = reason;
+}
+
+#if defined(USING_UNIT_MINI_IMU)
+//! @brief UnitMiniIMU (MPU6886 @0x68) on the GROVE bus -- 6-axis
+bool begin_unit_mini_imu()
+{
+    const bool ok   = wire_grove_unit(unit) && Units.begin() && ahrs.add(unit);
+    diag.unit_label = (M5.getBoard() == m5::board_t::board_M5Stack) ? "UnitMiniIMU (GROVE Port C @0x68)"
+                                                                    : "UnitMiniIMU (MPU6886 @0x68)";
+    diag.accel_src  = &unit;
+    if (!ok) {
+        note_begin_failure("UnitMiniIMU not found (check GROVE cable)");
+    }
+    return ok;
+}
+#elif defined(USING_UNIT_MINI_IMU_WITH_BMM350)
+//! @brief UnitMiniIMU + Unit BMM350 (U231) -- 9-axis from two units on ONE GROVE bus
+//! @details Split the port with a hub (0x68 + 0x14 coexist). Both wire_grove_unit() calls land on the
+//! same bus; the second only attaches. UnitMiniIMU keeps the identity default, while the BMM350's
+//! frame is rotated 180 degrees about X relative to it -- presets::unitBMM350() corrects that.
+bool begin_unit_mini_imu_with_bmm350()
+{
+    const bool ok = wire_grove_unit(unit) && wire_grove_unit(mag_unit, true) && Units.begin() && ahrs.add(unit) &&
+                    m5::imu::presets::unitBMM350(ahrs, mag_unit);
+    diag.unit_label = "UnitMiniIMU + UnitBMM350";
+    diag.accel_src  = &unit;
+    diag.mag_src    = &mag_unit;
+    diag.mag_label  = "BMM350";
+    if (!ok) {
+        note_begin_failure("UnitMiniIMU/BMM350 not found (check GROVE cable)");
+    }
+    return ok;
+}
+#elif defined(USING_UNIT_DOF6)
+//! @brief Unit DoF6 (U228, BMI270 @0x68/0x69) -- 6-axis
+bool begin_unit_dof6()
+{
+    bool ok = wire_grove_unit(unit);
+    warn_if_dof_address_differs();
+    // No magnetometer on this board -> skip the AUX BMM150 probe (silences a harmless begin() error).
+    auto c              = unit.config();
+    c.enable_aux_bmm150 = false;
+    unit.config(c);
+
+    ok              = ok && Units.begin() && ahrs.add(unit);
+    diag.unit_label = "UnitDoF6 (BMI270)";
+    diag.accel_src  = &unit;
+    if (!ok) {
+        note_begin_failure("UnitDoF6 not found (check GROVE cable)");
+    }
+    return ok;
+}
+#elif defined(USING_UNIT_DOF9) || defined(USING_UNIT_DOF10)
+//! @brief Unit DoF9 / DoF10 (U229 / U230) -- BMI270 + BMM350 [+ SPA06 barometer]
+//! @details The BMM350's frame is rotated 180 degrees about X relative to the BMI270's; the preset
+//! registers both sources and applies that correction (presets.hpp records how it was derived).
+//! Without it the heading is wrong in a way that changes with attitude, not by a fixed offset.
+bool begin_unit_dof9_dof10()
+{
+    bool ok = wire_grove_unit(unit);
+    warn_if_dof_address_differs();
+    ok              = ok && Units.begin() && m5::imu::presets::unitDoF(ahrs, unit.imu(), unit.mag());
+#if defined(USING_UNIT_DOF10)
+    diag.unit_label = "UnitDoF10 (BMI270+BMM350+SPA06)";
+#else
+    diag.unit_label = "UnitDoF9 (BMI270+BMM350)";
+#endif
+    diag.accel_src  = &unit.imu();
+    diag.mag_src    = &unit.mag();
+    diag.mag_label  = "BMM350 (0x14)";
+    if (!ok) {
+#if defined(USING_UNIT_DOF10)
+        note_begin_failure("UnitDoF10 not found (check GROVE cable)");
+#else
+        note_begin_failure("UnitDoF9 not found (check GROVE cable)");
+#endif
+    }
+    return ok;
+}
+#elif defined(USING_UNIT_MINI_IMU_PRO)
+//! @brief Unit Mini IMU-Pro (U171) -- BMI270 @0x68 fixed + BMM150 + BMP280
+//! @details No SW1 on this board, so no address probe. The BMM150 is an AUX target of the BMI270, so
+//! imu() alone carries all nine axes.
+bool begin_unit_mini_imu_pro()
+{
+    const bool ok   = wire_grove_unit(unit) && Units.begin() && ahrs.add(unit.imu());
+    diag.unit_label = "UnitMiniIMUPro (BMI270+BMM150+BMP280)";
+    diag.accel_src  = &unit.imu();
+    diag.mag_src    = &unit.imu();
+    diag.mag_label  = "BMM150 (BMI270 AUX)";
+    if (!ok) {
+        note_begin_failure("UnitMiniIMUPro not found (check GROVE cable)");
+    }
+    return ok;
+}
+#endif
+
+#if defined(USING_BUILTIN_IMU_WITH_BMM350)
+//! @brief Built-in accel/gyro plus a GROVE Unit BMM350 -- 9-axis for a host with no magnetometer
+//! @details Two constraints shape this, and both are easy to "simplify" back into bugs.
+//!
+//! 1. The magnetometer is added BEFORE begin_builtin(): each begin_builtin_*() calls Units.begin()
+//!    exactly once, and a second call would re-begin (and thereby stop) the running accel/gyro.
+//! 2. It attaches to M5.Ex_I2C rather than going through wire_grove_unit(): this is the one
+//!    configuration where the built-in IMU already owns M5.In_I2C, so letting M5Unified hand out
+//!    both buses keeps the pairing explicit. M5Unified assigns them separate peripherals anyway
+//!    (M5Unified.cpp, _begin_rtc_imu: Core2 gets In_I2C on I2C_NUM_1 and Ex_I2C on I2C_NUM_0), so
+//!    the two never contend.
+//!
+//! Ex_I2C has to be started by hand, and that part is easy to miss: M5Unified only calls
+//! Ex_I2C.begin() when config_t asks for an external RTC or IMU (same function), and this example
+//! uses a plain M5.begin(). isEnabled() does not cover it -- it reports that the port/pins are
+//! known, not that the bus was initialised -- so without the begin() below the first BMM350
+//! transaction fails with "Not BMM350 00".
+//!
+//! 0x14 collides with nothing, so no port juggling is needed even on classic Core, where Ex_I2C and
+//! In_I2C are the same physical bus.
+bool begin_builtin_with_bmm350()
+{
+    const bool mag_wired = M5.Ex_I2C.isEnabled() && M5.Ex_I2C.begin() && Units.add(mag_unit, M5.Ex_I2C);
+    if (!mag_wired) {
+        M5_LOGE("Failed to attach the GROVE BMM350 to Ex_I2C");
+    }
+    if (!begin_builtin()) {
+        return false;
+    }
+    if (diag.mag_src) {
+        // This host already carries a magnetometer, so the GROVE one is redundant: both get fused.
+        // Say so rather than letting the /info panel imply a single source.
+        M5_LOGW("Built-in magnetometer present (%s); the GROVE BMM350 is fused on top of it",
+                diag.mag_label ? diag.mag_label : "?");
+    }
+    if (!mag_wired || !m5::imu::presets::unitBMM350(ahrs, mag_unit)) {
+        note_begin_failure("UnitBMM350 not found (check GROVE cable)");
+        return false;
+    }
+    diag.mag_src   = &mag_unit;
+    diag.mag_label = "BMM350 (GROVE)";
+    return true;
+}
+#endif
+
 //! @brief One body axis to project: unit vector, gizmo_canvas palette index, label
 struct GizmoAxis {
     m5::math::Vector3 body;
@@ -753,8 +968,8 @@ void draw_gizmo(const float roll, const float pitch, const float yaw)
         }
     } else if (show_vqf_state) {
         const auto* vqf = static_cast<m5::imu::VQFFilter*>(ahrs.filter());
-        text_canvas.printf("T:%4.1fC %s Rest:%d MagDis:%c", ahrs.latest().temp,
-                           auto_cal_enabled ? "Cal:ON" : "Cal:--", vqf->restDetected() ? 1 : 0,
+        text_canvas.printf("T:%4.1fC %s Rest:%d MagDis:%c", ahrs.latest().temp, auto_cal_enabled ? "Cal:ON" : "Cal:--",
+                           vqf->restDetected() ? 1 : 0,
                            vqf->readMagDisturbanceRejection() ? (vqf->magDisturbanceDetected() ? '1' : '0') : '-');
     } else {
         text_canvas.printf("Temp:%6.2f C %s", ahrs.latest().temp, auto_cal_enabled ? "Cal:ON" : "Cal:--");
@@ -1004,179 +1219,17 @@ void setup()
 
     bool ok{};
 #if defined(USING_UNIT_MINI_IMU)
-    // UnitMiniIMU: NessoN1 -> SoftwareI2C (M5HAL), NanoC6 / NanoH2 -> M5.Ex_I2C, others -> Wire.
-    // Special case: classic M5Stack Core routes to GROVE Port C on a bus of its own (Port A is the
-    // internal bus, built-in IMU collision at 0x68 -- see i2cPortC in m5_unit_imu_wiring.hpp);
-    // every other board keeps addI2C().
-    if (M5.getBoard() == m5::board_t::board_M5Stack) {
-        // The unit already carries its own 400kHz clock (set in UnitMPU6886's constructor).
-        ok              = m5::unit::imu::wiring::i2cPortC(Units, unit) && Units.begin() && ahrs.add(unit);
-        diag.unit_label = "UnitMiniIMU (GROVE Port C @0x68)";
-    } else {
-        ok              = m5::unit::wiring::addI2C(Units, unit, 400 * 1000U) && Units.begin() && ahrs.add(unit);
-        diag.unit_label = "UnitMiniIMU (MPU6886 @0x68)";
-    }
-    diag.accel_src = &unit;
-    if (!ok) {
-        fail_reason     = "UnitMiniIMU not found (check GROVE cable)";
-        diag.unit_label = fail_reason;  // /info "source" reports the reason
-    }
+    ok = begin_unit_mini_imu();
 #elif defined(USING_UNIT_MINI_IMU_WITH_BMM350)
-    // Both units share ONE bus, split with a hub such as Unit HUB (0x68 + 0x14 coexist, no address
-    // conflict). On classic M5Stack Core that shared bus goes to GROVE Port C (the default port is
-    // the internal bus, where the built-in IMU collides at 0x68); everywhere else the default GROVE
-    // port. Both i2cPortC calls land on the same bus (bus init runs once; the second just attaches).
-    if (M5.getBoard() == m5::board_t::board_M5Stack) {
-        ok = m5::unit::imu::wiring::i2cPortC(Units, unit) && m5::unit::imu::wiring::i2cPortC(Units, mag_unit, true);
-    } else {
-        ok = m5::unit::wiring::addI2C(Units, unit, 400 * 1000U) &&
-             m5::unit::wiring::addI2C(Units, mag_unit, 400 * 1000U);
-    }
-    // UnitMiniIMU keeps the identity default; the BMM350's frame is rotated 180 degrees about X
-    // relative to it, which the preset corrects (see presets.hpp).
-    ok              = ok && Units.begin() && ahrs.add(unit) && m5::imu::presets::unitBMM350(ahrs, mag_unit);
-    diag.unit_label = "UnitMiniIMU + UnitBMM350";
-    diag.accel_src  = &unit;
-    diag.mag_src    = &mag_unit;
-    diag.mag_label  = "BMM350";
-    if (!ok) {
-        fail_reason     = "UnitMiniIMU/BMM350 not found (check GROVE cable)";
-        diag.unit_label = fail_reason;  // /info "source" reports the reason
-    }
+    ok = begin_unit_mini_imu_with_bmm350();
 #elif defined(USING_UNIT_DOF6)
-    // UnitDoF6 (BMI270 @0x68/0x69): same Port-C-vs-addI2C branching as UnitMiniIMU -- the DoF BMI270
-    // collides with classic-Core Gray/Fire's built-in MPU6886/BMI270 at the same 0x68 address.
-    if (M5.getBoard() == m5::board_t::board_M5Stack) {
-        ok = m5::unit::imu::wiring::i2cPortC(Units, unit);
-    } else {
-        ok = m5::unit::wiring::addI2C(Units, unit, 400 * 1000U);
-    }
-#if defined(ARDUINO)
-    // The DoF BMI270 address is SW1-selectable (0x68 default / 0x69) and fixed at compile time via
-    // DOF_BMI270_ADDRESS. Now that the bus above is connected (addI2C()/i2cWire() have called
-    // Wire.begin() whenever their backend is Wire), probe both candidates as a diagnostic and warn if
-    // the address actually present differs from the one this build targets. Arduino-only: the probe
-    // talks over Wire directly; ESP-IDF builds skip it (a mismatch still shows as a begin failure).
-    // Also skipped on classic Core, where Port C runs on the lgfx I2C_Class and Wire is never begun.
-    if (M5.getBoard() != m5::board_t::board_M5Stack) {
-        uint8_t detected{DOF_BMI270_ADDRESS};
-        m5::unit::bmi270::detectAddress(
-            [](const uint8_t addr, const uint8_t reg, uint8_t& out) {
-                Wire.beginTransmission(addr);
-                Wire.write(reg);
-                if (Wire.endTransmission(false) != 0) {
-                    return false;
-                }
-                if (Wire.requestFrom(addr, static_cast<size_t>(1)) != 1) {
-                    return false;
-                }
-                out = static_cast<uint8_t>(Wire.read());
-                return true;
-            },
-            detected);
-        if (detected != DOF_BMI270_ADDRESS) {
-            M5_LOGW(
-                "DoF BMI270 detected at 0x%02X but this build targets 0x%02X; rebuild with "
-                "-D DOF_BMI270_ADDRESS=0x%02X",
-                detected, DOF_BMI270_ADDRESS, detected);
-        } else {
-            M5_LOGI("DoF BMI270 at 0x%02X", DOF_BMI270_ADDRESS);
-        }
-    }
-#endif
-    // DoF6 is a 6-axis BMI270 with no magnetometer -> skip the AUX BMM150 probe (silences a harmless
-    // begin() error).
-    {
-        auto c              = unit.config();
-        c.enable_aux_bmm150 = false;
-        unit.config(c);
-    }
-    ok              = ok && Units.begin() && ahrs.add(unit);
-    diag.unit_label = "UnitDoF6 (BMI270)";
-    diag.accel_src  = &unit;
-    if (!ok) {
-        fail_reason     = "UnitDoF6 not found (check GROVE cable)";
-        diag.unit_label = fail_reason;  // /info "source" reports the reason
-    }
+    ok = begin_unit_dof6();
 #elif defined(USING_UNIT_DOF9) || defined(USING_UNIT_DOF10)
-    // UnitDoF9/UnitDoF10 (BMI270 @0x68/0x69 + BMM350 @0x14[+ SPA06 @0x76]): same Port-C-vs-addI2C
-    // branching as UnitMiniIMU/UnitDoF6 for the composite unit's shared bus.
-    if (M5.getBoard() == m5::board_t::board_M5Stack) {
-        ok = m5::unit::imu::wiring::i2cPortC(Units, unit);
-    } else {
-        ok = m5::unit::wiring::addI2C(Units, unit, 400 * 1000U);
-    }
-#if defined(ARDUINO)
-    // The DoF BMI270 address is SW1-selectable (0x68 default / 0x69) and fixed at compile time via
-    // DOF_BMI270_ADDRESS. Now that the bus above is connected (addI2C()/i2cWire() have called
-    // Wire.begin() whenever their backend is Wire), probe both candidates as a diagnostic and warn if
-    // the address actually present differs from the one this build targets. Arduino-only: the probe
-    // talks over Wire directly; ESP-IDF builds skip it (a mismatch still shows as a begin failure).
-    // Also skipped on classic Core, where Port C runs on the lgfx I2C_Class and Wire is never begun.
-    if (M5.getBoard() != m5::board_t::board_M5Stack) {
-        uint8_t detected{DOF_BMI270_ADDRESS};
-        m5::unit::bmi270::detectAddress(
-            [](const uint8_t addr, const uint8_t reg, uint8_t& out) {
-                Wire.beginTransmission(addr);
-                Wire.write(reg);
-                if (Wire.endTransmission(false) != 0) {
-                    return false;
-                }
-                if (Wire.requestFrom(addr, static_cast<size_t>(1)) != 1) {
-                    return false;
-                }
-                out = static_cast<uint8_t>(Wire.read());
-                return true;
-            },
-            detected);
-        if (detected != DOF_BMI270_ADDRESS) {
-            M5_LOGW(
-                "DoF BMI270 detected at 0x%02X but this build targets 0x%02X; rebuild with "
-                "-D DOF_BMI270_ADDRESS=0x%02X",
-                detected, DOF_BMI270_ADDRESS, detected);
-        } else {
-            M5_LOGI("DoF BMI270 at 0x%02X", DOF_BMI270_ADDRESS);
-        }
-    }
-#endif
-    // The BMM350's frame is rotated 180 degrees about X relative to the BMI270's; the preset
-    // registers both sources and applies that mag correction (see presets.hpp for how it was
-    // derived). Without it the heading is wrong in a way that changes with attitude.
-    ok              = ok && Units.begin() && m5::imu::presets::unitDoF(ahrs, unit.imu(), unit.mag());
-#if defined(USING_UNIT_DOF10)
-    diag.unit_label = "UnitDoF10 (BMI270+BMM350+SPA06)";
-#else
-    diag.unit_label = "UnitDoF9 (BMI270+BMM350)";
-#endif
-    diag.accel_src  = &unit.imu();
-    diag.mag_src    = &unit.mag();
-    diag.mag_label  = "BMM350 (0x14)";
-    if (!ok) {
-#if defined(USING_UNIT_DOF10)
-        fail_reason     = "UnitDoF10 not found (check GROVE cable)";
-#else
-        fail_reason = "UnitDoF9 not found (check GROVE cable)";
-#endif
-        diag.unit_label = fail_reason;  // /info "source" reports the reason
-    }
+    ok = begin_unit_dof9_dof10();
 #elif defined(USING_UNIT_MINI_IMU_PRO)
-    // UnitMiniIMUPro (BMI270 @0x68 fixed + BMM150 @0x10): same Port-C-vs-addI2C branching as the DoF
-    // composites for the shared bus; no SW1 on this board, so no address probe is needed.
-    if (M5.getBoard() == m5::board_t::board_M5Stack) {
-        ok = m5::unit::imu::wiring::i2cPortC(Units, unit);
-    } else {
-        ok = m5::unit::wiring::addI2C(Units, unit, 400 * 1000U);
-    }
-    // The BMM150 is an AUX target of the BMI270, so imu() alone carries all nine axes
-    ok              = ok && Units.begin() && ahrs.add(unit.imu());
-    diag.unit_label = "UnitMiniIMUPro (BMI270+BMM150+BMP280)";
-    diag.accel_src  = &unit.imu();
-    diag.mag_src    = &unit.imu();
-    diag.mag_label  = "BMM150 (BMI270 AUX)";
-    if (!ok) {
-        fail_reason     = "UnitMiniIMUPro not found (check GROVE cable)";
-        diag.unit_label = fail_reason;  // /info "source" reports the reason
-    }
+    ok = begin_unit_mini_imu_pro();
+#elif defined(USING_BUILTIN_IMU_WITH_BMM350)
+    ok = begin_builtin_with_bmm350();
 #elif defined(USING_BUILTIN_IMU)
     ok = begin_builtin();
 #endif
@@ -1265,8 +1318,8 @@ void loop()
                 // with the accel/gyro's -- and then no reference can ever be adopted.
                 float mag_norm{}, mag_dip{};
                 vqf->readMagNormDip(mag_norm, mag_dip);
-                snprintf(magdist, sizeof(magdist), "%d norm:%.1f dip:%.1f",
-                         vqf->magDisturbanceDetected() ? 1 : 0, mag_norm, mag_dip);
+                snprintf(magdist, sizeof(magdist), "%d norm:%.1f dip:%.1f", vqf->magDisturbanceDetected() ? 1 : 0,
+                         mag_norm, mag_dip);
             }
             // dev:<gyro>,<accel> are the rest-detection deviations relative to their thresholds:
             // both must stay below 1.0 for rest (and therefore rest bias estimation) to arm, so

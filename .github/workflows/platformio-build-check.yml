@@ -115,7 +115,7 @@ jobs:
             board: Core2
             framework: Arduino
             espressif32: latest
-          # AhrsDemo has its OWN source (AhrsController + LCD gizmo + WiFi web viewer) with seven
+          # AhrsDemo has its OWN source (AhrsController + LCD gizmo + WiFi web viewer) with eight
           # ifdef branches and SoC-specific WiFi code (H2 no-radio guard, P4 co-processor routing).
           # Build each branch once, spread across SoCs/toolchains so H2 / P4 WiFi and pioarduino are
           # all exercised. The BuiltIn_* / *_BMM350_* envs do not follow the format() pattern, so
@@ -162,6 +162,12 @@ jobs:
             framework: Arduino
             espressif32: latest
             env: UnitMiniIMUPro_AhrsDemo_Core2_Arduino_latest
+          - example: AhrsDemo  # BUILTIN + GROVE BMM350 (mag-less host goes 9-axis)
+            unit: BuiltIn_BMM350
+            board: Core2
+            framework: Arduino
+            espressif32: latest
+            env: BuiltIn_BMM350_AhrsDemo_Core2_Arduino_latest
           - example: AhrsDemo  # BUILTIN dispatch (M5.In_I2C), S3
             unit: BuiltIn
             board: CoreS3
