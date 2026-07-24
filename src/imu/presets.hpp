@@ -149,6 +149,24 @@ bool mpu9250Ak8963(AhrsController& ahrs, m5::unit::UnitAK8963& ak8963);
  */
 bool unitDoF(AhrsController& ahrs, m5::unit::UnitBMI270& bmi270, m5::unit::UnitBMM350& bmm350);
 
+/*!
+  @brief Unit BMM350's magnetometer (U231), e.g. paired with a UnitMiniIMU for 9-axis
+  @param ahrs Controller to register bmm350 with
+  @param bmm350 The GROVE Unit BMM350 (must already be begin()'d)
+  @return False if ahrs already holds the maximum number of sources (see AhrsController::add())
+  @details Determined on hardware; M5Stack's own U171 library never fuses its magnetometer, so
+  there is no upstream mapping to transcribe for the GROVE magnetometers. The correction is the
+  same 180-degree rotation about X that the DoF boards need (see unitDoF()):
+
+      body = (mag_x, -mag_y, -mag_z)
+
+  Add the accel/gyro partner separately -- a UnitMiniIMU needs no correction, its frame already
+  matches this unit's (label up, GROVE connector nearest: +X right, +Y away from the connector,
+  +Z out of the label face). Orient both units the same way, or apply the difference with
+  AhrsController::writeUserAxisOrder().
+ */
+bool unitBMM350(AhrsController& ahrs, m5::unit::UnitBMM350& bmm350);
+
 }  // namespace presets
 }  // namespace imu
 }  // namespace m5

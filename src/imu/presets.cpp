@@ -142,6 +142,19 @@ bool unitDoF(AhrsController& ahrs, m5::unit::UnitBMI270& bmi270, m5::unit::UnitB
     return true;
 }
 
+bool unitBMM350(AhrsController& ahrs, m5::unit::UnitBMM350& bmm350)
+{
+    if (!ahrs.add(bmm350)) {
+        return false;
+    }
+    // Pure-Mag source, so the 180-degree rotation about X goes through the mag remap path.
+    AxisOrder mag_order;
+    mag_order.invert_y = true;
+    mag_order.invert_z = true;
+    ahrs.writeMagAxisOrder(bmm350, mag_order);
+    return true;
+}
+
 }  // namespace presets
 }  // namespace imu
 }  // namespace m5

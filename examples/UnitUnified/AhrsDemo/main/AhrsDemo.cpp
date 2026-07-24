@@ -1032,7 +1032,9 @@ void setup()
         ok = m5::unit::wiring::addI2C(Units, unit, 400 * 1000U) &&
              m5::unit::wiring::addI2C(Units, mag_unit, 400 * 1000U);
     }
-    ok              = ok && Units.begin() && ahrs.add(unit) && ahrs.add(mag_unit);
+    // UnitMiniIMU keeps the identity default; the BMM350's frame is rotated 180 degrees about X
+    // relative to it, which the preset corrects (see presets.hpp).
+    ok              = ok && Units.begin() && ahrs.add(unit) && m5::imu::presets::unitBMM350(ahrs, mag_unit);
     diag.unit_label = "UnitMiniIMU + UnitBMM350";
     diag.accel_src  = &unit;
     diag.mag_src    = &mag_unit;

@@ -45,6 +45,18 @@ label face**. All three products share one PCB design, so this applies to DoF6, 
 The BMM350 on DoF9/DoF10 does not share that frame -- its axes are rotated 180 degrees about X.
 `m5::imu::presets::unitDoF()` applies the correction. DoF6 needs no preset.
 
+## Unit BMM350 (U231) — BMM350 (0x14) — no orientation image
+
+A standalone magnetometer, typically paired with a UnitMiniIMU for 9-axis. No product orientation
+image is published; measured on hardware, its BMM350 needs the same correction as the DoF boards --
+**rotated 180 degrees about X** relative to the unit's own frame:
+
+    body = (mag_x, -mag_y, -mag_z)
+
+`m5::imu::presets::unitBMM350()` applies it, and AhrsDemo calls that preset. Orient this unit the
+same way as its accel/gyro partner (label up, GROVE connector nearest, +X right); a UnitMiniIMU
+partner needs no correction of its own.
+
 # Built-in hosts
 
 ## Core2 — MPU6886 (0x68)
