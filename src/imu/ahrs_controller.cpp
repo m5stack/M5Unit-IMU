@@ -56,6 +56,17 @@ constexpr float GYRO_CAL_RADIUS_DPS{0.0f};
 constexpr float GYRO_CAL_TOLERANCE_DPS{0.0f};
 constexpr float GYRO_CAL_NOISE_DPS{2.0f};
 constexpr uint8_t GYRO_CAL_SHIFT{6};
+//! @note Gyro auto-calibration is the one capability enabled out of the box. Left off, an
+//! uncorrected zero-rate offset integrates straight into yaw -- measured at 3.4deg/s on a Core2,
+//! which also exceeds VQFParams::biasClip and so stops VQF from estimating the bias itself.
+//! M5Unified likewise calibrates the gyro once inside its begin(); this controller cannot copy
+//! that (calibrateGyro() only drains samples the sources have already buffered, and the
+//! controller has no way to make them fetch more), so it adapts continuously instead, which also
+//! tracks the drift as the die warms up. Accel and mag stay off: their spheres are far easier to
+//! fit wrongly (see writeMagCalibrationRadius()).
+//! Strength is the per-sample follow rate x255 when still (see axis_offset_state_t::calibrate()),
+//! so even 1 converges with a ~1.3s time constant at 200Hz -- no reason to push it higher.
+constexpr uint8_t GYRO_CAL_DEFAULT_STRENGTH{1};
 
 //! @note Mag calibration thresholds are retune values: M5Unified's raw-based constants
 //! (64/96) converted to physical units using this library's mag scale (16 LSB/µT).
@@ -95,6 +106,7 @@ AhrsController::AhrsController()
     _gyro_cal.tolerance       = GYRO_CAL_TOLERANCE_DPS;
     _gyro_cal.noise           = GYRO_CAL_NOISE_DPS;
     _gyro_cal.average_shifter = GYRO_CAL_SHIFT;
+    _gyro_cal.strength        = GYRO_CAL_DEFAULT_STRENGTH;
 
     _mag_cal.radius_shift    = MAG_CAL_RADIUS_SHIFT;  // learn the local field strength
     _mag_cal.tolerance       = MAG_CAL_TOLERANCE_UT;

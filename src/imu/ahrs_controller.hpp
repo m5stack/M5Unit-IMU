@@ -152,6 +152,12 @@ public:
       @param accel Accelerometer strength, 0 = off, 1-255 = adjustment speed (higher = faster)
       @param gyro Gyroscope strength, 0 = off, 1-255 = adjustment speed
       @param mag Magnetometer strength, 0 = off, 1-255 = adjustment speed
+      @note Only the gyroscope is on by default (strength 1); accel and mag start at 0. An
+      uncorrected gyro zero-rate offset is the dominant source of yaw drift and, when it exceeds
+      VQFFilter::writeBiasClip()'s window, also stops VQF from estimating the bias on its own --
+      so the default keeps it in check without any setup. Strength is effectively the per-sample
+      follow rate x255 while the device is still, so 1 already converges with a roughly 1.3s time
+      constant at a 200Hz sample rate.
       @details A stillness/sphere-fit auto-offset algorithm operating on physical-unit
       samples. Each capability tracks how "still" its recent samples
       have been; once that stillness score exceeds a threshold, the offset is nudged toward

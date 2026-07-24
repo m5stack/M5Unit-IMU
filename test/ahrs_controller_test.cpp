@@ -842,7 +842,7 @@ TEST(AhrsController, AutoCalibrationReadWriteRoundTrip)
     uint8_t accel{}, gyro{}, mag{};
     ahrs.readAutoCalibration(accel, gyro, mag);
     EXPECT_EQ(accel, 0);
-    EXPECT_EQ(gyro, 0);
+    EXPECT_EQ(gyro, 1);  // the one capability enabled out of the box
     EXPECT_EQ(mag, 0);
 
     ahrs.writeAutoCalibration(10, 20, 30);
@@ -923,7 +923,7 @@ TEST(AhrsController, AutoCalibrationOffWhenStrengthZero)
     AhrsController ahrs;
     EXPECT_TRUE(ahrs.add(ag));
     EXPECT_TRUE(ahrs.begin());
-    // Auto-calibration strength defaults to 0 (off); no writeAutoCalibration() call.
+    ahrs.writeAutoCalibration(0, 0, 0);  // gyro is on by default, so switch it off explicitly
 
     for (int i = 0; i < 500; ++i) {
         ag.pushAccelGyro(0, 0, 1, 0, 0, 2);
@@ -931,6 +931,43 @@ TEST(AhrsController, AutoCalibrationOffWhenStrengthZero)
     }
 
     EXPECT_NEAR(ahrs.latest().gyro[2], 2.0f, 1.0e-4f);  // bias left untouched
+}
+
+TEST(AhrsController, GyroAutoCalibrationRemovesBiasWithoutAnySetup)
+{
+    MockSource ag(Capability::Accel | Capability::Gyro);
+
+    AhrsController ahrs;
+    EXPECT_TRUE(ahrs.add(ag));
+    EXPECT_TRUE(ahrs.begin());
+    // Deliberately no writeAutoCalibration(): the gyro default has to carry a caller who does
+    // nothing, since an uncorrected zero-rate offset is what drives yaw drift.
+
+    for (int i = 0; i < 3000; ++i) {  // 30s at 100Hz; strength 1 has a ~2.5s time constant here
+        ag.pushAccelGyro(0, 0, 1, 0, 0, 2);
+        ahrs.update(0.01f);
+    }
+
+    EXPECT_NEAR(ahrs.latest().gyro[2], 0.0f, 0.3f);
+}
+
+TEST(AhrsController, AccelAndMagAreLeftUncalibratedByDefault)
+{
+    MockSource src(Capability::Accel | Capability::Gyro | Capability::Mag);
+
+    AhrsController ahrs;
+    EXPECT_TRUE(ahrs.add(src));
+    EXPECT_TRUE(ahrs.begin());
+
+    // Only the gyro sphere (the origin) is safe to fit blindly; accel and mag are not (see
+    // writeMagCalibrationRadius()), so an offset on them must survive untouched.
+    for (int i = 0; i < 3000; ++i) {
+        src.pushAccelGyroMag(0, 0, 1, 0, 0, 0, 30, 0, 0);
+        ahrs.update(0.01f);
+    }
+
+    EXPECT_NEAR(ahrs.latest().accel[2], 1.0f, 1.0e-3f);
+    EXPECT_NEAR(ahrs.latest().mag[0], 30.0f, 1.0e-3f);
 }
 
 TEST(AhrsController, CalibrationExportImportRoundTrip)
