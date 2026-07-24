@@ -128,7 +128,6 @@ constexpr float MAHONY_KP_BOOST{5.0f};
 constexpr float MAHONY_KP_DEFAULT{1.0f};
 uint32_t settle_until_ms{};  // 0: no boost active
 
-//! @brief Start the settle boost if the just-selected filter needs one (call right after selectFilter())
 /*!
   @brief Remove the gyroscope's static bias once, at boot, before any filter integrates it
   @details Every filter accumulates an uncorrected gyro bias straight into yaw, so a few dps of
@@ -157,6 +156,7 @@ void calibrate_gyro_at_boot()
     }
 }
 
+//! @brief Start the settle boost if the just-selected filter needs one (call right after selectFilter())
 void begin_settle_boost()
 {
     settle_until_ms = 0;
