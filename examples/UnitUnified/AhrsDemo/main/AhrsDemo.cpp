@@ -1361,7 +1361,12 @@ void loop()
     }
     if (M5.BtnA.wasHold()) {  // long press: toggle mag auto-calibration (sphere-fit hard-iron)
         auto_cal_enabled = !auto_cal_enabled;
-        ahrs.writeAutoCalibration(0, 0, auto_cal_enabled ? 64 : 0);
+        // Read-modify-write: only the mag strength is toggled here. Passing 0 for the other two
+        // would silently switch off the gyro auto-calibration that begin() enables by default,
+        // and its zero-rate offset would go straight back into yaw.
+        uint8_t accel{}, gyro{}, mag{};
+        ahrs.readAutoCalibration(accel, gyro, mag);
+        ahrs.writeAutoCalibration(accel, gyro, auto_cal_enabled ? 64 : 0);
         M5_LOGI("Mag auto-calibration %s%s", auto_cal_enabled ? "ON" : "OFF",
                 auto_cal_enabled ? " (wave the device in a figure-eight to converge)" : " (converged offset kept)");
     }
