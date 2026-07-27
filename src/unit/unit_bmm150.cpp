@@ -28,22 +28,11 @@ constexpr uint8_t SUSPEND{0x00};  // Power bit cleared: lowest power state (rese
 constexpr uint8_t SOFT_RESET_AND_POWER_ON{0x83};
 constexpr uint8_t OPMODE_NORMAL{0x00};
 
-// Output data rate -> sampling interval (ms), indexed by the DataRate raw value.
-// DataRate is bit-value based (non-monotonic in Hz); see unit_bmm150_data.hpp
-constexpr uint32_t RATE_INTERVAL_MS[8] = {
-    100,  // Rate10Hz
-    500,  // Rate2Hz
-    167,  // Rate6Hz
-    125,  // Rate8Hz
-    67,   // Rate15Hz
-    50,   // Rate20Hz
-    40,   // Rate25Hz
-    33,   // Rate30Hz
-};
-
+// Output data rate -> sampling interval (ms). Derived from bmm150::rate_interval_us() so the rate
+// table stays in one place; that same table bounds which repetitions fit (see repetition_fits())
 constexpr uint32_t interval_ms(const DataRate rate)
 {
-    return RATE_INTERVAL_MS[static_cast<uint8_t>(rate)];
+    return rate_interval_us(rate) / 1000U;
 }
 }  // namespace
 
@@ -143,11 +132,20 @@ bool UnitBMM150::start_periodic_measurement(const bmm150::DataRate rate, const b
         return false;
     }
 
-    // writePreset/writeDataRate also sync _cfg (and _interval) on success
-    if (!writePreset(preset) || !writeDataRate(rate)) {
+    // Validate the target pair here rather than letting writePreset()/writeDataRate() check it one
+    // at a time: whichever is written first is measured against the other half's *old* value, so a
+    // perfectly valid pair (10Hz + HighAccuracy after 30Hz + Regular) would be rejected in passing
+    if (!repetition_fits(rate, preset_rep_xy(preset), preset_rep_z(preset))) {
+        M5_LIB_LOGE("Preset needs %uus, longer than the %uus period of the requested rate",
+                    measurement_time_us(preset_rep_xy(preset), preset_rep_z(preset)), rate_interval_us(rate));
+        return false;
+    }
+    if (!write_repetition_unchecked(preset_rep_xy(preset), preset_rep_z(preset)) ||
+        !write_data_rate_unchecked(rate)) {
         M5_LIB_LOGE("Failed to initialize");
         return false;
     }
+    _cfg.preset = preset;
 
     _periodic = true;
     _latest   = 0;
@@ -207,15 +205,66 @@ bool UnitBMM150::wakeup()
 
 bool UnitBMM150::writePreset(const bmm150::Preset preset)
 {
-    if (write_register8_verified(REG_REP_XY, preset_rep_xy(preset)) &&
-        write_register8_verified(REG_REP_Z, preset_rep_z(preset))) {
-        _cfg.preset = preset;
-        return true;
+    if (!writeRepetition(preset_rep_xy(preset), preset_rep_z(preset))) {
+        return false;
     }
-    return false;
+    _cfg.preset = preset;
+    return true;
+}
+
+bool UnitBMM150::writeRepetition(const uint8_t rep_xy, const uint8_t rep_z)
+{
+    if (inPeriodic()) {
+        M5_LIB_LOGD("Periodic measurements are running");
+        return false;
+    }
+    // Validate against the rate the device is actually running, not _cfg: a caller that changed the
+    // rate through another path would otherwise be checked against a stale value
+    bmm150::DataRate rate{};
+    if (!readDataRate(rate)) {
+        M5_LIB_LOGE("Failed to read the data rate");
+        return false;
+    }
+    if (!repetition_fits(rate, rep_xy, rep_z)) {
+        M5_LIB_LOGE("Repetition %u/%u needs %uus, longer than the %uus period of the current rate",
+                    rep_xy, rep_z, measurement_time_us(rep_xy, rep_z), rate_interval_us(rate));
+        return false;
+    }
+    return write_repetition_unchecked(rep_xy, rep_z);
+}
+
+bool UnitBMM150::readRepetition(uint8_t& rep_xy, uint8_t& rep_z)
+{
+    return readRegister8(REG_REP_XY, rep_xy, 0) && readRegister8(REG_REP_Z, rep_z, 0);
 }
 
 bool UnitBMM150::writeDataRate(const bmm150::DataRate rate)
+{
+    if (inPeriodic()) {
+        M5_LIB_LOGD("Periodic measurements are running");
+        return false;
+    }
+    // Speeding up can leave the current repetitions unable to finish inside the new period, which
+    // silently stops the data registers from updating -- reject it instead
+    uint8_t rep_xy{}, rep_z{};
+    if (!readRepetition(rep_xy, rep_z)) {
+        M5_LIB_LOGE("Failed to read the repetition registers");
+        return false;
+    }
+    if (!repetition_fits(rate, rep_xy, rep_z)) {
+        M5_LIB_LOGE("The current repetition %u/%u needs %uus, longer than the %uus period of the new rate",
+                    rep_xy, rep_z, measurement_time_us(rep_xy, rep_z), rate_interval_us(rate));
+        return false;
+    }
+    return write_data_rate_unchecked(rate);
+}
+
+bool UnitBMM150::write_repetition_unchecked(const uint8_t rep_xy, const uint8_t rep_z)
+{
+    return write_register8_verified(REG_REP_XY, rep_xy) && write_register8_verified(REG_REP_Z, rep_z);
+}
+
+bool UnitBMM150::write_data_rate_unchecked(const bmm150::DataRate rate)
 {
     if (write_register8_verified(REG_OP_MODE,
                                  static_cast<uint8_t>((static_cast<uint8_t>(rate) << 3) | OPMODE_NORMAL))) {
@@ -234,23 +283,6 @@ bool UnitBMM150::readDataRate(bmm150::DataRate& rate)
     }
     rate = static_cast<bmm150::DataRate>((reg >> 3) & 0x07);
     return true;
-}
-
-bool UnitBMM150::readPreset(bmm150::Preset& preset)
-{
-    uint8_t rep_xy{}, rep_z{};
-    if (!readRegister8(REG_REP_XY, rep_xy, 0) || !readRegister8(REG_REP_Z, rep_z, 0)) {
-        return false;
-    }
-    constexpr bmm150::Preset PRESETS[]{bmm150::Preset::LowPower, bmm150::Preset::Regular,
-                                       bmm150::Preset::EnhancedRegular, bmm150::Preset::HighAccuracy};
-    for (const auto p : PRESETS) {
-        if (rep_xy == preset_rep_xy(p) && rep_z == preset_rep_z(p)) {
-            preset = p;
-            return true;
-        }
-    }
-    return false;  // Current registers do not match any known preset
 }
 
 bool UnitBMM150::read_trim(bmm150::trim_t& trim)

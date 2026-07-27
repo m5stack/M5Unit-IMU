@@ -277,3 +277,65 @@ TEST(BMM150Data, PresetRepValues)
     EXPECT_EQ(preset_rep_xy(Preset::HighAccuracy), 0x17);
     EXPECT_EQ(preset_rep_z(Preset::HighAccuracy), 0x52);
 }
+
+TEST(BMM150Data, RepetitionCountsFromRegisterValues)
+{
+    // nXY = 1 + 2*REPXY, nZ = 1 + REPZ -- the presets have to land on the datasheet's Table 3 counts
+    EXPECT_EQ(repetition_xy(preset_rep_xy(Preset::LowPower)), 3);
+    EXPECT_EQ(repetition_z(preset_rep_z(Preset::LowPower)), 3);
+    EXPECT_EQ(repetition_xy(preset_rep_xy(Preset::Regular)), 9);
+    EXPECT_EQ(repetition_z(preset_rep_z(Preset::Regular)), 15);
+    EXPECT_EQ(repetition_xy(preset_rep_xy(Preset::EnhancedRegular)), 15);
+    EXPECT_EQ(repetition_z(preset_rep_z(Preset::EnhancedRegular)), 27);
+    EXPECT_EQ(repetition_xy(preset_rep_xy(Preset::HighAccuracy)), 47);
+    EXPECT_EQ(repetition_z(preset_rep_z(Preset::HighAccuracy)), 83);
+
+    // Arbitrary values are legal too: only odd nXY is reachable, and the registers span 8 bits
+    EXPECT_EQ(repetition_xy(0), 1);
+    EXPECT_EQ(repetition_z(0), 1);
+    EXPECT_EQ(repetition_xy(255), 511);
+    EXPECT_EQ(repetition_z(255), 256);
+}
+
+TEST(BMM150Data, MeasurementTimeMatchesTheDatasheetMaxOdr)
+{
+    // Table 3's "max ODR in forced mode" column is 1/measurement_time; reproducing all four rows is
+    // what pins the 145us/500us/980us relation this file uses
+    struct {
+        Preset preset;
+        uint32_t max_odr_hz;
+    } const expected[] = {
+        {Preset::LowPower, 300},  // datasheet says ">300"
+        {Preset::Regular, 100},
+        {Preset::EnhancedRegular, 60},
+        {Preset::HighAccuracy, 20},
+    };
+    for (const auto& e : expected) {
+        const uint32_t us  = measurement_time_us(preset_rep_xy(e.preset), preset_rep_z(e.preset));
+        const uint32_t odr = 1000000U / us;
+        EXPECT_GE(odr, e.max_odr_hz) << "preset index " << static_cast<int>(e.preset);
+        // ...and not wildly above it either (LowPower is the open-ended ">300" row)
+        if (e.preset != Preset::LowPower) {
+            EXPECT_LT(odr, e.max_odr_hz + e.max_odr_hz / 4) << "preset index " << static_cast<int>(e.preset);
+        }
+    }
+}
+
+TEST(BMM150Data, HighAccuracyDoesNotFitThirtyHertz)
+{
+    // The 30Hz default period is 33.3ms but HighAccuracy needs 49.3ms, so the measurement never
+    // completes and the data registers stop updating -- repetition_fits() has to reject that pair
+    EXPECT_FALSE(repetition_fits(DataRate::Rate30Hz, preset_rep_xy(Preset::HighAccuracy),
+                                 preset_rep_z(Preset::HighAccuracy)));
+    // 20Hz (50ms) is its documented ceiling and does fit
+    EXPECT_TRUE(repetition_fits(DataRate::Rate20Hz, preset_rep_xy(Preset::HighAccuracy),
+                                preset_rep_z(Preset::HighAccuracy)));
+    // Every other preset keeps up with 30Hz
+    EXPECT_TRUE(repetition_fits(DataRate::Rate30Hz, preset_rep_xy(Preset::Regular), preset_rep_z(Preset::Regular)));
+    EXPECT_TRUE(repetition_fits(DataRate::Rate30Hz, preset_rep_xy(Preset::EnhancedRegular),
+                                preset_rep_z(Preset::EnhancedRegular)));
+    EXPECT_TRUE(repetition_fits(DataRate::Rate30Hz, preset_rep_xy(Preset::LowPower), preset_rep_z(Preset::LowPower)));
+    // The slowest rate has room for anything, the maximum repetitions for nothing faster
+    EXPECT_TRUE(repetition_fits(DataRate::Rate2Hz, 255, 255));
+    EXPECT_FALSE(repetition_fits(DataRate::Rate10Hz, 255, 255));
+}

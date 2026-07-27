@@ -77,21 +77,36 @@ public:
     ///@{
     //! @brief Write the accuracy/power preset (REG_REP_XY/REG_REP_Z)
     //! @param[in] preset Preset
-    //! @return True if successful
+    //! @return True if successful, false if the preset cannot keep up with the current data rate
+    //! @note Convenience wrapper around writeRepetition() with the preset's repetition values
+    //! @warning During periodic measurement runs, an error is returned
     bool writePreset(const bmm150::Preset preset);
+    /*!
+      @brief Write the repetition (oversampling) registers directly
+      @param[in] rep_xy REG_REP_XY value; the sensor performs 1 + 2*rep_xy repetitions on X/Y
+      @param[in] rep_z REG_REP_Z value; the sensor performs 1 + rep_z repetitions on Z
+      @return True if successful, false if the repetitions cannot keep up with the current data rate
+      @details The four presets are only Bosch's recommendations -- both registers accept any 8bit
+      value. More repetitions means less noise but a longer measurement, so the pair is rejected when
+      it cannot finish inside one output period (bmm150::repetition_fits()); raise it here by slowing
+      the rate first. Register values, not repetition counts, because nXY can only be odd
+      @warning During periodic measurement runs, an error is returned
+     */
+    bool writeRepetition(const uint8_t rep_xy, const uint8_t rep_z);
+    //! @brief Read the repetition registers from the device (REG_REP_XY/REG_REP_Z)
+    //! @param[out] rep_xy REG_REP_XY value
+    //! @param[out] rep_z REG_REP_Z value
+    //! @return True if successful
+    bool readRepetition(uint8_t& rep_xy, uint8_t& rep_z);
     //! @brief Write the output data rate
     //! @param[in] rate Data rate
-    //! @return True if successful
+    //! @return True if successful, false if the current repetitions cannot keep up with the new rate
+    //! @warning During periodic measurement runs, an error is returned
     bool writeDataRate(const bmm150::DataRate rate);
     //! @brief Read the output data rate from the device (REG_OP_MODE bits[5:3])
     //! @param[out] rate Data rate
     //! @return True if successful
     bool readDataRate(bmm150::DataRate& rate);
-    //! @brief Read the accuracy/power preset from the device (REG_REP_XY/REG_REP_Z)
-    //! @param[out] preset Preset
-    //! @return True if successful, false if the current REG_REP_XY/REG_REP_Z values do not
-    //! match any of the known presets
-    bool readPreset(bmm150::Preset& preset);
     ///@}
 
     ///@name Reset
@@ -166,6 +181,13 @@ protected:
     bool start_periodic_measurement();
     bool stop_periodic_measurement();
     bool read_measurement(bmm150::Data& d);
+    // Rate/repetition writers without the "does it fit" check. Needed because the public setters
+    // validate against whatever is on the device right now, which makes a valid target pair fail
+    // when applied one at a time: going from 30Hz/Regular to 10Hz/HighAccuracy has to pass through
+    // one combination that does not fit whichever half is written first. start_periodic_measurement()
+    // validates the pair up front instead and then writes both unchecked.
+    bool write_repetition_unchecked(const uint8_t rep_xy, const uint8_t rep_z);
+    bool write_data_rate_unchecked(const bmm150::DataRate rate);
     bool write_register8_verified(const uint8_t reg, const uint8_t val);
     bool read_trim(bmm150::trim_t& trim);
 

@@ -63,6 +63,50 @@ constexpr uint8_t preset_rep_z(const Preset p)
                                             : 0x52;
 }
 
+//! @brief Repetitions actually performed on X/Y for a REG_REP_XY register value (nXY = 1 + 2*REPXY)
+constexpr uint16_t repetition_xy(const uint8_t rep_xy)
+{
+    return static_cast<uint16_t>(1 + 2 * rep_xy);
+}
+
+//! @brief Repetitions actually performed on Z for a REG_REP_Z register value (nZ = 1 + REPZ)
+constexpr uint16_t repetition_z(const uint8_t rep_z)
+{
+    return static_cast<uint16_t>(1 + rep_z);
+}
+
+/*!
+  @brief Active measurement time (us) for the given repetition register values
+  @details Bosch's timing relation, which reproduces every "max ODR in forced mode" figure in the
+  datasheet's preset table: Regular (9/15) -> 9.8ms = 102Hz, HighAccuracy (47/83) -> 49.3ms = 20Hz.
+  A measurement that cannot finish inside one output period is simply not written to the data
+  registers (datasheet 4.2.4), so this is what bounds the usable rate -- see repetition_fits()
+ */
+constexpr uint32_t measurement_time_us(const uint8_t rep_xy, const uint8_t rep_z)
+{
+    return 145U * repetition_xy(rep_xy) + 500U * repetition_z(rep_z) + 980U;
+}
+
+//! @brief Output period (us) of the given data rate
+constexpr uint32_t rate_interval_us(const DataRate rate)
+{
+    return (rate == DataRate::Rate10Hz)   ? 100000U
+           : (rate == DataRate::Rate2Hz)  ? 500000U
+           : (rate == DataRate::Rate6Hz)  ? 166667U
+           : (rate == DataRate::Rate8Hz)  ? 125000U
+           : (rate == DataRate::Rate15Hz) ? 66667U
+           : (rate == DataRate::Rate20Hz) ? 50000U
+           : (rate == DataRate::Rate25Hz) ? 40000U
+                                          : 33333U;  // Rate30Hz
+}
+
+//! @brief Can a measurement with these repetitions complete within one period of this rate?
+//! @note HighAccuracy (49.3ms) does NOT fit 30Hz (33.3ms); its ceiling is 20Hz
+constexpr bool repetition_fits(const DataRate rate, const uint8_t rep_xy, const uint8_t rep_z)
+{
+    return measurement_time_us(rep_xy, rep_z) <= rate_interval_us(rate);
+}
+
 //! @brief Sentinel returned by comp_x()/comp_y()/comp_z() on overflow or invalid input
 constexpr int16_t OVERFLOW_OUTPUT{-32768};
 

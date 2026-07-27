@@ -192,11 +192,78 @@ TEST_F(TestBMM150, ReadSettings)
 
     // begin() 直後は config_t のデフォルト (Preset::Regular / DataRate::Rate30Hz) のはず
     DataRate rate{};
-    Preset preset{};
+    uint8_t rep_xy{}, rep_z{};
     EXPECT_TRUE(unit->readDataRate(rate));
     EXPECT_EQ(rate, DataRate::Rate30Hz);
-    EXPECT_TRUE(unit->readPreset(preset));
-    EXPECT_EQ(preset, Preset::Regular);
+    EXPECT_TRUE(unit->readRepetition(rep_xy, rep_z));
+    EXPECT_EQ(rep_xy, preset_rep_xy(Preset::Regular));
+    EXPECT_EQ(rep_z, preset_rep_z(Preset::Regular));
+}
+
+TEST_F(TestBMM150, RepetitionRejectsWhatTheRateCannotComplete)
+{
+    SCOPED_TRACE(ustr);
+
+    // Repetition and rate both decide how long one measurement takes, so they are stop-first setters
+    // (matching M5Unit-ENV's BMP280/QMP6988/SPA06 oversampling and rate writers)
+    uint8_t rep_xy{}, rep_z{};
+    DataRate rate{};
+
+    // ---- while periodic (begin() leaves the device measuring at Regular / 30Hz): all refused ----
+    EXPECT_TRUE(unit->inPeriodic());
+
+    EXPECT_FALSE(unit->writeRepetition(preset_rep_xy(Preset::EnhancedRegular), preset_rep_z(Preset::EnhancedRegular)));
+    EXPECT_FALSE(unit->writePreset(Preset::EnhancedRegular));
+    EXPECT_FALSE(unit->writeDataRate(DataRate::Rate10Hz));
+
+    // ...and the device is left exactly as begin() configured it
+    EXPECT_TRUE(unit->readRepetition(rep_xy, rep_z));
+    EXPECT_EQ(rep_xy, preset_rep_xy(Preset::Regular));
+    EXPECT_EQ(rep_z, preset_rep_z(Preset::Regular));
+    EXPECT_TRUE(unit->readDataRate(rate));
+    EXPECT_EQ(rate, DataRate::Rate30Hz);
+
+    // ---- stopped: the same calls are accepted, and the timing check takes over ----
+    EXPECT_TRUE(unit->stopPeriodicMeasurement());
+    EXPECT_FALSE(unit->inPeriodic());
+
+    // A measurement that cannot finish inside one output period is never written to the data
+    // registers, so both directions of that clash have to be refused rather than silently accepted
+    EXPECT_FALSE(unit->writeRepetition(preset_rep_xy(Preset::HighAccuracy), preset_rep_z(Preset::HighAccuracy)));
+    EXPECT_FALSE(unit->writePreset(Preset::HighAccuracy));
+    EXPECT_TRUE(unit->readRepetition(rep_xy, rep_z));
+    EXPECT_EQ(rep_xy, preset_rep_xy(Preset::Regular));
+    EXPECT_EQ(rep_z, preset_rep_z(Preset::Regular));
+
+    // One that fits is accepted
+    EXPECT_TRUE(unit->writePreset(Preset::EnhancedRegular));
+    EXPECT_TRUE(unit->readRepetition(rep_xy, rep_z));
+    EXPECT_EQ(rep_xy, preset_rep_xy(Preset::EnhancedRegular));
+    EXPECT_EQ(rep_z, preset_rep_z(Preset::EnhancedRegular));
+
+    // Slow down first and the same repetitions are accepted
+    EXPECT_TRUE(unit->writeDataRate(DataRate::Rate20Hz));
+    EXPECT_TRUE(unit->writeRepetition(preset_rep_xy(Preset::HighAccuracy), preset_rep_z(Preset::HighAccuracy)));
+
+    // ...and now the rate cannot be raised back while those repetitions are in place
+    EXPECT_FALSE(unit->writeDataRate(DataRate::Rate30Hz));
+    EXPECT_TRUE(unit->readDataRate(rate));
+    EXPECT_EQ(rate, DataRate::Rate20Hz);
+
+    // Arbitrary (non-preset) values are legal as long as they fit: nXY = 1 + 2*rep_xy is always odd,
+    // so every register value is valid and only the timing decides
+    EXPECT_TRUE(unit->writeRepetition(0x05, 0x10));  // nXY = 11, nZ = 17
+    EXPECT_TRUE(unit->readRepetition(rep_xy, rep_z));
+    EXPECT_EQ(rep_xy, 0x05);
+    EXPECT_EQ(rep_z, 0x10);
+
+    // startPeriodicMeasurement() validates the (rate, preset) pair up front
+    EXPECT_FALSE(unit->startPeriodicMeasurement(DataRate::Rate30Hz, Preset::HighAccuracy));
+    EXPECT_FALSE(unit->inPeriodic());
+
+    // Restore the default settings for the tests that follow
+    EXPECT_TRUE(unit->startPeriodicMeasurement(DataRate::Rate30Hz, Preset::Regular));
+    EXPECT_TRUE(unit->inPeriodic());
 }
 
 TEST_F(TestBMM150, ImuSpec)
@@ -331,12 +398,16 @@ TEST_F(TestBMM150, StartPeriodicWithArgs)
     EXPECT_TRUE(unit->startPeriodicMeasurement(DataRate::Rate10Hz, Preset::HighAccuracy));
     EXPECT_TRUE(unit->inPeriodic());
 
+    // Also the ordering case: 30Hz/Regular -> 10Hz/HighAccuracy passes through a combination that
+    // does not fit whichever half is written first, so this only works because the pair is validated
+    // up front (see start_periodic_measurement)
     DataRate rate{};
-    Preset preset{};
+    uint8_t rep_xy{}, rep_z{};
     EXPECT_TRUE(unit->readDataRate(rate));
     EXPECT_EQ(rate, DataRate::Rate10Hz);
-    EXPECT_TRUE(unit->readPreset(preset));
-    EXPECT_EQ(preset, Preset::HighAccuracy);
+    EXPECT_TRUE(unit->readRepetition(rep_xy, rep_z));
+    EXPECT_EQ(rep_xy, preset_rep_xy(Preset::HighAccuracy));
+    EXPECT_EQ(rep_z, preset_rep_z(Preset::HighAccuracy));
 
     const auto cfg = unit->config();
     EXPECT_EQ(cfg.rate, DataRate::Rate10Hz);
