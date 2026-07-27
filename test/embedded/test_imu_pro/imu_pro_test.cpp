@@ -129,18 +129,37 @@ TEST_F(TestMiniIMUPro, MagThroughAuxBridge)
     m5::imu::imu_convert_param_t param{};
     unit->imu().imuConvertParam(param);
     m5::imu::imu_raw_data_t raw{};
+    float norm{};
     int checked{};
     while (m5::imu::any(unit->imu().readImuRaw(raw))) {
-        const float mx   = raw.mag[0] * param.mag_res;
-        const float my   = raw.mag[1] * param.mag_res;
-        const float mz   = raw.mag[2] * param.mag_res;
-        const float norm = std::sqrt(mx * mx + my * my + mz * mz);
+        const float mx = raw.mag[0] * param.mag_res;
+        const float my = raw.mag[1] * param.mag_res;
+        const float mz = raw.mag[2] * param.mag_res;
+        norm           = std::sqrt(mx * mx + my * my + mz * mz);
         EXPECT_TRUE(std::isfinite(norm));
-        EXPECT_GT(norm, 5.0f);     // geomagnetic floor
-        EXPECT_LT(norm, 1500.0f);  // generous hard-iron/desk-magnet ceiling
+        // Sanity only: non-zero, and clear of a base plate carrying a magnet (over 1200uT measured
+        // on a Gray). No tighter floor -- hard iron cancels much of the geomagnetic field at some
+        // orientations, so the scale is checked structurally below instead.
+        EXPECT_GT(norm, 1.0f);
+        EXPECT_LT(norm, 2000.0f);
         ++checked;
     }
     EXPECT_GT(checked, 0);
+
+    // out.mag holds the compensated integer uT rescaled by 16 (adj_x/y/z) and mag_res scales it back,
+    // so the two readings have to agree however weak the local field is; losing either factor moves
+    // them 16x apart. Same guard as test_bmm150 / test_bmi270's AUX path.
+    const auto d = unit->imu().latest().mag;
+    if (d.comp_x() != bmm150::OVERFLOW_OUTPUT && d.comp_y() != bmm150::OVERFLOW_OUTPUT &&
+        d.comp_z() != bmm150::OVERFLOW_OUTPUT) {
+        const float cx        = d.comp_x();
+        const float cy        = d.comp_y();
+        const float cz        = d.comp_z();
+        const float comp_norm = std::sqrt(cx * cx + cy * cy + cz * cz);
+        M5_LOGI("AUX mag: comp=%.1fuT readImuRaw*mag_res=%.1fuT (raw=[%ld,%ld,%ld] mag_res=%.5f)", comp_norm, norm,
+                (long)raw.mag[0], (long)raw.mag[1], (long)raw.mag[2], param.mag_res);
+        EXPECT_NEAR(norm, comp_norm, comp_norm * 0.1f + 3.0f);
+    }
 }
 
 TEST_F(TestMiniIMUPro, ChildCapabilities)
