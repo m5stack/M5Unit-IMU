@@ -76,14 +76,18 @@ TEST_F(TestBMM150, PeriodicMeasurement)
     // Reject the overflow sentinel: comp_x()/comp_y()/comp_z() return bmm150::OVERFLOW_OUTPUT (-32768)
     // for a not-ready or invalid read, which would otherwise leak -2048uT per axis into the norm (the
     // source of the earlier flaky ~2049uT reading). Poll for a fully valid sample and assert on that.
+
     float norm     = 0.0f;
     bool got_valid = false;
     for (int i = 0; i < 50 && !got_valid; ++i) {
         const auto d = unit->latest();
         if (d.comp_x() != OVERFLOW_OUTPUT && d.comp_y() != OVERFLOW_OUTPUT && d.comp_z() != OVERFLOW_OUTPUT) {
-            const float mx = d.comp_x() / 16.0f;
-            const float my = d.comp_y() / 16.0f;
-            const float mz = d.comp_z() / 16.0f;
+            // comp_x/y/z() are integer uT (1 LSB/uT), not 16 LSB/uT: rotating a board through every
+            // orientation traces a sphere whose radius is the local geomagnetic field, and that radius
+            // measured ~36 in these very units. adj_x/y/z() rescales them to the library-wide 16 LSB/uT.
+            const float mx = d.comp_x();
+            const float my = d.comp_y();
+            const float mz = d.comp_z();
             norm           = std::sqrt(mx * mx + my * my + mz * mz);
             got_valid      = true;
             break;
@@ -93,16 +97,51 @@ TEST_F(TestBMM150, PeriodicMeasurement)
     }
     EXPECT_TRUE(got_valid);
     EXPECT_TRUE(std::isfinite(norm));
+
+    // Only a sanity range here -- the real scaling guard is the comp vs readImuRaw comparison below.
+    // A magnitude band cannot do that job: hard iron cancels much of the geomagnetic field at some
+    // orientations (an AtomS3R measured under 15uT), while a base plate carrying a magnet pushed a
+    // Gray past 1200uT, so any floor tight enough to catch a 16x error would be flaky.
+    EXPECT_GT(norm, 1.0f);
 #if defined(TEST_BUILTIN)
-    // A built-in magnetometer sits next to the host's speaker/battery magnet, so allow a wider ceiling
-    // for mild hard-iron offset (measured ~97uT on Gray) than the clean external geomagnetic range.
-    EXPECT_GT(norm, 10.0f);
-    EXPECT_LT(norm, 200.0f);
+    EXPECT_LT(norm, 2000.0f);
 #else
-    // 補償後の磁場 (16 LSB/uT) を uT に戻し、地磁気の常識的な範囲 (10-100uT) に収まることを確認
-    EXPECT_GT(norm, 10.0f);
-    EXPECT_LT(norm, 100.0f);
+    EXPECT_LT(norm, 500.0f);
 #endif
+
+    // readImuRaw() has to expose that same field in the library-wide 16 LSB/uT scale (mag_res = 1/16),
+    // so multiplying it back out must land in the same physical band. This is what catches a regression
+    // in out.mag itself: storing the compensated uT unscaled would divide this norm by 16.
+    m5::imu::imu_convert_param_t cp{};
+    unit->imuConvertParam(cp);
+    m5::imu::imu_raw_data_t raw{};
+    bool got_raw{false};
+    for (int i = 0; i < 50 && !got_raw; ++i) {
+        while (m5::imu::any(unit->readImuRaw(raw))) {
+            if (raw.mag[0] != OVERFLOW_OUTPUT && raw.mag[1] != OVERFLOW_OUTPUT && raw.mag[2] != OVERFLOW_OUTPUT) {
+                got_raw = true;
+                break;
+            }
+        }
+        if (!got_raw) {
+            unit->update();
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+    }
+    EXPECT_TRUE(got_raw);
+    if (got_raw) {
+        const float rx       = raw.mag[0] * cp.mag_res;
+        const float ry       = raw.mag[1] * cp.mag_res;
+        const float rz       = raw.mag[2] * cp.mag_res;
+        const float raw_norm = std::sqrt(rx * rx + ry * ry + rz * rz);
+        // Log the measured field: the bounds above are deliberately loose (hard iron varies per host
+        // and per desk), so the actual number is what tells a reader whether the scale is sane
+        M5_LOGI("mag: comp=%.1fuT readImuRaw*mag_res=%.1fuT", norm, raw_norm);
+        // Both are uT by construction (adj_* scales comp by 16, mag_res scales it back), so they have
+        // to agree to within sensor noise -- a mismatch means one of those two factors is wrong
+        EXPECT_NEAR(raw_norm, norm, norm * 0.1f + 3.0f);
+        EXPECT_GT(raw_norm, 15.0f);
+    }
 }
 
 #if defined(TEST_BUILTIN)

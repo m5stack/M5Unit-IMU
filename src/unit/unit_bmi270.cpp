@@ -428,6 +428,14 @@ bool UnitBMI270::probe_aux_bmm150()
         return false;
     }
 
+    // Set the repetition (oversampling) before leaving setup mode, matching UnitBMM150's Regular
+    // preset. Without this the BMM150 stays at its power-on default and reads ~6x low (see REG_REP_*).
+    if (!aux_write_register8(REG_BMM150_REP_XY, bmm150::preset_rep_xy(bmm150::Preset::Regular)) ||
+        !aux_write_register8(REG_BMM150_REP_Z, bmm150::preset_rep_z(bmm150::Preset::Regular))) {
+        M5_LIB_LOGE("Failed to set the AUX BMM150 repetition preset");
+        return false;
+    }
+
     if (!aux_write_register8(REG_BMM150_OP_MODE, BMM150_OP_MODE_NORMAL_ODR30HZ) ||
         !write_register8_verified(REG_AUX_IF_CONF, AUX_IF_CONF_DATA_MODE) ||
         !write_register8_verified(REG_AUX_RD_ADDR, REG_BMM150_DATA_X_LSB) ||
@@ -593,9 +601,9 @@ Capability UnitBMI270::readImuRaw(m5::imu::imu_raw_data_t& out)
     out.gyro[2]  = d->gyro_z();
     out.temp     = _last_temp;
     if (d->aux_mag) {
-        out.mag[0] = d->mag.comp_x();
-        out.mag[1] = d->mag.comp_y();
-        out.mag[2] = d->mag.comp_z();
+        out.mag[0] = d->mag.adj_x();
+        out.mag[1] = d->mag.adj_y();
+        out.mag[2] = d->mag.adj_z();
     }
     return imuSpec();
 }

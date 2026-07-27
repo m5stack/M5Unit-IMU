@@ -200,6 +200,38 @@ TEST(BMM150Data, CompensateXMatchesOracle)
     }
 }
 
+TEST(BMM150Data, AdjScalesCompensatedTo16LsbPerMicroTesla)
+{
+    Data d{};
+    d.trim = make_trim_a();
+    set_xy_raw(d, 0, 1, 1000);
+    set_z_raw(d, 5000);
+    set_rhall_raw(d, 8000);
+    // adj_* carries the compensated integer uT into the library-wide 16 LSB/uT raw scale
+    EXPECT_EQ(d.adj_x(), static_cast<int32_t>(d.comp_x()) * 16);
+    EXPECT_EQ(d.adj_y(), static_cast<int32_t>(d.comp_y()) * 16);
+    EXPECT_EQ(d.adj_z(), static_cast<int32_t>(d.comp_z()) * 16);
+}
+
+TEST(BMM150Data, AdjPreservesOverflowSentinel)
+{
+    // The overflow sentinel must pass through unscaled, or is_mag_overflow() (which tests == -32768)
+    // stops recognizing it once adj_* multiplies by 16.
+    Data d{};
+    d.trim = make_trim_a();
+    set_xy_raw(d, 0, 1, -4096);
+    set_rhall_raw(d, 6000);
+    EXPECT_EQ(d.comp_x(), OVERFLOW_OUTPUT);
+    EXPECT_EQ(d.adj_x(), static_cast<int32_t>(OVERFLOW_OUTPUT));
+
+    Data dz{};
+    dz.trim = make_trim_a();
+    set_z_raw(dz, -16384);
+    set_rhall_raw(dz, 6000);
+    EXPECT_EQ(dz.comp_z(), OVERFLOW_OUTPUT);
+    EXPECT_EQ(dz.adj_z(), static_cast<int32_t>(OVERFLOW_OUTPUT));
+}
+
 TEST(BMM150Data, CompensateYMatchesOracle)
 {
     const trim_t trims[] = {make_trim_a(), make_trim_b()};

@@ -161,13 +161,23 @@ TEST_F(TestBMI270, AuxMagWhenPresent)
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
 
+    m5::imu::imu_convert_param_t cp{};
+    unit->imuConvertParam(cp);
     m5::imu::imu_raw_data_t raw{};
     bool saw_nonzero_mag{false};
+    float mag_norm{};
     int popped{};
     while (m5::imu::any(unit->readImuRaw(raw))) {
         ++popped;
         if (raw.mag[0] != 0 || raw.mag[1] != 0 || raw.mag[2] != 0) {
             saw_nonzero_mag = true;
+            if (raw.mag[0] != bmm150::OVERFLOW_OUTPUT && raw.mag[1] != bmm150::OVERFLOW_OUTPUT &&
+                raw.mag[2] != bmm150::OVERFLOW_OUTPUT) {
+                const float mx = raw.mag[0] * cp.mag_res;
+                const float my = raw.mag[1] * cp.mag_res;
+                const float mz = raw.mag[2] * cp.mag_res;
+                mag_norm       = std::sqrt(mx * mx + my * my + mz * mz);
+            }
         }
     }
     EXPECT_GT(popped, 0);
@@ -176,6 +186,26 @@ TEST_F(TestBMI270, AuxMagWhenPresent)
         // AUX BMM150 detected: expect a real magnetometer reading in at least one of the
         // popped samples (BMM150 updates at 30Hz; 100ms should yield at least one)
         EXPECT_TRUE(saw_nonzero_mag);
+        // The scale guard is structural rather than a magnitude band: out.mag holds the compensated
+        // integer uT rescaled by 16 (adj_x/y/z) and mag_res scales it back, so the two readings have
+        // to agree. Losing either factor moves them 16x apart however weak the local field is -- and
+        // it can be weak: hard iron cancels much of the geomagnetic field at some orientations (an
+        // AtomS3R measured under 15uT), so a fixed floor would only be a flaky test.
+        const auto d = unit->latest().mag;
+        if (d.comp_x() != bmm150::OVERFLOW_OUTPUT && d.comp_y() != bmm150::OVERFLOW_OUTPUT &&
+            d.comp_z() != bmm150::OVERFLOW_OUTPUT) {
+            const float cx        = d.comp_x();
+            const float cy        = d.comp_y();
+            const float cz        = d.comp_z();
+            const float comp_norm = std::sqrt(cx * cx + cy * cy + cz * cz);
+            M5_LOGI("AUX mag: comp=%.1fuT readImuRaw*mag_res=%.1fuT (raw=[%ld,%ld,%ld] mag_res=%.5f)", comp_norm,
+                    mag_norm, (long)raw.mag[0], (long)raw.mag[1], (long)raw.mag[2], cp.mag_res);
+            EXPECT_NEAR(mag_norm, comp_norm, comp_norm * 0.1f + 3.0f);
+        }
+        // Only a sanity range on top: non-zero, and clear of a base plate carrying a magnet
+        // (over 1200uT measured on a Gray)
+        EXPECT_GT(mag_norm, 1.0f);
+        EXPECT_LT(mag_norm, 2000.0f);
     } else {
         // No AUX BMM150 wired: readImuRaw() never touches out.mag, so it stays at its
         // zero-initialized default across every popped sample

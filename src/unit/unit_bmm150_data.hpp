@@ -133,7 +133,7 @@ struct Data {
     }
     ///@}
 
-    ///@name Compensated values (Bosch trim compensation, 16 LSB/uT)
+    ///@name Compensated values (Bosch trim compensation, integer uT = 1 LSB/uT)
     ///@{
     //! @brief Compensated magnetometer X (OVERFLOW_OUTPUT on overflow)
     inline int16_t comp_x() const
@@ -228,6 +228,32 @@ struct Data {
         return static_cast<int16_t>(result);
     }
     ///@}
+
+    ///@name Library-scaled values (compensated uT rescaled to the library-wide 16 LSB/uT)
+    ///@{
+    //! @brief comp_x() rescaled to 16 LSB/uT (OVERFLOW_OUTPUT preserved as the -32768 sentinel)
+    inline int32_t adj_x() const
+    {
+        return scale_16(comp_x());
+    }
+    //! @brief comp_y() rescaled to 16 LSB/uT (OVERFLOW_OUTPUT preserved as the -32768 sentinel)
+    inline int32_t adj_y() const
+    {
+        return scale_16(comp_y());
+    }
+    //! @brief comp_z() rescaled to 16 LSB/uT (OVERFLOW_OUTPUT preserved as the -32768 sentinel)
+    inline int32_t adj_z() const
+    {
+        return scale_16(comp_z());
+    }
+    ///@}
+
+private:
+    //! @brief Rescale one compensated axis (integer uT) to 16 LSB/uT, leaving the overflow sentinel intact
+    static inline int32_t scale_16(const int16_t compensated)
+    {
+        return (compensated == OVERFLOW_OUTPUT) ? compensated : static_cast<int32_t>(compensated) * 16;
+    }
 };
 
 }  // namespace bmm150

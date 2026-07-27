@@ -259,6 +259,8 @@ constexpr uint8_t REG_BMM150_CHIP_ID{0x40};
 constexpr uint8_t REG_BMM150_DATA_X_LSB{0x42};
 constexpr uint8_t REG_BMM150_POWER_CONTROL{0x4B};
 constexpr uint8_t REG_BMM150_OP_MODE{0x4C};
+constexpr uint8_t REG_BMM150_REP_XY{0x51};
+constexpr uint8_t REG_BMM150_REP_Z{0x52};
 ///@endcond
 }  // namespace command
 

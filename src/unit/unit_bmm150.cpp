@@ -327,9 +327,9 @@ Capability UnitBMM150::readImuRaw(m5::imu::imu_raw_data_t& out)
     }
     ++_consumed;
 
-    out.mag[0] = d->comp_x();
-    out.mag[1] = d->comp_y();
-    out.mag[2] = d->comp_z();
+    out.mag[0] = d->adj_x();
+    out.mag[1] = d->adj_y();
+    out.mag[2] = d->adj_z();
     return imuSpec();
 }
 
