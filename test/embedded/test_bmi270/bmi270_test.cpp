@@ -221,6 +221,52 @@ TEST_F(TestBMI270, AuxMagWhenPresent)
     }
 }
 
+TEST_F(TestBMI270, BandwidthParameter)
+{
+    SCOPED_TRACE(ustr);
+
+    const auto original = unit->config();
+    EXPECT_TRUE(unit->stopPeriodicMeasurement());
+
+    // The accelerometer's averaging-only bandwidths are reserved while the filter is in Performance
+    // mode, so that pair must be refused rather than written to the register as a reserved code
+    auto cfg               = original;
+    cfg.accel_filter_perf  = FilterPerf::Performance;
+    cfg.accel_bwp          = AccelBwp::Avg16;
+    unit->config(cfg);
+    EXPECT_FALSE(unit->startPeriodicMeasurement());
+    EXPECT_FALSE(unit->inPeriodic());
+
+    // The same bandwidth is fine once the filter averages instead of filtering
+    cfg.accel_filter_perf = FilterPerf::PowerOptimized;
+    unit->config(cfg);
+    EXPECT_TRUE(unit->startPeriodicMeasurement());
+    EXPECT_TRUE(unit->inPeriodic());
+
+    // A non-default filter bandwidth on both sensors is accepted and measurement keeps flowing
+    EXPECT_TRUE(unit->stopPeriodicMeasurement());
+    cfg.accel_filter_perf = FilterPerf::Performance;
+    cfg.accel_bwp         = AccelBwp::Osr2Avg2;
+    cfg.gyro_bwp          = GyroBwp::Osr4;
+    unit->config(cfg);
+    EXPECT_TRUE(unit->startPeriodicMeasurement());
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    int updated{};
+    for (int i = 0; i < 20; ++i) {
+        unit->update();
+        if (unit->updated()) {
+            ++updated;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    EXPECT_GT(updated, 0);
+
+    // Restore what begin() had set up for the tests that follow
+    EXPECT_TRUE(unit->stopPeriodicMeasurement());
+    unit->config(original);
+    EXPECT_TRUE(unit->startPeriodicMeasurement());
+}
+
 TEST_F(TestBMI270, AuxMagPresetRejectsWhatTheFixedRateCannotComplete)
 {
     SCOPED_TRACE(ustr);

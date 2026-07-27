@@ -53,6 +53,17 @@ public:
         //! the chip's power-on default and keeps hand-speed motion out of the under-sampled regime;
         //! lower it if power matters more than tracking fast rotation
         bmi270::GyroODR gyro_odr{bmi270::GyroODR::Rate200Hz};
+        //! Accelerometer filter performance mode. PowerOptimized also switches accel_bwp from
+        //! filtering to averaging, which is what makes its Avg16 and up usable
+        bmi270::FilterPerf accel_filter_perf{bmi270::FilterPerf::Performance};
+        //! Accelerometer bandwidth parameter (the chip's power-on default). Its 3dB cutoff scales
+        //! with accel_odr -- 89Hz at 200Hz in the normal filter. startPeriodicMeasurement() rejects
+        //! the averaging-only values while accel_filter_perf is Performance (bmi270::bwp_fits())
+        bmi270::AccelBwp accel_bwp{bmi270::AccelBwp::NormAvg4};
+        //! Gyroscope filter performance mode
+        bmi270::FilterPerf gyro_filter_perf{bmi270::FilterPerf::Performance};
+        //! Gyroscope bandwidth parameter (the chip's power-on default)
+        bmi270::GyroBwp gyro_bwp{bmi270::GyroBwp::Norm};
         //! Probe for an on-chip BMM150 magnetometer via the AUX interface on startPeriodicMeasurement()?
         //! If no BMM150 responds, the start still succeeds with 6-axis (accel/gyro) only
         bool enable_aux_bmm150{true};

@@ -78,3 +78,34 @@ TEST(BMI270Data, OdrIntervalMs)
     EXPECT_EQ(odr_interval_ms(GyroODR::Rate1600Hz), 1u);
     EXPECT_EQ(odr_interval_ms(GyroODR::Rate3200Hz), 1u);
 }
+
+TEST(BMI270Data, ConfValuesReproduceTheRegisterResetDefaults)
+{
+    // The datasheet gives ACC_CONF a 0xA8 reset value and GYR_CONF 0xA9, both of which decode to
+    // Performance / normal bandwidth at the power-on ODR. Reproducing them is what pins the bit
+    // packing (perf in bit7, bwp in bits[6:4] resp. [5:4], odr in bits[3:0])
+    EXPECT_EQ(acc_conf_value(FilterPerf::Performance, AccelBwp::NormAvg4, AccelODR::Rate100Hz), 0xA8);
+    EXPECT_EQ(gyr_conf_value(FilterPerf::Performance, GyroBwp::Norm, GyroODR::Rate200Hz), 0xA9);
+
+    // gyr_noise_perf (bit6) stays at its 0 reset value, so the gyro register never sets it
+    EXPECT_EQ(gyr_conf_value(FilterPerf::Performance, GyroBwp::Norm, GyroODR::Rate200Hz) & 0x40, 0);
+
+    // PowerOptimized clears bit7; the averaging factors land in bits[6:4]
+    EXPECT_EQ(acc_conf_value(FilterPerf::PowerOptimized, AccelBwp::Avg128, AccelODR::Rate100Hz), 0x78);
+    EXPECT_EQ(acc_conf_value(FilterPerf::PowerOptimized, AccelBwp::Osr4Avg1, AccelODR::Rate12_5Hz), 0x05);
+}
+
+TEST(BMI270Data, AveragingBandwidthIsReservedInPerformanceMode)
+{
+    // Avg16 and up only mean anything while the filter averages, i.e. in PowerOptimized mode
+    EXPECT_TRUE(bwp_fits(FilterPerf::Performance, AccelBwp::Osr4Avg1));
+    EXPECT_TRUE(bwp_fits(FilterPerf::Performance, AccelBwp::NormAvg4));
+    EXPECT_TRUE(bwp_fits(FilterPerf::Performance, AccelBwp::CicAvg8));
+    EXPECT_FALSE(bwp_fits(FilterPerf::Performance, AccelBwp::Avg16));
+    EXPECT_FALSE(bwp_fits(FilterPerf::Performance, AccelBwp::Avg128));
+
+    // PowerOptimized accepts every value
+    EXPECT_TRUE(bwp_fits(FilterPerf::PowerOptimized, AccelBwp::Osr4Avg1));
+    EXPECT_TRUE(bwp_fits(FilterPerf::PowerOptimized, AccelBwp::Avg16));
+    EXPECT_TRUE(bwp_fits(FilterPerf::PowerOptimized, AccelBwp::Avg128));
+}

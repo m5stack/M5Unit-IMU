@@ -73,6 +73,70 @@ enum class GyroODR : uint8_t {
     Rate3200Hz,       //!< @brief 3200Hz
 };
 
+/*!
+  @enum FilterPerf
+  @brief Filter performance mode (REG_ACC_CONF bit7 / REG_GYR_CONF bit7)
+  @note Also selects how the bandwidth parameter is interpreted; see AccelBwp
+ */
+enum class FilterPerf : uint8_t {
+    PowerOptimized,  //!< @brief Power optimized (ulp): the accelerometer's Bwp averages instead of filtering
+    Performance,     //!< @brief Performance optimized (hp, power-on default)
+};
+
+/*!
+  @enum AccelBwp
+  @brief Accelerometer bandwidth parameter (REG_ACC_CONF register 0x40, bits[6:4])
+  @details One field with two meanings, chosen by FilterPerf: a filter setting in Performance mode,
+  an averaging factor in PowerOptimized mode. The averaging-only values are reserved in Performance
+  mode, so the combination is validated (see bwp_fits())
+ */
+enum class AccelBwp : uint8_t {
+    Osr4Avg1,   //!< @brief OSR4 filter / no averaging
+    Osr2Avg2,   //!< @brief OSR2 filter / average 2 samples
+    NormAvg4,   //!< @brief Normal filter (power-on default) / average 4 samples
+    CicAvg8,    //!< @brief CIC filter / average 8 samples
+    Avg16,      //!< @brief Average 16 samples (PowerOptimized only; reserved in Performance mode)
+    Avg32,      //!< @brief Average 32 samples (PowerOptimized only)
+    Avg64,      //!< @brief Average 64 samples (PowerOptimized only)
+    Avg128,     //!< @brief Average 128 samples (PowerOptimized only)
+};
+
+/*!
+  @enum GyroBwp
+  @brief Gyroscope bandwidth parameter (REG_GYR_CONF register 0x42, bits[5:4])
+  @note Only a filter setting -- the gyroscope has no averaging modes, so unlike AccelBwp it means
+  the same thing in either FilterPerf. Register value 0x03 is reserved and therefore not offered
+ */
+enum class GyroBwp : uint8_t {
+    Osr4,  //!< @brief OSR4 filter
+    Osr2,  //!< @brief OSR2 filter
+    Norm,  //!< @brief Normal filter (power-on default)
+};
+
+//! @brief Is this bandwidth parameter usable in the given filter performance mode?
+//! @note The accelerometer's averaging-only values (Avg16 and up) are reserved in Performance mode
+constexpr bool bwp_fits(const FilterPerf perf, const AccelBwp bwp)
+{
+    return (perf == FilterPerf::PowerOptimized) || (static_cast<uint8_t>(bwp) <= static_cast<uint8_t>(AccelBwp::CicAvg8));
+}
+
+//! @brief REG_ACC_CONF value for the given settings
+//! @note Reproduces the register's 0xA8 reset value at Performance / NormAvg4 / Rate100Hz
+constexpr uint8_t acc_conf_value(const FilterPerf perf, const AccelBwp bwp, const AccelODR odr)
+{
+    return static_cast<uint8_t>((static_cast<uint8_t>(perf) << 7) | (static_cast<uint8_t>(bwp) << 4) |
+                                static_cast<uint8_t>(odr));
+}
+
+//! @brief REG_GYR_CONF value for the given settings
+//! @note Bit6 (gyr_noise_perf) is left at its 0 reset value; reproduces the register's 0xA9 reset
+//! value at Performance / Norm / Rate200Hz
+constexpr uint8_t gyr_conf_value(const FilterPerf perf, const GyroBwp bwp, const GyroODR odr)
+{
+    return static_cast<uint8_t>((static_cast<uint8_t>(perf) << 7) | (static_cast<uint8_t>(bwp) << 4) |
+                                static_cast<uint8_t>(odr));
+}
+
 //! @brief G per LSB for each AccelRange
 constexpr float accel_res(const AccelRange r)
 {

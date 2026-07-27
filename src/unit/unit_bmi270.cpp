@@ -57,11 +57,6 @@ constexpr uint8_t INT_STATUS_1_AUX_DRDY{0x20};  // bit5 (not used to gate reads;
 constexpr uint8_t INTERNAL_STATUS_MESSAGE_MASK{0x0F};
 constexpr uint8_t INTERNAL_STATUS_INIT_OK{0x01};
 
-// REG_ACC_CONF (0x40): acc_bwp is bits[6:4] / REG_GYR_CONF (0x42): gyr_bwp is bits[5:4].
-// Value 0x20 selects bwp=2 (normal) in both fields, so one literal serves both registers
-constexpr uint8_t CONF_FILTER_PERF{0x80};
-constexpr uint8_t CONF_BWP_NORMAL{0x20};
-
 // REG_PWR_CTRL (0x7D): temp_en | acc_en | gyr_en (aux_en added separately once AUX probing succeeds)
 constexpr uint8_t PWR_CTRL_ACC_GYR_TEMP_ON{0x0E};
 constexpr uint8_t PWR_CTRL_ACC_GYR_TEMP_AUX_ON{0x0F};
@@ -250,10 +245,19 @@ bool UnitBMI270::start_periodic_measurement(const bmi270::AccelRange accel_range
         return false;
     }
 
+    // The accelerometer's averaging-only bandwidth values are reserved while the filter runs in
+    // Performance mode, so refuse that pair instead of writing a reserved code to the register
+    if (!bwp_fits(_cfg.accel_filter_perf, _cfg.accel_bwp)) {
+        M5_LIB_LOGE("accel_bwp 0x%02X is reserved while accel_filter_perf is Performance",
+                    static_cast<uint8_t>(_cfg.accel_bwp));
+        return false;
+    }
+
     if (!write_register8_verified(REG_PWR_CTRL, PWR_CTRL_ACC_GYR_TEMP_ON) ||
-        !write_register8_verified(REG_ACC_CONF, CONF_FILTER_PERF | CONF_BWP_NORMAL | static_cast<uint8_t>(accel_odr)) ||
+        !write_register8_verified(REG_ACC_CONF,
+                                  acc_conf_value(_cfg.accel_filter_perf, _cfg.accel_bwp, accel_odr)) ||
         !writeAccelRange(accel_range) ||
-        !write_register8_verified(REG_GYR_CONF, CONF_FILTER_PERF | CONF_BWP_NORMAL | static_cast<uint8_t>(gyro_odr)) ||
+        !write_register8_verified(REG_GYR_CONF, gyr_conf_value(_cfg.gyro_filter_perf, _cfg.gyro_bwp, gyro_odr)) ||
         !writeGyroRange(gyro_range)) {
         M5_LIB_LOGE("Failed to configure");
         return false;
