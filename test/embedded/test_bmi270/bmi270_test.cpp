@@ -130,6 +130,14 @@ TEST_F(TestBMI270, WriteRange)
 {
     SCOPED_TRACE(ustr);
 
+    // Range decides accel_res/gyro_res, and samples already buffered were captured at the old
+    // full-scale -- converting those with the new factor would silently misreport them. So the
+    // range is a stop-first setting, refused while measuring
+    EXPECT_TRUE(unit->inPeriodic());
+    EXPECT_FALSE(unit->writeAccelRange(AccelRange::G4));
+    EXPECT_FALSE(unit->writeGyroRange(GyroRange::DPS500));
+
+    EXPECT_TRUE(unit->stopPeriodicMeasurement());
     EXPECT_TRUE(unit->writeAccelRange(AccelRange::G4));
     EXPECT_TRUE(unit->writeGyroRange(GyroRange::DPS500));
     m5::imu::imu_convert_param_t p{};
@@ -211,6 +219,39 @@ TEST_F(TestBMI270, AuxMagWhenPresent)
         // zero-initialized default across every popped sample
         EXPECT_FALSE(saw_nonzero_mag);
     }
+}
+
+TEST_F(TestBMI270, AuxMagPresetRejectsWhatTheFixedRateCannotComplete)
+{
+    SCOPED_TRACE(ustr);
+
+    const bool has_mag = m5::imu::any(unit->imuSpec() & m5::imu::Capability::Mag);
+    const auto original = unit->config();
+
+    EXPECT_TRUE(unit->stopPeriodicMeasurement());
+
+    // The bridge polls the AUX BMM150 at a fixed 30Hz (33.3ms), but HighAccuracy takes 49.3ms, so the
+    // measurement would never complete and the data registers would stop updating. That has to fail
+    // the start outright -- degrading to 6-axis would hide a configuration error behind the same
+    // path a board with no magnetometer takes
+    auto cfg           = original;
+    cfg.aux_mag_preset = bmm150::Preset::HighAccuracy;
+    unit->config(cfg);
+    EXPECT_FALSE(unit->startPeriodicMeasurement());
+    EXPECT_FALSE(unit->inPeriodic());
+
+    // One that fits is accepted, and the magnetometer still reports if the board has one
+    cfg.aux_mag_preset = bmm150::Preset::EnhancedRegular;  // 16.7ms < 33.3ms
+    unit->config(cfg);
+    EXPECT_TRUE(unit->startPeriodicMeasurement());
+    EXPECT_TRUE(unit->inPeriodic());
+    EXPECT_EQ(m5::imu::any(unit->imuSpec() & m5::imu::Capability::Mag), has_mag);
+
+    // Restore what begin() had set up for the tests that follow
+    EXPECT_TRUE(unit->stopPeriodicMeasurement());
+    unit->config(original);
+    EXPECT_TRUE(unit->startPeriodicMeasurement());
+    EXPECT_EQ(m5::imu::any(unit->imuSpec() & m5::imu::Capability::Mag), has_mag);
 }
 
 TEST_F(TestBMI270, ImuSpec)

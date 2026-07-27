@@ -79,15 +79,17 @@ public:
     }
     ///@}
 
-    ///@name Range setting (applies immediately)
+    ///@name Range setting (stop periodic measurement first)
     ///@{
     //! @brief Write the accelerometer range
     //! @param[in] range Accelerometer range
     //! @return True if successful
+    //! @warning During periodic measurement runs, an error is returned
     bool writeAccelRange(const mpu6886::AccelRange range);
     //! @brief Write the gyroscope range
     //! @param[in] range Gyroscope range
     //! @return True if successful
+    //! @warning During periodic measurement runs, an error is returned
     bool writeGyroRange(const mpu6886::GyroRange range);
     //! @brief Read the accelerometer range from the device (REG_ACCEL_CONFIG bits[4:3])
     //! @param[out] range Accelerometer range

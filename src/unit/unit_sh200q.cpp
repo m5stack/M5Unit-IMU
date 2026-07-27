@@ -179,6 +179,10 @@ bool UnitSH200Q::stopPeriodicMeasurement()
 
 bool UnitSH200Q::writeAccelRange(const sh200q::AccelRange range)
 {
+    if (inPeriodic()) {
+        M5_LIB_LOGD("Periodic measurements are running");
+        return false;
+    }
     if (write_register8_verified(REG_ACC_RANGE, static_cast<uint8_t>(range))) {
         _cfg.accel_range = range;
         return true;
@@ -188,6 +192,10 @@ bool UnitSH200Q::writeAccelRange(const sh200q::AccelRange range)
 
 bool UnitSH200Q::writeGyroRange(const sh200q::GyroRange range)
 {
+    if (inPeriodic()) {
+        M5_LIB_LOGD("Periodic measurements are running");
+        return false;
+    }
     if (write_register8_verified(REG_GYRO_RANGE, static_cast<uint8_t>(range))) {
         _cfg.gyro_range = range;
         return true;

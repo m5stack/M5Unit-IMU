@@ -76,6 +76,14 @@ TEST_F(TestMPU6050, WriteRange)
 {
     SCOPED_TRACE(ustr);
 
+    // Range decides accel_res/gyro_res, and samples already buffered were captured at the old
+    // full-scale -- converting those with the new factor would silently misreport them. So the
+    // range is a stop-first setting, refused while measuring
+    EXPECT_TRUE(unit->inPeriodic());
+    EXPECT_FALSE(unit->writeAccelRange(AccelRange::G4));
+    EXPECT_FALSE(unit->writeGyroRange(GyroRange::DPS500));
+
+    EXPECT_TRUE(unit->stopPeriodicMeasurement());
     EXPECT_TRUE(unit->writeAccelRange(AccelRange::G4));
     EXPECT_TRUE(unit->writeGyroRange(GyroRange::DPS500));
     m5::imu::imu_convert_param_t p{};

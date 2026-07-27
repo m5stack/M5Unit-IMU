@@ -88,8 +88,13 @@ constexpr uint8_t BMM150_CHIP_ID_VALUE{0x32};
 // bit7+bit1 SoftReset + bit0 PowerControl combined (same alias as bmm150::command::SOFT_RESET_AND_POWER_ON,
 // duplicated here since this AUX path talks to the BMM150 directly, not through UnitBMM150)
 constexpr uint8_t BMM150_SOFT_RESET_AND_POWER_ON{0x83};
-// DataRate::Rate30Hz (0x07) << 3 | Opmode Normal (0x00)
-constexpr uint8_t BMM150_OP_MODE_NORMAL_ODR30HZ{0x38};
+// Output data rate the bridge runs the AUX BMM150 at. Fixed rather than configurable: the BMI270
+// polls the magnetometer itself, so this has to stay matched to its own AUX timing. It is also what
+// bounds the usable repetitions (bmm150::repetition_fits()), so both uses read it from here
+// (fully qualified: this anonymous namespace sits at global scope, outside namespace m5::unit)
+constexpr m5::unit::bmm150::DataRate AUX_BMM150_RATE{m5::unit::bmm150::DataRate::Rate30Hz};
+// REG_OP_MODE = rate << 3 | Opmode Normal (0x00)
+constexpr uint8_t BMM150_OP_MODE_NORMAL{static_cast<uint8_t>(static_cast<uint8_t>(AUX_BMM150_RATE) << 3)};
 // PowerControl bit0 cleared: BMM150 suspend mode (lowest power, registers reset on resume)
 constexpr uint8_t BMM150_SUSPEND{0x00};
 
@@ -258,6 +263,19 @@ bool UnitBMI270::start_periodic_measurement(const bmi270::AccelRange accel_range
     _cfg.accel_odr = accel_odr;
     _cfg.gyro_odr  = gyro_odr;
 
+    // Reject an unusable aux_mag_preset here rather than inside the probe: a probe failure means
+    // "no BMM150 on this board" and degrades to 6-axis, which would silently swallow what is really
+    // a configuration error and leave the caller wondering where the magnetometer went
+    if (_cfg.enable_aux_bmm150 &&
+        !bmm150::repetition_fits(AUX_BMM150_RATE, bmm150::preset_rep_xy(_cfg.aux_mag_preset),
+                                 bmm150::preset_rep_z(_cfg.aux_mag_preset))) {
+        M5_LIB_LOGE("aux_mag_preset needs %uus, longer than the %uus period of the AUX BMM150's fixed rate",
+                    bmm150::measurement_time_us(bmm150::preset_rep_xy(_cfg.aux_mag_preset),
+                                                bmm150::preset_rep_z(_cfg.aux_mag_preset)),
+                    bmm150::rate_interval_us(AUX_BMM150_RATE));
+        return false;
+    }
+
     _aux_mag = _cfg.enable_aux_bmm150 && probe_aux_bmm150();
     if (_cfg.enable_aux_bmm150 && !_aux_mag) {
         // No BMM150 responded on the AUX interface (normal on boards without one):
@@ -339,6 +357,10 @@ bool UnitBMI270::wakeup()
 
 bool UnitBMI270::writeAccelRange(const bmi270::AccelRange range)
 {
+    if (inPeriodic()) {
+        M5_LIB_LOGD("Periodic measurements are running");
+        return false;
+    }
     if (write_register8_verified(REG_ACC_RANGE, static_cast<uint8_t>(range))) {
         _cfg.accel_range = range;
         return true;
@@ -348,6 +370,10 @@ bool UnitBMI270::writeAccelRange(const bmi270::AccelRange range)
 
 bool UnitBMI270::writeGyroRange(const bmi270::GyroRange range)
 {
+    if (inPeriodic()) {
+        M5_LIB_LOGD("Periodic measurements are running");
+        return false;
+    }
     if (write_register8_verified(REG_GYR_RANGE, static_cast<uint8_t>(range))) {
         _cfg.gyro_range = range;
         return true;
@@ -428,15 +454,16 @@ bool UnitBMI270::probe_aux_bmm150()
         return false;
     }
 
-    // Set the repetition (oversampling) before leaving setup mode, matching UnitBMM150's Regular
-    // preset. Without this the BMM150 stays at its power-on default and reads ~6x low (see REG_REP_*).
-    if (!aux_write_register8(REG_BMM150_REP_XY, bmm150::preset_rep_xy(bmm150::Preset::Regular)) ||
-        !aux_write_register8(REG_BMM150_REP_Z, bmm150::preset_rep_z(bmm150::Preset::Regular))) {
+    // Set the repetition (oversampling) before leaving setup mode, the way UnitBMM150 does. Without
+    // this the BMM150 stays at its power-on default, which is noisier than any preset. The pair was
+    // already checked against AUX_BMM150_RATE in start_periodic_measurement()
+    if (!aux_write_register8(REG_BMM150_REP_XY, bmm150::preset_rep_xy(_cfg.aux_mag_preset)) ||
+        !aux_write_register8(REG_BMM150_REP_Z, bmm150::preset_rep_z(_cfg.aux_mag_preset))) {
         M5_LIB_LOGE("Failed to set the AUX BMM150 repetition preset");
         return false;
     }
 
-    if (!aux_write_register8(REG_BMM150_OP_MODE, BMM150_OP_MODE_NORMAL_ODR30HZ) ||
+    if (!aux_write_register8(REG_BMM150_OP_MODE, BMM150_OP_MODE_NORMAL) ||
         !write_register8_verified(REG_AUX_IF_CONF, AUX_IF_CONF_DATA_MODE) ||
         !write_register8_verified(REG_AUX_RD_ADDR, REG_BMM150_DATA_X_LSB) ||
         !write_register8_verified(REG_PWR_CTRL, PWR_CTRL_ACC_GYR_TEMP_AUX_ON)) {

@@ -56,6 +56,11 @@ public:
         //! Probe for an on-chip BMM150 magnetometer via the AUX interface on startPeriodicMeasurement()?
         //! If no BMM150 responds, the start still succeeds with 6-axis (accel/gyro) only
         bool enable_aux_bmm150{true};
+        //! Accuracy/power preset for the AUX BMM150 (its REG_REP_XY/REG_REP_Z, see bmm150::Preset).
+        //! The bridge polls the magnetometer at a fixed 30Hz, so HighAccuracy cannot be used here --
+        //! its measurement takes 49.3ms, longer than the 33.3ms period, and
+        //! startPeriodicMeasurement() rejects it rather than let the data registers go stale
+        bmm150::Preset aux_mag_preset{bmm150::Preset::Regular};
     };
 
     explicit UnitBMI270(const uint8_t addr = DEFAULT_ADDRESS);
@@ -85,15 +90,17 @@ public:
     }
     ///@}
 
-    ///@name Range setting (applies immediately)
+    ///@name Range setting (stop periodic measurement first)
     ///@{
     //! @brief Write the accelerometer range
     //! @param[in] range Accelerometer range
     //! @return True if successful
+    //! @warning During periodic measurement runs, an error is returned
     bool writeAccelRange(const bmi270::AccelRange range);
     //! @brief Write the gyroscope range
     //! @param[in] range Gyroscope range
     //! @return True if successful
+    //! @warning During periodic measurement runs, an error is returned
     bool writeGyroRange(const bmi270::GyroRange range);
     //! @brief Read the accelerometer range from the device (REG_ACC_RANGE bits[1:0])
     //! @param[out] range Accelerometer range

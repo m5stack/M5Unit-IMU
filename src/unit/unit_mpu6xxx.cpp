@@ -188,6 +188,10 @@ bool UnitMPU6xxx::wakeup()
 
 bool UnitMPU6xxx::writeAccelRange(const mpu6886::AccelRange range)
 {
+    if (inPeriodic()) {
+        M5_LIB_LOGD("Periodic measurements are running");
+        return false;
+    }
     if (write_register8_verified(REG_ACCEL_CONFIG, static_cast<uint8_t>(range) << 3)) {
         _cfg.accel_range = range;
         return true;
@@ -197,6 +201,10 @@ bool UnitMPU6xxx::writeAccelRange(const mpu6886::AccelRange range)
 
 bool UnitMPU6xxx::writeGyroRange(const mpu6886::GyroRange range)
 {
+    if (inPeriodic()) {
+        M5_LIB_LOGD("Periodic measurements are running");
+        return false;
+    }
     if (write_register8_verified(REG_GYRO_CONFIG, static_cast<uint8_t>(range) << 3)) {
         _cfg.gyro_range = range;
         return true;
