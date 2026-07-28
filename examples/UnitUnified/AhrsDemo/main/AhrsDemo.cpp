@@ -528,7 +528,7 @@ bool begin_builtin_bmi270(const m5::board_t board)
     uint8_t bmi_addr{0x68};
     m5::unit::bmi270::detectAddress(
         [](uint8_t a, uint8_t reg, uint8_t& out) { return M5.In_I2C.readRegister(a, reg, &out, 1, 400000); }, bmi_addr);
-    auto* bmi270 = new m5::unit::UnitBMI270(bmi_addr);
+    auto* bmi270 = new m5::unit::UnitBMI270AuxEnabled(bmi_addr);
     if (!Units.add(*bmi270, M5.In_I2C) || !Units.begin()) {
         return false;
     }
@@ -808,11 +808,6 @@ bool begin_unit_dof6()
 {
     bool ok = wire_grove_unit(unit);
     warn_if_dof_address_differs();
-    // No magnetometer on this board -> skip the AUX BMM150 probe (silences a harmless begin() error).
-    auto c              = unit.config();
-    c.enable_aux_bmm150 = false;
-    unit.config(c);
-
     ok              = ok && Units.begin() && ahrs.add(unit);
     diag.unit_label = "UnitDoF6 (BMI270)";
     diag.accel_src  = &unit;

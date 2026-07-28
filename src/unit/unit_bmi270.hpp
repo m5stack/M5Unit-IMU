@@ -23,9 +23,11 @@ namespace unit {
 /*!
   @class UnitBMI270
   @brief 6-axis (accel + gyro) IMU unit. CoreS3/AtomS3R built-in
-  @note When config_t::enable_aux_bmm150 is set (the default) and an on-chip
-  BMM150 is detected via the AUX interface (as wired on CoreS3/AtomS3R), this
-  unit also provides compensated magnetometer data; see imuSpec()
+  @note Accel/gyro/temp only. The chip's auxiliary (AUX) interface, which can drive an on-chip
+  BMM150 magnetometer, is deliberately left untouched here -- use UnitBMI270AuxEnabled on the
+  boards that wire one to it (CoreS3, AtomS3R, Mini IMU-Pro). Enabling it is not always safe:
+  on UnitDoF9/UnitDoF10 the AUX pins share the main I2C bus, and switching the interface on makes
+  the BMI270 a second bus master, locking the bus until the unit is power-cycled
  */
 class UnitBMI270 : public Component,
                    public PeriodicMeasurementAdapter<UnitBMI270, bmi270::Data>,
@@ -64,14 +66,6 @@ public:
         bmi270::FilterPerf gyro_filter_perf{bmi270::FilterPerf::Performance};
         //! Gyroscope bandwidth parameter (the chip's power-on default)
         bmi270::GyroBwp gyro_bwp{bmi270::GyroBwp::Norm};
-        //! Probe for an on-chip BMM150 magnetometer via the AUX interface on startPeriodicMeasurement()?
-        //! If no BMM150 responds, the start still succeeds with 6-axis (accel/gyro) only
-        bool enable_aux_bmm150{true};
-        //! Accuracy/power preset for the AUX BMM150 (its REG_REP_XY/REG_REP_Z, see bmm150::Preset).
-        //! The bridge polls the magnetometer at a fixed 30Hz, so HighAccuracy cannot be used here --
-        //! its measurement takes 49.3ms, longer than the 33.3ms period, and
-        //! startPeriodicMeasurement() rejects it rather than let the data registers go stale
-        bmm150::Preset aux_mag_preset{bmm150::Preset::Regular};
     };
 
     explicit UnitBMI270(const uint8_t addr = DEFAULT_ADDRESS);
@@ -143,7 +137,7 @@ public:
       @param accel_odr Accelerometer output data rate
       @param gyro_odr Gyroscope output data rate (periodic measurement interval is derived from this)
       @return True if successful
-      @note When config_t::enable_aux_bmm150 is set, the AUX BMM150 is also (re)probed and configured here
+      @note UnitBMI270AuxEnabled overrides this to also (re)probe and configure its AUX BMM150
     */
     bool startPeriodicMeasurement(const bmi270::AccelRange accel_range, const bmi270::GyroRange gyro_range,
                                   const bmi270::AccelODR accel_odr, const bmi270::GyroODR gyro_odr);
@@ -161,9 +155,8 @@ public:
       @brief Suspend the chip (REG_PWR_CTRL off, REG_PWR_CONF adv_power_save)
       @return True if successful
       @details Works while periodic measurement is running: it is stopped first, since a
-      suspended chip must not be polled. An enabled AUX BMM150 is parked in its own suspend mode
-      (it would otherwise keep drawing current once the AUX bridge is disabled), then
-      accel/gyro/temp are powered down and advanced power save is enabled. The uploaded
+      suspended chip must not be polled. Then accel/gyro/temp are powered down and advanced power
+      save is enabled. The uploaded
       configuration file survives suspend -- unlike softReset(), which requires the full
       post-reset initialization again.
      */
@@ -173,8 +166,7 @@ public:
       @return True if successful
       @details Leaves advanced power save (configuration writes are ignored while it is active)
       and powers accel/gyro/temp back on -- measurement stays stopped. Call
-      startPeriodicMeasurement() to resume sampling; that is also what re-probes the AUX BMM150
-      and brings it out of suspend. Harmless without a preceding sleep().
+      startPeriodicMeasurement() to resume sampling. Harmless without a preceding sleep().
      */
     bool wakeup() override;
     ///@}
@@ -182,12 +174,12 @@ public:
     ///@name IMUDataSource
     ///@{
     //! @brief Capability of this unit
-    //! @return Accel | Gyro | Temp, plus Mag if an AUX BMM150 was detected in startPeriodicMeasurement()
+    //! @return Accel | Gyro | Temp. This class leaves the AUX interface alone, so never Mag --
+    //! see UnitBMI270AuxEnabled for the boards that wire a magnetometer to it
     virtual m5::imu::Capability imuSpec() const override
     {
         using m5::imu::Capability;
-        const auto base = Capability::Accel | Capability::Gyro | Capability::Temp;
-        return _aux_mag ? (base | Capability::Mag) : base;
+        return Capability::Accel | Capability::Gyro | Capability::Temp;
     }
     //! @brief Read the latest raw IMU data
     //! @param[out] out Raw IMU data
@@ -199,11 +191,15 @@ public:
     ///@}
 
 protected:
-    bool start_periodic_measurement(const bmi270::AccelRange accel_range, const bmi270::GyroRange gyro_range,
-                                    const bmi270::AccelODR accel_odr, const bmi270::GyroODR gyro_odr);
+    virtual bool start_periodic_measurement(const bmi270::AccelRange accel_range, const bmi270::GyroRange gyro_range,
+                                            const bmi270::AccelODR accel_odr, const bmi270::GyroODR gyro_odr);
     bool start_periodic_measurement();
     bool stop_periodic_measurement();
     bool read_measurement(bmi270::Data& d);
+    //! @brief Read one sample's sensor registers into d
+    //! @details Split out of read_measurement() so a subclass can widen the burst without repeating
+    //! the temperature handling that follows it (see UnitBMI270AuxEnabled)
+    virtual bool read_sensor_burst(bmi270::Data& d);
     bool write_register8_verified(const uint8_t reg, const uint8_t val);
     // Uploads the 8192 byte configuration blob (unit_bmi270_config.inl) to REG_INIT_DATA,
     // split into chunks that fit within the I2C write buffer (see .cpp for chunk size
@@ -211,29 +207,12 @@ protected:
     // BMI270_Class::_upload_file() which always returns true regardless of write result.
     bool upload_config();
 
-    // AUX (on-chip BMM150) support. Called from start_periodic_measurement() after the ACC/GYR config
-    // writes succeed; on success the AUX interface is left in data mode (BMI270 auto-polls
-    // the BMM150 at 30Hz into REG_DATA_0..REG_DATA_7) and _mag_trim holds the factory trim read
-    // via the AUX bridge. On failure (no BMM150 wired), the caller falls back to 6-axis.
-    bool probe_aux_bmm150();
-    // Polls REG_STATUS.aux_busy (bit2) until clear; gates every AUX manual transaction below
-    bool aux_wait_ready();
-    bool aux_write_register8(const uint8_t reg, const uint8_t val);
-    bool aux_read_register8(const uint8_t reg, uint8_t& out);
-    // Manual burst read of 8 bytes starting at a BMM150 register, via the AUX bridge
-    bool aux_read_burst8(const uint8_t bmm150_reg, std::array<uint8_t, 8>& out);
-    // Reads the BMM150 factory trim (registers 0x5D-0x71) through 3 overlapping 8 byte AUX
-    // bursts (0x5D/0x65/0x6A) and maps them the same way as UnitBMM150::read_trim()
-    bool aux_read_trim(bmm150::trim_t& trim);
-
     M5_UNIT_COMPONENT_PERIODIC_MEASUREMENT_ADAPTER_HPP_BUILDER(UnitBMI270, bmi270::Data);
 
 private:
     config_t _cfg{};
     int16_t _last_temp{};             // Latest valid REG_TEMPERATURE_0 reading (register update is not per-sample)
     uint32_t _pushed{}, _consumed{};  // readImuRaw pop counters (do not disturb latest()/oldest())
-    bool _aux_mag{false};        // True if an AUX BMM150 was detected and configured in start_periodic_measurement()
-    bmm150::trim_t _mag_trim{};  // Factory trim read via the AUX bridge, valid only if _aux_mag
     std::unique_ptr<m5::container::CircularBuffer<bmi270::Data>> _data{};
 };
 
@@ -271,8 +250,9 @@ constexpr uint8_t REG_PWR_CTRL{0x7D};  // bit0 aux_en, bit1 gyr_en, bit2 acc_en,
 constexpr uint8_t REG_CMD{0x7E};
 constexpr uint8_t REG_CHIP_ID{0x00};
 
-// BMM150 registers, reachable only indirectly through the AUX bridge above (distinct
-// address space from this chip's own registers)
+// BMM150 registers, reachable only indirectly through the AUX bridge above (distinct address
+// space from this chip's own registers). Only UnitBMI270AuxEnabled talks to them; they live here
+// because they are addressed through this chip's AUX registers
 constexpr uint8_t REG_BMM150_CHIP_ID{0x40};
 constexpr uint8_t REG_BMM150_DATA_X_LSB{0x42};
 constexpr uint8_t REG_BMM150_POWER_CONTROL{0x4B};

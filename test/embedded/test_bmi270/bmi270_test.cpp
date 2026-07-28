@@ -10,7 +10,7 @@
   e.g. a UnitDoF6 plugged into a host's Grove port.
 
   Attach only a UnitDoF6 or a Unit Mini IMU-Pro (U171) on that path -- NOT a DoF9/DoF10. This
-  suite builds a bare UnitBMI270, so enable_aux_bmm150 keeps its default and the AUX probe runs.
+  suite builds a UnitBMI270AuxEnabled, so the AUX probe runs.
   On DoF9/DoF10 the BMI270's AUX pins share the main bus, so enabling AUX makes the BMI270 a
   second I2C master and the bus collides; recovery needs the unit to be power-cycled. The DoF9 /
   DoF10 composites disable the probe themselves (see UnitDoF9's constructor), so test_dof9 /
@@ -27,7 +27,7 @@
 #include <M5UnitUnified.hpp>
 #include <googletest/test_template.hpp>
 #include <googletest/test_helper.hpp>
-#include <unit/unit_bmi270.hpp>
+#include <unit/unit_bmi270_aux_enabled.hpp>
 #include <chrono>
 #include <thread>
 #include <cmath>
@@ -42,9 +42,9 @@ using namespace m5::unit::bmi270;
 #define DOF_BMI270_ADDRESS 0x68
 #endif
 
-class TestBMI270 : public I2CComponentTestBase<UnitBMI270> {
+class TestBMI270 : public I2CComponentTestBase<UnitBMI270AuxEnabled> {
 protected:
-    virtual UnitBMI270* get_instance() override
+    virtual UnitBMI270AuxEnabled* get_instance() override
     {
 #if defined(TEST_BUILTIN)
         // The built-in BMI270 sits at a board-dependent address (0x68 or 0x69). Detect it on the
@@ -53,11 +53,11 @@ protected:
         uint8_t addr{0x68};
         m5::unit::bmi270::detectAddress(
             [](uint8_t a, uint8_t reg, uint8_t& out) { return M5.In_I2C.readRegister(a, reg, &out, 1, 400000); }, addr);
-        auto ptr = new m5::unit::UnitBMI270(addr);
+        auto ptr = new m5::unit::UnitBMI270AuxEnabled(addr);
 #else
         // GROVE: the bus is not connected yet at get_instance() time, so no probe -- use the
         // build-time address (see DOF_BMI270_ADDRESS above).
-        auto ptr = new m5::unit::UnitBMI270(DOF_BMI270_ADDRESS);
+        auto ptr = new m5::unit::UnitBMI270AuxEnabled(DOF_BMI270_ADDRESS);
 #endif
         if (ptr) {
             auto ccfg = ptr->component_config();
@@ -465,7 +465,6 @@ TEST_F(TestBMI270, ConfigRoundTrip)
     EXPECT_EQ(cfg2.gyro_range, cfg.gyro_range);
     EXPECT_EQ(cfg2.accel_odr, cfg.accel_odr);
     EXPECT_EQ(cfg2.gyro_odr, cfg.gyro_odr);
-    EXPECT_EQ(cfg2.enable_aux_bmm150, cfg.enable_aux_bmm150);
 }
 
 TEST_F(TestBMI270, SoftReset)

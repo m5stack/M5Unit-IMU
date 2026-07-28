@@ -29,7 +29,7 @@ UnitMiniIMUPro::UnitMiniIMUPro(const uint8_t bmi_addr) : Component(0xFF), _bmi(b
 
     // Only the BMI270 and the BMP280 sit on the main bus. The board's BMM150 is wired to the
     // BMI270's AUX interface (ASDX/ASCX), so it is reached through UnitBMI270's AUX bridge
-    // (config_t::enable_aux_bmm150, on by default) rather than as a child of its own.
+    // (UnitBMI270AuxEnabled probes it on start) rather than as a child of its own.
     _valid = add(_bmi, 0) && add(_baro, 1);
 }
 

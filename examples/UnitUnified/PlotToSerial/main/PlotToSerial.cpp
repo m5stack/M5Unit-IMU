@@ -308,15 +308,6 @@ void setup()
         }
     }
 #endif
-#if defined(USING_UNIT_DOF6)
-    // DoF6 is a 6-axis BMI270 with no magnetometer -> skip the AUX BMM150 probe (silences a harmless
-    // begin() error).
-    {
-        auto c              = unit.config();
-        c.enable_aux_bmm150 = false;
-        unit.config(c);
-    }
-#endif
 
     if (!ok || !Units.begin()) {
         M5_LOGE("Failed to begin");

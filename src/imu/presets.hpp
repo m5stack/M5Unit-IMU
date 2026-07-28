@@ -44,7 +44,7 @@ bool core2(AhrsController& ahrs, m5::unit::UnitMPU6886& mpu6886);
   @brief M5Stack CoreS3/CoreS3 SE/StackChan's built-in BMI270 (with AUX BMM150 magnetometer)
   @param ahrs Controller to register bmi270 with
   @param bmi270 CoreS3's built-in BMI270 at address 0x69, with the AUX BMM150 probed and
-  enabled (config_t::enable_aux_bmm150, the default -- see UnitBMI270::begin())
+  detected by UnitBMI270AuxEnabled on start
   @return False if ahrs already holds the maximum number of sources (see AhrsController::add())
   @details M5Unified's IMU_Class::begin(): for board_M5StackCoreS3 / board_M5StackChan with
   the BMI270 at address 0x69, only the magnetometer's Y and Z axes are inverted
@@ -58,7 +58,7 @@ bool coreS3(AhrsController& ahrs, m5::unit::UnitBMI270& bmi270);
   @brief AtomS3R/AtomS3R CAM/AtomS3R Ext's built-in BMI270 (with AUX BMM150 magnetometer)
   @param ahrs Controller to register bmi270 with
   @param bmi270 AtomS3R's built-in BMI270, with the AUX BMM150 probed and enabled
-  (config_t::enable_aux_bmm150, the default -- see UnitBMI270::begin())
+  (detected by UnitBMI270AuxEnabled on start)
   @return False if ahrs already holds the maximum number of sources (see AhrsController::add())
   @details M5Unified's IMU_Class::begin(): for board_M5AtomS3R / board_M5AtomS3RCam /
   board_M5AtomS3RExt, accel/gyro get X/Y swapped plus Y inverted (axis_order_yxz |
