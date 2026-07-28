@@ -42,7 +42,8 @@ namespace unit {
 
   @note The BMM350 in UnitDoF9 / UnitDoF10 / Unit BMM350 (U231) sits on the main bus, not on this
   interface, and is driven by UnitBMM350 instead
-  @note The bridge polls the BMM150 at a fixed 30Hz, which bounds its usable oversampling; see
+  @note The bridge polls the BMM150 at a fixed 25Hz -- the only rate the BMI270's aux_odr field and
+  the BMM150's normal mode both offer -- which bounds its usable oversampling; see
   config_t::aux_mag_preset
  */
 class UnitBMI270AuxBMM150 : public UnitBMI270 {
@@ -56,8 +57,8 @@ public:
     struct config_t : public UnitBMI270::config_t {
         /*!
           Accuracy/power preset written to the BMM150's REG_REP_XY/REG_REP_Z. HighAccuracy cannot be
-          used here: its measurement takes 49.3ms, longer than the 33.3ms period of the bridge's
-          fixed 30Hz poll, so startPeriodicMeasurement() rejects it instead of letting the data
+          used here: its measurement takes 49.3ms, longer than the 40ms period of the bridge's
+          fixed 25Hz poll, so startPeriodicMeasurement() rejects it instead of letting the data
           registers go stale
          */
         bmm150::Preset aux_mag_preset{bmm150::Preset::Regular};
@@ -131,7 +132,7 @@ protected:
     virtual bool read_sensor_burst(bmi270::Data& d) override;
 
     // AUX support. On success start_periodic_measurement() leaves the interface in data mode (the
-    // BMI270 auto-polls the BMM150 at 30Hz into REG_DATA_0..REG_DATA_7) and _mag_trim holds the
+    // BMI270 auto-polls the BMM150 at 25Hz into REG_DATA_0..REG_DATA_7) and _mag_trim holds the
     // factory trim read through the bridge.
     bool probe_aux_bmm150();
     // Polls REG_STATUS.aux_busy (bit2) until clear; gates every AUX manual transaction below

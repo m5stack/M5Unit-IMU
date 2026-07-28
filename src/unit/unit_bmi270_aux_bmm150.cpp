@@ -47,11 +47,26 @@ constexpr uint8_t BMM150_CHIP_ID_VALUE{0x32};
 // bit7+bit1 SoftReset + bit0 PowerControl combined (same alias as bmm150::command::SOFT_RESET_AND_POWER_ON,
 // duplicated here since this AUX path talks to the BMM150 directly, not through UnitBMM150)
 constexpr uint8_t BMM150_SOFT_RESET_AND_POWER_ON{0x83};
-// Output data rate the bridge runs the AUX BMM150 at. Fixed rather than configurable: the BMI270
-// polls the magnetometer itself, so this has to stay matched to its own AUX timing. It is also what
-// bounds the usable repetitions (bmm150::repetition_fits()), so both uses read it from here
+// REG_AUX_CONF (0x44): bits[3:0] aux_odr = the rate the BMI270 polls the AUX target at,
+// bits[7:4] aux_offset = how long before the readout the measurement is triggered, in 2.5ms units
+// (0 means the maximum, i.e. the next trigger goes out right after a readout).
+//
+// aux_odr can only be 12.5 / 25 / 50Hz and the BMM150's normal mode only 2..30Hz, so 25Hz is the
+// single rate both sides can agree on -- and they have to agree: polling slower than the
+// magnetometer produces just throws samples away, polling faster re-reads the same one. Written
+// explicitly rather than left at the 0x46 reset value so the choice is visible here.
+//
+// aux_offset is left at 0 to give the magnetometer the whole poll period to finish a measurement.
+// The reset value of 4 (10ms) is only enough for the Regular preset (9.8ms); EnhancedRegular takes
+// 16.7ms and would be read before it completed, *if* the per-poll OP_MODE rewrite that
+// AUX_IF_CONF.fcu_write_en performs restarts the measurement. The datasheet does not say whether it
+// does, so this takes the safe side, which costs nothing.
+constexpr uint8_t AUX_CONF_VALUE{0x06};  // aux_offset = 0, aux_odr = 25Hz
+
+// The BMM150's own output rate, matched to aux_odr above. This is also what bounds the usable
+// repetitions (bmm150::repetition_fits()), so both uses read it from here
 // (fully qualified: this anonymous namespace sits at global scope, outside namespace m5::unit)
-constexpr m5::unit::bmm150::DataRate AUX_BMM150_RATE{m5::unit::bmm150::DataRate::Rate30Hz};
+constexpr m5::unit::bmm150::DataRate AUX_BMM150_RATE{m5::unit::bmm150::DataRate::Rate25Hz};
 // REG_OP_MODE = rate << 3 | Opmode Normal (0x00)
 constexpr uint8_t BMM150_OP_MODE_NORMAL{static_cast<uint8_t>(static_cast<uint8_t>(AUX_BMM150_RATE) << 3)};
 // PowerControl bit0 cleared: BMM150 suspend mode (lowest power, registers reset on resume)
@@ -155,6 +170,7 @@ bool UnitBMI270AuxBMM150::probe_aux_bmm150()
     // so we can talk to the BMM150 directly (mirrors M5Unified's BMI270_Class::auxSetupMode()).
     if (!writeRegister8(REG_IF_CONF, IF_CONF_AUX_EN) || !writeRegister8(REG_PWR_CONF, 0x00) ||
         !writeRegister8(REG_PWR_CTRL, PWR_CTRL_ACC_GYR_TEMP_ON) ||
+        !write_register8_verified(REG_AUX_CONF, AUX_CONF_VALUE) ||
         !writeRegister8(REG_AUX_IF_CONF, AUX_IF_CONF_MANUAL_BL1) ||
         !writeRegister8(REG_AUX_DEV_ID, AUX_DEV_ID_BMM150)) {
         M5_LIB_LOGE("Failed to configure the AUX interface");

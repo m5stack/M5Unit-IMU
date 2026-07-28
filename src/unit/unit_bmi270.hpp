@@ -295,6 +295,8 @@ constexpr uint8_t REG_ACC_RANGE{0x41};
 constexpr uint8_t REG_GYR_CONF{0x42};
 constexpr uint8_t REG_GYR_RANGE{0x43};
 constexpr uint8_t REG_AUX_DEV_ID{0x4B};
+// Poll rate and trigger-readout offset for the AUX target (see UnitBMI270AuxBMM150)
+constexpr uint8_t REG_AUX_CONF{0x44};
 constexpr uint8_t REG_AUX_IF_CONF{
     0x4C};  // bit7 manual_en, bit6 fcu_write_en, bits[3:2] man_rd_burst, bits[1:0] aux_rd_burst
 constexpr uint8_t REG_AUX_RD_ADDR{0x4D};  // write triggers an AUX read transaction

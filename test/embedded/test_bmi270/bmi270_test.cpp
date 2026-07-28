@@ -334,11 +334,44 @@ TEST_F(TestBMI270, AuxMagPresetRejectsWhatTheFixedRateCannotComplete)
     EXPECT_FALSE(unit->inPeriodic());
 
     // One that fits is accepted, and the magnetometer still reports if the board has one
-    cfg.aux_mag_preset = bmm150::Preset::EnhancedRegular;  // 16.7ms < 33.3ms
+    cfg.aux_mag_preset = bmm150::Preset::EnhancedRegular;  // 16.7ms < 40ms
     unit->config(cfg);
     EXPECT_TRUE(unit->startPeriodicMeasurement());
     EXPECT_TRUE(unit->inPeriodic());
     EXPECT_EQ(m5::imu::any(unit->imuSpec() & m5::imu::Capability::Mag), has_mag);
+
+    // ...and the data actually keeps moving. This is the check that decides whether the AUX bridge
+    // re-triggers the BMM150 every poll (in which case the measurement has to finish within
+    // AUX_CONF.aux_offset) or just reads a free-running sensor. EnhancedRegular takes 16.7ms, which
+    // would not fit the 10ms reset offset -- so a frozen reading here means the offset matters and
+    // the driver's AUX_CONF value is what is keeping it working
+    if (has_mag) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        int32_t first[3]{};
+        bool moved{false}, got_first{false};
+        for (int i = 0; i < 60; ++i) {
+            unit->update();
+            m5::imu::imu_raw_data_t raw{};
+            while (m5::imu::any(unit->readImuRaw(raw))) {
+                if (raw.mag[0] == 0 && raw.mag[1] == 0 && raw.mag[2] == 0) {
+                    continue;
+                }
+                if (!got_first) {
+                    first[0]  = raw.mag[0];
+                    first[1]  = raw.mag[1];
+                    first[2]  = raw.mag[2];
+                    got_first = true;
+                } else if (raw.mag[0] != first[0] || raw.mag[1] != first[1] || raw.mag[2] != first[2]) {
+                    moved = true;
+                }
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        EXPECT_TRUE(got_first);
+        // Sensor noise alone moves the low bits, so a completely constant reading over ~600ms
+        // (15 poll periods at 25Hz) means the bridge is handing back a stale sample
+        EXPECT_TRUE(moved) << "AUX mag frozen at EnhancedRegular -- measurement is being cut short";
+    }
 
     // Restore what begin() had set up for the tests that follow
     EXPECT_TRUE(unit->stopPeriodicMeasurement());
