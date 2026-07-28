@@ -31,7 +31,7 @@ UnitDoF10::UnitDoF10(const uint8_t bmi_addr) : Component(0xFF), _bmi(bmi_addr), 
     // The DoF's BMM350 is a real device on the main bus, not a BMI270 AUX magnetometer, and the
     // BMI270's AUX pins are tied to that same bus: switching the interface on would turn the BMI270
     // into a second I2C master and lock the bus until the unit is power-cycled. Hence plain
-    // UnitBMI270 here rather than UnitBMI270AuxEnabled -- do not "upgrade" it.
+    // UnitBMI270 here rather than UnitBMI270AuxBMM150 -- do not "upgrade" it.
 
     _valid = add(_bmi, 0) && add(_bmm, 1) && add(_spa, 2);
 }

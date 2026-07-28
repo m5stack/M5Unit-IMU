@@ -24,7 +24,7 @@ namespace unit {
   @class UnitBMI270
   @brief 6-axis (accel + gyro) IMU unit. CoreS3/AtomS3R built-in
   @note Accel/gyro/temp only. The chip's auxiliary (AUX) interface, which can drive an on-chip
-  BMM150 magnetometer, is deliberately left untouched here -- use UnitBMI270AuxEnabled on the
+  BMM150 magnetometer, is deliberately left untouched here -- use UnitBMI270AuxBMM150 on the
   boards that wire one to it (CoreS3, AtomS3R, Mini IMU-Pro). Enabling it is not always safe:
   on UnitDoF9/UnitDoF10 the AUX pins share the main I2C bus, and switching the interface on makes
   the BMI270 a second bus master, locking the bus until the unit is power-cycled
@@ -164,7 +164,7 @@ public:
       @param accel_odr Accelerometer output data rate
       @param gyro_odr Gyroscope output data rate (periodic measurement interval is derived from this)
       @return True if successful
-      @note UnitBMI270AuxEnabled overrides this to also (re)probe and configure its AUX BMM150
+      @note UnitBMI270AuxBMM150 overrides this to also (re)probe and configure its AUX BMM150
     */
     bool startPeriodicMeasurement(const bmi270::AccelRange accel_range, const bmi270::GyroRange gyro_range,
                                   const bmi270::AccelODR accel_odr, const bmi270::GyroODR gyro_odr);
@@ -202,7 +202,7 @@ public:
     ///@{
     //! @brief Capability of this unit
     //! @return Accel | Gyro | Temp. This class leaves the AUX interface alone, so never Mag --
-    //! see UnitBMI270AuxEnabled for the boards that wire a magnetometer to it
+    //! see UnitBMI270AuxBMM150 for the boards that wire a magnetometer to it
     virtual m5::imu::Capability imuSpec() const override
     {
         using m5::imu::Capability;
@@ -225,7 +225,7 @@ protected:
     bool read_measurement(bmi270::Data& d);
     //! @brief Read one sample's sensor registers into d
     //! @details Split out of read_measurement() so a subclass can widen the burst without repeating
-    //! the temperature handling that follows it (see UnitBMI270AuxEnabled)
+    //! the temperature handling that follows it (see UnitBMI270AuxBMM150)
     virtual bool read_sensor_burst(bmi270::Data& d);
     bool write_register8_verified(const uint8_t reg, const uint8_t val);
     // Uploads the 8192 byte configuration blob (unit_bmi270_config.inl) to REG_INIT_DATA,
@@ -278,7 +278,7 @@ constexpr uint8_t REG_CMD{0x7E};
 constexpr uint8_t REG_CHIP_ID{0x00};
 
 // BMM150 registers, reachable only indirectly through the AUX bridge above (distinct address
-// space from this chip's own registers). Only UnitBMI270AuxEnabled talks to them; they live here
+// space from this chip's own registers). Only UnitBMI270AuxBMM150 talks to them; they live here
 // because they are addressed through this chip's AUX registers
 constexpr uint8_t REG_BMM150_CHIP_ID{0x40};
 constexpr uint8_t REG_BMM150_DATA_X_LSB{0x42};

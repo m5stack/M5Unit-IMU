@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: MIT
  */
 /*!
-  @file unit_bmi270_aux_enabled.hpp
-  @brief UnitBMI270AuxEnabled (BMI270 driving a magnetometer over its auxiliary interface)
+  @file unit_bmi270_aux_bmm150.hpp
+  @brief UnitBMI270AuxBMM150 (BMI270 driving a magnetometer over its auxiliary interface)
 */
-#ifndef M5_UNIT_IMU_UNIT_UNIT_BMI270_AUX_ENABLED_HPP
-#define M5_UNIT_IMU_UNIT_UNIT_BMI270_AUX_ENABLED_HPP
+#ifndef M5_UNIT_IMU_UNIT_UNIT_BMI270_AUX_BMM150_HPP
+#define M5_UNIT_IMU_UNIT_UNIT_BMI270_AUX_BMM150_HPP
 
 #include "unit_bmi270.hpp"
 
@@ -16,32 +16,37 @@ namespace m5 {
 namespace unit {
 
 /*!
-  @class UnitBMI270AuxEnabled
-  @brief BMI270 that switches on its auxiliary (AUX) interface and drives an on-chip BMM150
+  @class UnitBMI270AuxBMM150
+  @brief BMI270 that switches on its auxiliary (AUX) interface and drives a BMM150 through it
 
-  @details The BMI270's AUX interface is an optional second I2C master built into the chip, used to
-  poll a magnetometer and fold its output into the same data burst as accel/gyro. Boards wire it
-  differently, so which class to instantiate is a property of the board, not of the chip:
+  @details The BMI270's AUX interface is a general-purpose I2C master built into the chip -- the
+  datasheet calls it a "master interface hub for 1 I2C AUX sensor (e.g. ext. magnetometer,
+  pressure)". This class implements one specific target, a Bosch BMM150: it addresses 0x10, checks
+  for chip ID 0x32, reads that part's factory trim and drives its repetition/opmode registers. The
+  name records that choice, since a different AUX target would need a different driver.
 
-  - This class turns the interface on and probes for a BMM150. **CoreS3 / AtomS3R / Mini IMU-Pro
-    (U171)** wire one there. Built-in IMUs in general should use this class -- the probe adapts to
-    whatever the host actually carries, with no board table to keep up to date.
+  Which class to instantiate is a property of the board, not of the chip:
+
+  - This class turns the interface on and probes for the BMM150. **CoreS3 / AtomS3R / Mini IMU-Pro
+    (U171)** wire one there. Built-in IMUs in general should use it -- the probe adapts to whatever
+    the host actually carries, with no board table to keep up to date.
   - The plain UnitBMI270 never touches the interface. Use it where the wiring makes enabling it
     unsafe or pointless: on **UnitDoF9 / UnitDoF10** the AUX pins are tied to the main I2C bus, so
     enabling them turns the BMI270 into a second bus master and the bus locks up until the unit is
     power-cycled; on **UnitDoF6** there is simply no magnetometer.
 
-  The name says what this class *does*, not what the board *has*: enabling the interface is the
-  static choice, but whether a BMM150 answers is only known at runtime. On a host without one
-  (Capsule, StickS3, Core2 v1.3, ...) the probe finds nothing, the interface is switched back off,
-  and the unit runs as a plain 6-axis BMI270 -- imuSpec() reports Mag only once a BMM150 has
-  actually been detected.
+  Naming a chip here does not promise one is present -- that is only known at runtime. On a host
+  without a BMM150 (Capsule, StickS3, Core2 v1.3, ...) the probe finds nothing, the interface is
+  switched back off, and the unit runs as a plain 6-axis BMI270. imuSpec() reports Mag only once a
+  BMM150 has actually answered.
 
+  @note The BMM350 in UnitDoF9 / UnitDoF10 / Unit BMM350 (U231) sits on the main bus, not on this
+  interface, and is driven by UnitBMM350 instead
   @note The bridge polls the BMM150 at a fixed 30Hz, which bounds its usable oversampling; see
   config_t::aux_mag_preset
  */
-class UnitBMI270AuxEnabled : public UnitBMI270 {
-    M5_UNIT_COMPONENT_HPP_BUILDER(UnitBMI270AuxEnabled, 0x69);
+class UnitBMI270AuxBMM150 : public UnitBMI270 {
+    M5_UNIT_COMPONENT_HPP_BUILDER(UnitBMI270AuxBMM150, 0x69);
 
 public:
     /*!
@@ -58,8 +63,8 @@ public:
         bmm150::Preset aux_mag_preset{bmm150::Preset::Regular};
     };
 
-    explicit UnitBMI270AuxEnabled(const uint8_t addr = DEFAULT_ADDRESS);
-    virtual ~UnitBMI270AuxEnabled()
+    explicit UnitBMI270AuxBMM150(const uint8_t addr = DEFAULT_ADDRESS);
+    virtual ~UnitBMI270AuxBMM150()
     {
     }
 
@@ -71,7 +76,7 @@ public:
     {
         // Only aux_mag_preset is kept here; the inherited fields are re-read from the base, which
         // updates its own copy from writeAccelRange()/writeGyroRange()/start_periodic_measurement()
-        config_t cfg                            = _cfg_aux_enabled;
+        config_t cfg                            = _cfg_aux_bmm150;
         static_cast<UnitBMI270::config_t&>(cfg) = UnitBMI270::config();
         return cfg;
     }
@@ -81,7 +86,7 @@ public:
     //! UnitBMI270 reference always agrees with what was set here
     void config(const config_t& cfg)
     {
-        _cfg_aux_enabled = cfg;
+        _cfg_aux_bmm150 = cfg;
         UnitBMI270::config(cfg);
     }
     ///@}
@@ -138,7 +143,7 @@ protected:
 private:
     // Only the aux_mag_preset field is authoritative here -- config() refreshes the inherited ones
     // from the base rather than reading them back out of this copy
-    config_t _cfg_aux_enabled{};
+    config_t _cfg_aux_bmm150{};
     bool _aux_mag{false};        // True once an AUX BMM150 was detected in start_periodic_measurement()
     bmm150::trim_t _mag_trim{};  // Factory trim read via the AUX bridge, valid only if _aux_mag
 };

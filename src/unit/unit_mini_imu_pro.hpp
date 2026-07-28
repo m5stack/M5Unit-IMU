@@ -13,7 +13,7 @@
 #include <M5UnitComponent.hpp>
 // UnitBMP280 is provided by M5Unit-ENV (the barometer drivers live there)
 #include <unit/unit_BMP280.hpp>
-#include "unit_bmi270_aux_enabled.hpp"
+#include "unit_bmi270_aux_bmm150.hpp"
 
 namespace m5 {
 namespace unit {
@@ -24,7 +24,7 @@ namespace unit {
   GROVE main bus, with a BMM150 magnetometer wired to the BMI270's AUX interface (ASDX/ASCX), not to
   the main bus. The predecessor of Unit DoF9/DoF10, with a BMM150/BMP280 instead of the BMM350/SPA06.
   @details Because the BMM150 hangs off the BMI270's AUX bridge -- the same topology as CoreS3 and
-  AtomS3R -- imu() alone provides all nine axes (UnitBMI270AuxEnabled probes and drives the AUX BMM150, and
+  AtomS3R -- imu() alone provides all nine axes (UnitBMI270AuxBMM150 probes and drives the AUX BMM150, and
   reports Capability::Mag once it answers). Add imu() to an AhrsController; read baro() directly (it
   is not AHRS-fused). The barometer driver (UnitBMP280) comes from M5Unit-ENV.
  */
@@ -60,7 +60,7 @@ protected:
     virtual std::shared_ptr<Adapter> ensure_adapter(const uint8_t ch) override;
 
 private:
-    UnitBMI270AuxEnabled _bmi;
+    UnitBMI270AuxBMM150 _bmi;
     UnitBMP280 _baro;
     bool _valid{};
 };

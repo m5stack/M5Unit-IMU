@@ -528,7 +528,7 @@ bool begin_builtin_bmi270(const m5::board_t board)
     uint8_t bmi_addr{0x68};
     m5::unit::bmi270::detectAddress(
         [](uint8_t a, uint8_t reg, uint8_t& out) { return M5.In_I2C.readRegister(a, reg, &out, 1, 400000); }, bmi_addr);
-    auto* bmi270 = new m5::unit::UnitBMI270AuxEnabled(bmi_addr);
+    auto* bmi270 = new m5::unit::UnitBMI270AuxBMM150(bmi_addr);
     if (!Units.add(*bmi270, M5.In_I2C) || !Units.begin()) {
         return false;
     }

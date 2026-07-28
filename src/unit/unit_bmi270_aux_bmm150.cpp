@@ -4,10 +4,10 @@
  * SPDX-License-Identifier: MIT
  */
 /*!
-  @file unit_bmi270_aux_enabled.cpp
-  @brief UnitBMI270AuxEnabled (BMI270 driving a magnetometer over its auxiliary interface)
+  @file unit_bmi270_aux_bmm150.cpp
+  @brief UnitBMI270AuxBMM150 (BMI270 driving a magnetometer over its auxiliary interface)
 */
-#include "unit_bmi270_aux_enabled.hpp"
+#include "unit_bmi270_aux_bmm150.hpp"
 #include <M5Utility.hpp>
 #include <algorithm>
 
@@ -61,16 +61,16 @@ constexpr uint8_t BMM150_SUSPEND{0x00};
 namespace m5 {
 namespace unit {
 
-// class UnitBMI270AuxEnabled
-const char UnitBMI270AuxEnabled::name[] = "UnitBMI270AuxEnabled";
-const types::uid_t UnitBMI270AuxEnabled::uid{"UnitBMI270AuxEnabled"_mmh3};
-const types::attr_t UnitBMI270AuxEnabled::attr{attribute::AccessI2C};
+// class UnitBMI270AuxBMM150
+const char UnitBMI270AuxBMM150::name[] = "UnitBMI270AuxBMM150";
+const types::uid_t UnitBMI270AuxBMM150::uid{"UnitBMI270AuxBMM150"_mmh3};
+const types::attr_t UnitBMI270AuxBMM150::attr{attribute::AccessI2C};
 
-UnitBMI270AuxEnabled::UnitBMI270AuxEnabled(const uint8_t addr) : UnitBMI270(addr)
+UnitBMI270AuxBMM150::UnitBMI270AuxBMM150(const uint8_t addr) : UnitBMI270(addr)
 {
 }
 
-bool UnitBMI270AuxEnabled::start_periodic_measurement(const bmi270::AccelRange accel_range,
+bool UnitBMI270AuxBMM150::start_periodic_measurement(const bmi270::AccelRange accel_range,
                                                       const bmi270::GyroRange gyro_range,
                                                       const bmi270::AccelODR accel_odr,
                                                       const bmi270::GyroODR gyro_odr)
@@ -78,11 +78,11 @@ bool UnitBMI270AuxEnabled::start_periodic_measurement(const bmi270::AccelRange a
     // Reject an unusable preset before touching any register. Failing inside the probe would be
     // indistinguishable from "no BMM150 on this board", which degrades to 6-axis and would silently
     // swallow what is really a configuration error
-    if (!bmm150::repetition_fits(AUX_BMM150_RATE, bmm150::preset_rep_xy(_cfg_aux_enabled.aux_mag_preset),
-                                 bmm150::preset_rep_z(_cfg_aux_enabled.aux_mag_preset))) {
+    if (!bmm150::repetition_fits(AUX_BMM150_RATE, bmm150::preset_rep_xy(_cfg_aux_bmm150.aux_mag_preset),
+                                 bmm150::preset_rep_z(_cfg_aux_bmm150.aux_mag_preset))) {
         M5_LIB_LOGE("aux_mag_preset needs %uus, longer than the %uus period of the AUX BMM150's fixed rate",
-                    bmm150::measurement_time_us(bmm150::preset_rep_xy(_cfg_aux_enabled.aux_mag_preset),
-                                                bmm150::preset_rep_z(_cfg_aux_enabled.aux_mag_preset)),
+                    bmm150::measurement_time_us(bmm150::preset_rep_xy(_cfg_aux_bmm150.aux_mag_preset),
+                                                bmm150::preset_rep_z(_cfg_aux_bmm150.aux_mag_preset)),
                     bmm150::rate_interval_us(AUX_BMM150_RATE));
         return false;
     }
@@ -101,7 +101,7 @@ bool UnitBMI270AuxEnabled::start_periodic_measurement(const bmi270::AccelRange a
     return true;
 }
 
-bool UnitBMI270AuxEnabled::read_sensor_burst(bmi270::Data& d)
+bool UnitBMI270AuxBMM150::read_sensor_burst(bmi270::Data& d)
 {
     if (!_aux_mag) {
         return UnitBMI270::read_sensor_burst(d);
@@ -120,7 +120,7 @@ bool UnitBMI270AuxEnabled::read_sensor_burst(bmi270::Data& d)
     return true;
 }
 
-void UnitBMI270AuxEnabled::imuConvertParam(m5::imu::imu_convert_param_t& out) const
+void UnitBMI270AuxBMM150::imuConvertParam(m5::imu::imu_convert_param_t& out) const
 {
     UnitBMI270::imuConvertParam(out);
     if (_aux_mag) {
@@ -128,7 +128,7 @@ void UnitBMI270AuxEnabled::imuConvertParam(m5::imu::imu_convert_param_t& out) co
     }
 }
 
-bool UnitBMI270AuxEnabled::sleep()
+bool UnitBMI270AuxBMM150::sleep()
 {
     // A suspended chip must not be polled, so stop measuring before parking the magnetometer
     if (inPeriodic() && !stopPeriodicMeasurement()) {
@@ -144,7 +144,7 @@ bool UnitBMI270AuxEnabled::sleep()
     return UnitBMI270::sleep();
 }
 
-bool UnitBMI270AuxEnabled::probe_aux_bmm150()
+bool UnitBMI270AuxBMM150::probe_aux_bmm150()
 {
     // Setup mode: enable the AUX interface and switch it to manual (single-register) access
     // so we can talk to the BMM150 directly (mirrors M5Unified's BMI270_Class::auxSetupMode()).
@@ -178,8 +178,8 @@ bool UnitBMI270AuxEnabled::probe_aux_bmm150()
     // Set the repetition (oversampling) before leaving setup mode, the way UnitBMM150 does. Without
     // this the BMM150 stays at its power-on default, which is noisier than any preset. The pair was
     // already checked against AUX_BMM150_RATE in start_periodic_measurement()
-    if (!aux_write_register8(REG_BMM150_REP_XY, bmm150::preset_rep_xy(_cfg_aux_enabled.aux_mag_preset)) ||
-        !aux_write_register8(REG_BMM150_REP_Z, bmm150::preset_rep_z(_cfg_aux_enabled.aux_mag_preset))) {
+    if (!aux_write_register8(REG_BMM150_REP_XY, bmm150::preset_rep_xy(_cfg_aux_bmm150.aux_mag_preset)) ||
+        !aux_write_register8(REG_BMM150_REP_Z, bmm150::preset_rep_z(_cfg_aux_bmm150.aux_mag_preset))) {
         M5_LIB_LOGE("Failed to set the AUX BMM150 repetition preset");
         return false;
     }
@@ -194,7 +194,7 @@ bool UnitBMI270AuxEnabled::probe_aux_bmm150()
     return true;
 }
 
-bool UnitBMI270AuxEnabled::aux_wait_ready()
+bool UnitBMI270AuxBMM150::aux_wait_ready()
 {
     for (uint32_t retry = 0; retry < AUX_BUSY_POLL_RETRY; ++retry) {
         uint8_t status{};
@@ -209,12 +209,12 @@ bool UnitBMI270AuxEnabled::aux_wait_ready()
     return false;
 }
 
-bool UnitBMI270AuxEnabled::aux_write_register8(const uint8_t reg, const uint8_t val)
+bool UnitBMI270AuxBMM150::aux_write_register8(const uint8_t reg, const uint8_t val)
 {
     return writeRegister8(REG_AUX_WR_DATA, val) && writeRegister8(REG_AUX_WR_ADDR, reg) && aux_wait_ready();
 }
 
-bool UnitBMI270AuxEnabled::aux_read_register8(const uint8_t reg, uint8_t& out)
+bool UnitBMI270AuxBMM150::aux_read_register8(const uint8_t reg, uint8_t& out)
 {
     if (!writeRegister8(REG_AUX_IF_CONF, AUX_IF_CONF_MANUAL_BL1) || !writeRegister8(REG_AUX_RD_ADDR, reg) ||
         !aux_wait_ready()) {
@@ -223,7 +223,7 @@ bool UnitBMI270AuxEnabled::aux_read_register8(const uint8_t reg, uint8_t& out)
     return readRegister8(REG_DATA_0, out, 0);
 }
 
-bool UnitBMI270AuxEnabled::aux_read_burst8(const uint8_t bmm150_reg, std::array<uint8_t, 8>& out)
+bool UnitBMI270AuxBMM150::aux_read_burst8(const uint8_t bmm150_reg, std::array<uint8_t, 8>& out)
 {
     if (!writeRegister8(REG_AUX_RD_ADDR, bmm150_reg) || !aux_wait_ready()) {
         return false;
@@ -231,7 +231,7 @@ bool UnitBMI270AuxEnabled::aux_read_burst8(const uint8_t bmm150_reg, std::array<
     return readRegister(REG_DATA_0, out.data(), out.size(), 0);
 }
 
-bool UnitBMI270AuxEnabled::aux_read_trim(bmm150::trim_t& trim)
+bool UnitBMI270AuxBMM150::aux_read_trim(bmm150::trim_t& trim)
 {
     // BMM150 trim occupies registers 0x5D-0x71 (21 bytes), but AUX manual burst reads are
     // limited to 1/2/6/8 bytes. Three overlapping 8 byte bursts starting at 0x5D/0x65/0x6A
