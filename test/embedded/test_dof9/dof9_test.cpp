@@ -98,21 +98,34 @@ TEST_F(TestDoF9, MagThroughSharedAdapter)
     }
     EXPECT_GT(updated, 0);
 
+    // Same two-path check as test_bmm350: the adapter's 16 LSB/uT encoding has to scale back to the
+    // compensated uT the driver computed. Draining the buffer leaves the newest sample, which is
+    // the one latest() returns, so the two numbers describe one measurement and any gap is a
+    // scaling bug rather than noise -- what matters here is that going through the composite's
+    // shared adapter did not change it
     m5::imu::imu_convert_param_t param{};
     unit->mag().imuConvertParam(param);
-    m5::imu::imu_raw_data_t raw{};
+    m5::imu::imu_raw_data_t raw{}, last{};
     int checked{};
     while (m5::imu::any(unit->mag().readImuRaw(raw))) {
-        const float mx   = raw.mag[0] * param.mag_res;
-        const float my   = raw.mag[1] * param.mag_res;
-        const float mz   = raw.mag[2] * param.mag_res;
-        const float norm = std::sqrt(mx * mx + my * my + mz * mz);
-        EXPECT_TRUE(std::isfinite(norm));
-        EXPECT_GT(norm, 5.0f);     // geomagnetic floor
-        EXPECT_LT(norm, 1500.0f);  // generous hard-iron/desk-magnet ceiling
+        last = raw;
         ++checked;
     }
     EXPECT_GT(checked, 0);
+
+    const auto d          = unit->mag().latest();
+    const float comp_norm = std::sqrt(d.x_ut() * d.x_ut() + d.y_ut() * d.y_ut() + d.z_ut() * d.z_ut());
+    const float mx        = last.mag[0] * param.mag_res;
+    const float my        = last.mag[1] * param.mag_res;
+    const float mz        = last.mag[2] * param.mag_res;
+    const float norm      = std::sqrt(mx * mx + my * my + mz * mz);
+    M5_LOGI("mag: comp=%.1fuT readImuRaw*mag_res=%.1fuT (raw=[%ld,%ld,%ld] mag_res=%.5f)", comp_norm, norm,
+            (long)last.mag[0], (long)last.mag[1], (long)last.mag[2], param.mag_res);
+    EXPECT_TRUE(std::isfinite(norm));
+    EXPECT_NEAR(norm, comp_norm, comp_norm * 0.01f + 0.5f);
+    // Sanity only; the agreement above is what verifies the scale
+    EXPECT_GT(comp_norm, 1.0f);
+    EXPECT_LT(comp_norm, 2000.0f);
 }
 
 TEST_F(TestDoF9, ChildCapabilities)

@@ -59,16 +59,37 @@ TEST_F(TestBMM350, PeriodicMeasurement)
     EXPECT_GT(updated, 0);
     EXPECT_FALSE(unit->empty());
 
-    const auto d = unit->latest();
-    // 補償済み uT を 16 LSB/uT に量子化した値 (readImuRaw と同じスケール) で
-    // 10-200uT (-> 160-3200) に収まることを確認。上限は他の mag テスト群 (MAG3110/AK8963/BMM150)
-    // と同じ 200uT: 室内環境磁場 (実測 ~100uT の環境あり) とユニット筐体の残留磁化を許容する
-    const float mx   = d.x_ut() * 16.0f;
-    const float my   = d.y_ut() * 16.0f;
-    const float mz   = d.z_ut() * 16.0f;
-    const float norm = std::sqrt(mx * mx + my * my + mz * mz);
-    EXPECT_GT(norm, 160.0f);
-    EXPECT_LT(norm, 3200.0f);
+    // Two paths reach the same field: latest()'s compensated uT, and readImuRaw()'s library-wide
+    // 16 LSB/uT encoding scaled back by mag_res. readImuRaw() rounds x_ut()*16 and hands out the
+    // buffer oldest-first, so draining it leaves the newest sample -- the one latest() returns --
+    // and the two can be compared directly. A disagreement is then a scaling bug, not sensor noise
+    m5::imu::imu_convert_param_t param{};
+    unit->imuConvertParam(param);
+    m5::imu::imu_raw_data_t raw{}, last{};
+    bool got_raw{false};
+    while (m5::imu::any(unit->readImuRaw(raw))) {
+        last    = raw;
+        got_raw = true;
+    }
+    EXPECT_TRUE(got_raw);
+
+    const auto d          = unit->latest();
+    const float comp_norm = std::sqrt(d.x_ut() * d.x_ut() + d.y_ut() * d.y_ut() + d.z_ut() * d.z_ut());
+    const float rx        = last.mag[0] * param.mag_res;
+    const float ry        = last.mag[1] * param.mag_res;
+    const float rz        = last.mag[2] * param.mag_res;
+    const float raw_norm  = std::sqrt(rx * rx + ry * ry + rz * rz);
+    // The bounds below are deliberately loose, so the measured value is what tells a reader
+    // whether the scale is sane
+    M5_LOGI("mag: comp=%.1fuT readImuRaw*mag_res=%.1fuT (raw=[%ld,%ld,%ld] mag_res=%.5f)", comp_norm, raw_norm,
+            (long)last.mag[0], (long)last.mag[1], (long)last.mag[2], param.mag_res);
+    // Rounding to 1/16uT per axis is the only difference allowed; a wrong scale factor would show
+    // up as a ratio, which no tolerance this tight can absorb
+    EXPECT_NEAR(raw_norm, comp_norm, comp_norm * 0.01f + 0.5f);
+    // Sanity only: hard iron and desk magnets move the absolute value by a lot (over 1000uT has
+    // been measured on a steel desk), so this catches an order-of-magnitude error and nothing finer
+    EXPECT_GT(comp_norm, 1.0f);
+    EXPECT_LT(comp_norm, 2000.0f);
 }
 
 TEST_F(TestBMM350, ReadImuRawPopSemantics)
