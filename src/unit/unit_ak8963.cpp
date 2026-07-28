@@ -99,6 +99,13 @@ bool UnitAK8963::read_sensitivity(std::array<uint8_t, 3>& asa)
         M5_LIB_LOGE("Failed to read ASA");
         return false;
     }
+    // Leave Fuse ROM access mode. Power-down is the state every mode change on this chip has to
+    // pass through, and it is where begin() has to leave the device when it is not going on to
+    // start measuring -- Fuse ROM access is neither a measurement nor an idle state.
+    if (!writeRegister8(REG_CNTL1, static_cast<uint8_t>(Mode::PowerDown))) {
+        return false;
+    }
+    m5::utility::delay(10);
     return true;
 }
 

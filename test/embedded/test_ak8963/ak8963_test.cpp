@@ -197,3 +197,49 @@ TEST_F(TestAK8963, SoftReset)
     }
     EXPECT_TRUE(updated);
 }
+
+#if defined(TEST_BUILTIN)
+// Same wiring as TestAK8963, but begin() is told not to go on to start measuring. That is the only
+// path where the mode begin() leaves behind is observable: with start_periodic the subsequent
+// start_periodic_measurement() overwrites CNTL1 regardless.
+class TestAK8963NoStart : public TestAK8963 {
+protected:
+    virtual UnitAK8963* get_instance() override
+    {
+        auto ptr = TestAK8963::get_instance();
+        if (ptr) {
+            auto cfg           = ptr->config();
+            cfg.start_periodic = false;
+            ptr->config(cfg);
+        }
+        return ptr;
+    }
+};
+
+TEST_F(TestAK8963NoStart, BeginLeavesPowerDownNotFuseRom)
+{
+    SCOPED_TRACE(ustr);
+    EXPECT_FALSE(unit->inPeriodic());
+
+    // begin() reads the factory ASA from Fuse ROM access mode (CNTL1 mode 0x0F), which is neither a
+    // measurement nor an idle state, and the datasheet requires passing through power-down before
+    // entering any other mode. Reading CNTL1 back over the internal bus is the only way to see
+    // where begin() actually left the chip
+    uint8_t cntl1{};
+    EXPECT_TRUE(M5.In_I2C.readRegister(unit->address(), 0x0A, &cntl1, 1, 400000));
+    EXPECT_EQ(cntl1 & 0x0F, static_cast<uint8_t>(ak8963::Mode::PowerDown))
+        << "CNTL1 mode " << (int)(cntl1 & 0x0F) << " (Fuse ROM access is 15)";
+
+    // The ASA read in that mode is still what the driver uses, so measurement starts normally
+    EXPECT_TRUE(unit->startPeriodicMeasurement());
+    EXPECT_TRUE(unit->inPeriodic());
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    bool updated{};
+    for (int i = 0; i < 50 && !updated; ++i) {
+        unit->update();
+        updated = unit->updated();
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    EXPECT_TRUE(updated);
+}
+#endif
