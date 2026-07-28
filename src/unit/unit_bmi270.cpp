@@ -101,9 +101,9 @@ bool UnitBMI270::begin()
 
     uint8_t id{};
     // After power-up the BMI270 needs one dummy transaction to establish its I2C interface; the
-    // first register read may return stale data. Discard one read before validating CHIP_ID
-    // (mirrors M5Unified's BMI270_Class, which reads WhoAmI twice).
-    readRegister8(REG_CHIP_ID, id, 0);
+    // first register read may return stale data or not be answered at all. Discard one read before
+    // validating CHIP_ID (mirrors M5Unified's BMI270_Class, which reads WhoAmI twice).
+    read_register8_quiet(REG_CHIP_ID, id);
     if (!readRegister8(REG_CHIP_ID, id, 0) || id != CHIP_ID) {
         M5_LIB_LOGE("Not BMI270 %02X", id);
         return false;
@@ -143,7 +143,7 @@ bool UnitBMI270::softReset()
     uint32_t retry = PWR_CONF_POLL_RETRY;
     do {
         m5::utility::delay(1);
-        if (!readRegister8(REG_PWR_CONF, pwr_conf, 0)) {
+        if (!read_register8_quiet(REG_PWR_CONF, pwr_conf)) {
             pwr_conf = 0;
         }
     } while (pwr_conf == 0 && --retry);
@@ -177,7 +177,7 @@ bool UnitBMI270::softReset()
     retry = INTERNAL_STATUS_POLL_RETRY;
     for (;;) {
         m5::utility::delay(1);
-        if (!readRegister8(REG_INTERNAL_STATUS, status, 0)) {
+        if (!read_register8_quiet(REG_INTERNAL_STATUS, status)) {
             status = 0;  // transient NAK while the device settles; keep polling
         }
         const uint8_t msg = status & INTERNAL_STATUS_MESSAGE_MASK;
@@ -479,13 +479,28 @@ bool UnitBMI270::write_register8_verified(const uint8_t reg, const uint8_t val)
 {
     for (uint32_t i = 0; i < WRITE_VERIFY_RETRY; ++i) {
         uint8_t readback{};
-        if (writeRegister8(reg, val) && readRegister8(reg, readback, 0) && readback == val) {
+        if (writeRegister8(reg, val) && read_register8_quiet(reg, readback) && readback == val) {
             return true;
         }
         m5::utility::delay(1);
     }
     M5_LIB_LOGE("Failed to write and verify register:%02X val:%02X", reg, val);
     return false;
+}
+
+bool UnitBMI270::read_register8_quiet(const uint8_t reg, uint8_t& out)
+{
+    // The same I2C sequence readRegister8() performs -- a zero-length register write followed by a
+    // one byte read -- without the error it logs when the register address is not acknowledged.
+    // Every caller here is either retrying or deliberately discarding the result, so a NAK is an
+    // expected answer rather than a fault, and logging one line per attempt buries the real errors.
+    //
+    // Note this goes through writeRegister(reg, ...), the same overload readRegister8() uses, not
+    // the raw writeWithTransaction(nullptr, 0) that SoftwareI2C is known to crash on.
+    if (!writeRegister(reg, nullptr, 0U)) {
+        return false;
+    }
+    return readWithTransaction(&out, 1) == m5::hal::error::error_t::OK;
 }
 
 Capability UnitBMI270::readImuRaw(m5::imu::imu_raw_data_t& out)

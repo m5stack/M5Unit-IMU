@@ -243,6 +243,10 @@ protected:
     //! the temperature handling that follows it (see UnitBMI270AuxBMM150)
     virtual bool read_sensor_burst(bmi270::Data& d);
     bool write_register8_verified(const uint8_t reg, const uint8_t val);
+    // readRegister8() without its "Failed to write" log, for the reads whose failure is expected:
+    // the dummy transaction that brings the I2C interface up after power-on, the two polls that wait
+    // out the ~2ms reboot after a soft reset, and the verified-write readback that is retried
+    bool read_register8_quiet(const uint8_t reg, uint8_t& out);
     // Uploads the 8192 byte configuration blob (unit_bmi270_config.inl) to REG_INIT_DATA,
     // split into chunks that fit within the I2C write buffer (see .cpp for chunk size
     // rationale). Returns false (and logs) on the first failed chunk, unlike M5Unified's
