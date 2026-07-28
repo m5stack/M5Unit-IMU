@@ -59,26 +59,36 @@ jobs:
         unit:
           - UnitMiniIMU
 
+        # Reduced from 19 -> 6 boards. What a board contributes here is a distinct compile config
+        # (toolchain x chip arch), not a wiring path: the I2C route is chosen at runtime from
+        # M5.getBoard(), so every board below compiles the same library code. The 13 commented-out
+        # entries differ only in their variant header (pins_arduino.h), which the library never
+        # reads -- a break there is an upstream (M5Unified / platform) matter, not ours.
+        # Core2 is still built: the include: entries below pin it explicitly.
         board:
-          - Core
-          - Core2
-          - CoreS3
-          - Fire
-          - StampS3
-          - Dial
-          - Atom
-          - AtomS3
-          - AtomS3R
-          - NanoC6
-          - NanoH2
-          - StickCPlus
-          - StickCPlus2
-          - StickS3
-          - Paper
-          - CoreInk
-          - Cardputer
-          - Tab5
-          - NessoN1
+          - Core          # espressif32 x ESP32: xtensa-esp32 GCC target
+          - CoreS3        # espressif32 x ESP32-S3: xtensa-esp32s3, a different GCC target
+          - NanoC6        # pioarduino x ESP32-C6: rv32, huge_app.csv, repo-local board json
+          - NanoH2        # pioarduino x ESP32-H2: separate image target, huge_app.csv
+          - Tab5          # pioarduino x ESP32-P4: rv32 single-float FPU, PSRAM, huge_app.csv
+          - NessoN1       # pioarduino x ESP32-C6, but an upstream board json (arduino_nesso_n1) and
+                          # the only SoftwareI2C host -- one job's worth of insurance
+        # ESP32, represented by Core:
+#          - Core2
+#          - Fire
+#          - Atom
+#          - StickCPlus
+#          - StickCPlus2  # variant differs per package (see libraries/CLAUDE.md), but that only
+                          # resolves pins_arduino.h; library code compiles as on Core
+#          - Paper
+#          - CoreInk
+        # ESP32-S3, represented by CoreS3:
+#          - StampS3
+#          - Dial
+#          - AtomS3
+#          - AtomS3R
+#          - StickS3
+#          - Cardputer
 
         framework:
           - Arduino
