@@ -38,6 +38,14 @@ public:
     struct config_t {
         //! Start periodic measurement on begin()?
         bool start_periodic{true};
+        /*!
+          Output data rate. Left at the chip's fastest setting for backwards compatibility, which is
+          also its most expensive one (900µA); a slower rate cuts that by up to 100x. See
+          mag3110::DataRate
+         */
+        mag3110::DataRate rate{mag3110::DataRate::Rate80Hz};
+        //! Over sampling ratio, which sets the noise floor. See mag3110::OverSampling
+        mag3110::OverSampling over_sampling{mag3110::OverSampling::X16};
     };
 
     explicit UnitMAG3110(const uint8_t addr = DEFAULT_ADDRESS);
@@ -76,9 +84,43 @@ public:
     bool softReset();
     ///@}
 
+    ///@name Measurement setting (stop periodic measurement first)
+    ///@{
+    /*!
+      @brief Write the output data rate and over sampling ratio
+      @param[in] rate Output data rate
+      @param[in] os Over sampling ratio
+      @return True if successful
+      @details Applied to the chip immediately, and to the periodic measurement interval
+      @warning Fails while periodic measurement is running. Every REG_CTRL_REG1 field except AC can
+      only be changed in STANDBY, and a write attempted in ACTIVE is silently ignored rather than
+      reported -- so this drops the chip to STANDBY itself instead of trusting inPeriodic(), which
+      says nothing about AC (stopPeriodicMeasurement() leaves the chip running by design; sleep() is
+      what stops it)
+      @note The datasheet notes the first output period after leaving STANDBY reads slightly off
+     */
+    bool writeDataRate(const mag3110::DataRate rate, const mag3110::OverSampling os);
+    /*!
+      @brief Read the output data rate and over sampling ratio
+      @param[out] rate Output data rate
+      @param[out] os Over sampling ratio
+      @return True if successful
+      @note Decoded from REG_CTRL_REG1, so it works while measuring as well as while stopped
+     */
+    bool readDataRate(mag3110::DataRate& rate, mag3110::OverSampling& os);
+    ///@}
+
     ///@name Periodic measurement
     ///@{
-    //! @brief Start periodic measurement (auto magnetic reset + 80Hz continuous ACTIVE)
+    /*!
+      @brief Start periodic measurement (auto magnetic reset + continuous ACTIVE)
+      @param[in] rate Output data rate
+      @param[in] os Over sampling ratio
+      @return True if successful
+     */
+    bool startPeriodicMeasurement(const mag3110::DataRate rate, const mag3110::OverSampling os);
+    //! @brief Start periodic measurement in the current settings
+    //! @return True if successful
     bool startPeriodicMeasurement();
     //! @brief Stop periodic measurement
     bool stopPeriodicMeasurement();
@@ -118,6 +160,7 @@ public:
     ///@}
 
 protected:
+    bool start_periodic_measurement(const mag3110::DataRate rate, const mag3110::OverSampling os);
     bool start_periodic_measurement();
     bool stop_periodic_measurement();
     bool read_measurement(mag3110::Data& d);
@@ -126,6 +169,10 @@ protected:
 
 private:
     config_t _cfg{};
+    // Live state, seeded from _cfg by begin() and thereafter owned by writeDataRate(); _cfg is only
+    // ever read in begin()
+    mag3110::DataRate _rate{mag3110::DataRate::Rate80Hz};
+    mag3110::OverSampling _os{mag3110::OverSampling::X16};
     uint32_t _pushed{}, _consumed{};
     std::unique_ptr<m5::container::CircularBuffer<mag3110::Data>> _data{};
 };

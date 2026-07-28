@@ -18,9 +18,11 @@ using m5::imu::Capability;
 
 namespace {
 constexpr uint8_t WHOAMI_VALUE{0xC4};
-constexpr uint8_t CTRL_REG1_STANDBY{0x00};      // AC=0
-constexpr uint8_t CTRL_REG1_ACTIVE_80HZ{0x01};  // DR=000(80Hz) OS=00 FR=0 TM=0 AC=1
-constexpr uint8_t CTRL_REG2_AUTO_MRST{0x80};    // AUTO_MRST_EN=1, RAW=0 (user-offset corrected)
+constexpr uint8_t CTRL_REG1_STANDBY{0x00};    // AC=0
+constexpr uint8_t CTRL_REG1_AC{0x01};         // bit0: 0=STANDBY 1=ACTIVE
+constexpr uint8_t CTRL_REG1_DR_MASK{0xE0};    // bits[7:5]
+constexpr uint8_t CTRL_REG1_OS_MASK{0x18};    // bits[4:3]
+constexpr uint8_t CTRL_REG2_AUTO_MRST{0x80};  // AUTO_MRST_EN=1, RAW=0 (user-offset corrected)
 }  // namespace
 
 namespace m5 {
@@ -65,7 +67,49 @@ bool UnitMAG3110::begin()
         return false;
     }
 
-    return _cfg.start_periodic ? startPeriodicMeasurement() : true;
+    // Seed the live state from the begin settings; writeDataRate() owns it from here on
+    _rate = _cfg.rate;
+    _os   = _cfg.over_sampling;
+
+    return _cfg.start_periodic ? startPeriodicMeasurement(_cfg.rate, _cfg.over_sampling) : true;
+}
+
+bool UnitMAG3110::writeDataRate(const mag3110::DataRate rate, const mag3110::OverSampling os)
+{
+    if (inPeriodic()) {
+        M5_LIB_LOGD("Periodic measurements are running");
+        return false;
+    }
+    // Every REG_CTRL_REG1 field except AC can only be changed in STANDBY, and a write made in
+    // ACTIVE is silently ignored instead of reported. inPeriodic() being false does not mean AC is
+    // clear -- stopPeriodicMeasurement() deliberately leaves the chip running -- so clear it here,
+    // in its own write, before the fields are touched.
+    if (!writeRegister8(REG_CTRL_REG1, CTRL_REG1_STANDBY)) {
+        M5_LIB_LOGE("Failed to standby");
+        return false;
+    }
+    // Park the new rate in the register with AC still clear, so readDataRate() reflects it even
+    // before measurement starts
+    if (!writeRegister8(REG_CTRL_REG1, static_cast<uint8_t>(mag3110::ctrl_reg1_active(rate, os) & ~CTRL_REG1_AC))) {
+        M5_LIB_LOGE("Failed to set the data rate");
+        return false;
+    }
+    _rate     = rate;
+    _os       = os;
+    _interval = mag3110::interval_ms(rate, os);
+    return true;
+}
+
+bool UnitMAG3110::readDataRate(mag3110::DataRate& rate, mag3110::OverSampling& os)
+{
+    uint8_t v{};
+    if (!readRegister8(REG_CTRL_REG1, v, 0)) {
+        M5_LIB_LOGE("Failed to read");
+        return false;
+    }
+    rate = static_cast<mag3110::DataRate>((v & CTRL_REG1_DR_MASK) >> 5);
+    os   = static_cast<mag3110::OverSampling>((v & CTRL_REG1_OS_MASK) >> 3);
+    return true;
 }
 
 bool UnitMAG3110::softReset()
@@ -101,29 +145,44 @@ void UnitMAG3110::update(const bool force)
     }
 }
 
-bool UnitMAG3110::start_periodic_measurement()
+bool UnitMAG3110::start_periodic_measurement(const mag3110::DataRate rate, const mag3110::OverSampling os)
 {
     if (inPeriodic()) {
         return false;
     }
 
-    // Configure while in STANDBY (CTRL_REG1[AC]=0): enable automatic magnetic reset, then enter the
-    // 80Hz continuous ACTIVE mode.
-    if (!writeRegister8(REG_CTRL_REG2, CTRL_REG2_AUTO_MRST) || !writeRegister8(REG_CTRL_REG1, CTRL_REG1_ACTIVE_80HZ)) {
+    // Configure while in STANDBY (CTRL_REG1[AC]=0): enable automatic magnetic reset, then enter
+    // continuous ACTIVE mode at the requested rate. CTRL_REG2 is written whole rather than
+    // read-modify-written: AUTO_MRST_EN is write-only and always reads back as 0, so merging would
+    // silently clear it.
+    if (!writeRegister8(REG_CTRL_REG2, CTRL_REG2_AUTO_MRST) ||
+        !writeRegister8(REG_CTRL_REG1, mag3110::ctrl_reg1_active(rate, os))) {
         M5_LIB_LOGE("Failed to set mode");
         return false;
     }
 
+    _rate     = rate;
+    _os       = os;
     _periodic = true;
     _latest   = 0;
-    _interval = mag3110::CONT80HZ_INTERVAL_MS;
+    _interval = mag3110::interval_ms(rate, os);
     return true;
+}
+
+bool UnitMAG3110::start_periodic_measurement()
+{
+    return start_periodic_measurement(_rate, _os);
 }
 
 bool UnitMAG3110::stop_periodic_measurement()
 {
     _periodic = false;
     return true;
+}
+
+bool UnitMAG3110::startPeriodicMeasurement(const mag3110::DataRate rate, const mag3110::OverSampling os)
+{
+    return PeriodicMeasurementAdapter<UnitMAG3110, mag3110::Data>::startPeriodicMeasurement(rate, os);
 }
 
 bool UnitMAG3110::startPeriodicMeasurement()

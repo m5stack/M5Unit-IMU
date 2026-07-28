@@ -164,3 +164,69 @@ TEST_F(TestMAG3110, SoftReset)
     }
     EXPECT_TRUE(updated);
 }
+
+TEST_F(TestMAG3110, WriteDataRate)
+{
+    SCOPED_TRACE(ustr);
+
+    mag3110::DataRate org_rate{};
+    mag3110::OverSampling org_os{};
+    EXPECT_TRUE(unit->readDataRate(org_rate, org_os));
+    // begin() seeds the live state from config_t, and REG_CTRL_REG1 has to agree with it
+    EXPECT_EQ(org_rate, unit->config().rate);
+    EXPECT_EQ(org_os, unit->config().over_sampling);
+
+    // Changing the rate changes the measurement interval, so it is refused while running
+    EXPECT_FALSE(unit->writeDataRate(mag3110::DataRate::Rate10Hz, mag3110::OverSampling::X64));
+    mag3110::DataRate rate{};
+    mag3110::OverSampling os{};
+    EXPECT_TRUE(unit->readDataRate(rate, os));
+    EXPECT_EQ(rate, org_rate);
+    EXPECT_EQ(os, org_os);
+
+    EXPECT_TRUE(unit->stopPeriodicMeasurement());
+
+    // Every DataRate/OverSampling pair is valid on this chip (datasheet Table 32 lists all 32), and
+    // each has to survive the register round trip -- REG_CTRL_REG1 only accepts these fields while
+    // AC is clear, so a pair that reads back wrong means the standby handshake did not happen
+    for (uint8_t r = 0; r < 8; ++r) {
+        for (uint8_t o = 0; o < 4; ++o) {
+            const auto want_rate = static_cast<mag3110::DataRate>(r);
+            const auto want_os   = static_cast<mag3110::OverSampling>(o);
+            EXPECT_TRUE(unit->writeDataRate(want_rate, want_os)) << "DR " << (int)r << " OS " << (int)o;
+            EXPECT_TRUE(unit->readDataRate(rate, os)) << "DR " << (int)r << " OS " << (int)o;
+            EXPECT_EQ(rate, want_rate);
+            EXPECT_EQ(os, want_os);
+        }
+    }
+
+    // The slowest setting really does stretch the interval; without that update() would keep
+    // hammering the bus at the 13ms of the fastest one
+    EXPECT_TRUE(unit->writeDataRate(mag3110::DataRate::Rate0_63Hz, mag3110::OverSampling::X128));
+    EXPECT_TRUE(unit->startPeriodicMeasurement());
+    EXPECT_EQ(unit->interval(), mag3110::interval_ms(mag3110::DataRate::Rate0_63Hz, mag3110::OverSampling::X128));
+    EXPECT_TRUE(unit->stopPeriodicMeasurement());
+
+    // A rate given to startPeriodicMeasurement() applies without a separate write, and measurement
+    // actually flows at it
+    EXPECT_TRUE(unit->startPeriodicMeasurement(mag3110::DataRate::Rate20Hz, mag3110::OverSampling::X16));
+    EXPECT_TRUE(unit->inPeriodic());
+    EXPECT_TRUE(unit->readDataRate(rate, os));
+    EXPECT_EQ(rate, mag3110::DataRate::Rate20Hz);
+    EXPECT_EQ(os, mag3110::OverSampling::X16);
+    EXPECT_EQ(unit->interval(), mag3110::interval_ms(mag3110::DataRate::Rate20Hz, mag3110::OverSampling::X16));
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    bool updated{};
+    for (int i = 0; i < 50 && !updated; ++i) {
+        unit->update();
+        updated = unit->updated();
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    EXPECT_TRUE(updated);
+
+    // Restore what begin() had set up for the tests that follow
+    EXPECT_TRUE(unit->stopPeriodicMeasurement());
+    EXPECT_TRUE(unit->writeDataRate(org_rate, org_os));
+    EXPECT_TRUE(unit->startPeriodicMeasurement());
+}
