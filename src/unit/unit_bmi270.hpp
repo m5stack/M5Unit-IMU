@@ -117,6 +117,33 @@ public:
     bool readGyroRange(bmi270::GyroRange& range);
     ///@}
 
+    ///@name Output data rate (stop periodic measurement first)
+    ///@{
+    //! @brief Write the accelerometer output data rate
+    //! @param[in] odr Accelerometer output data rate
+    //! @return True if successful
+    //! @note config_t::accel_filter_perf and config_t::accel_bwp share REG_ACC_CONF with the rate
+    //! and are rewritten from the configuration along with it
+    //! @warning During periodic measurement runs, an error is returned
+    bool writeAccelODR(const bmi270::AccelODR odr);
+    /*!
+      @brief Write the gyroscope output data rate
+      @param[in] odr Gyroscope output data rate
+      @return True if successful
+      @note The periodic measurement interval is derived from this rate, so it is updated too
+      @warning During periodic measurement runs, an error is returned
+     */
+    bool writeGyroODR(const bmi270::GyroODR odr);
+    //! @brief Read the accelerometer output data rate from the device (REG_ACC_CONF bits[3:0])
+    //! @param[out] odr Accelerometer output data rate
+    //! @return True if successful, false if the register holds a reserved (unmapped) value
+    bool readAccelODR(bmi270::AccelODR& odr);
+    //! @brief Read the gyroscope output data rate from the device (REG_GYR_CONF bits[3:0])
+    //! @param[out] odr Gyroscope output data rate
+    //! @return True if successful, false if the register holds a reserved (unmapped) value
+    bool readGyroODR(bmi270::GyroODR& odr);
+    ///@}
+
     ///@name Reset
     ///@{
     //! @brief Soft reset (REG_CMD CMD_SOFTRESET), then re-run the mandatory post-reset initialization

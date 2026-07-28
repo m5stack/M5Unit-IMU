@@ -102,6 +102,33 @@ public:
     bool readGyroRange(sh200q::GyroRange& range);
     ///@}
 
+    ///@name Output data rate (stop periodic measurement first)
+    ///@{
+    //! @brief Write the accelerometer output data rate
+    //! @param[in] odr Accelerometer output data rate
+    //! @return True if successful
+    //! @note The rate occupies REG_ACC_CONFIG bits[4:3]; the filter bits around it are rewritten
+    //! with the driver's fixed base value
+    //! @warning During periodic measurement runs, an error is returned
+    bool writeAccelOdr(const sh200q::AccelOdr odr);
+    /*!
+      @brief Write the gyroscope output data rate
+      @param[in] odr Gyroscope output data rate
+      @return True if successful
+      @note The periodic measurement interval is derived from this rate, so it is updated too
+      @warning During periodic measurement runs, an error is returned
+     */
+    bool writeGyroOdr(const sh200q::GyroOdr odr);
+    //! @brief Read the accelerometer output data rate from the device (REG_ACC_CONFIG bits[4:3])
+    //! @param[out] odr Accelerometer output data rate
+    //! @return True if successful
+    bool readAccelOdr(sh200q::AccelOdr& odr);
+    //! @brief Read the gyroscope output data rate from the device (REG_GYRO_CONFIG bits[3:1])
+    //! @param[out] odr Gyroscope output data rate
+    //! @return True if successful, false if the register holds a reserved (unmapped) value
+    bool readGyroOdr(sh200q::GyroOdr& odr);
+    ///@}
+
     ///@name Reset
     ///@{
     //! @brief Soft reset (the undocumented ADC/init reset dance inherited from the original library),

@@ -83,6 +83,30 @@ TEST_F(TestSH200Q, RangeReadback)
     EXPECT_EQ(gr, sh200q::GyroRange::DPS2000);
 }
 
+TEST_F(TestSH200Q, WriteOutputDataRate)
+{
+    SCOPED_TRACE(ustr);
+
+    // The rate sets the measurement interval, so like the range it is a stop-first setting
+    EXPECT_TRUE(unit->inPeriodic());
+    EXPECT_FALSE(unit->writeAccelOdr(sh200q::AccelOdr::HZ256));
+    EXPECT_FALSE(unit->writeGyroOdr(sh200q::GyroOdr::HZ250));
+
+    EXPECT_TRUE(unit->stopPeriodicMeasurement());
+    EXPECT_TRUE(unit->writeAccelOdr(sh200q::AccelOdr::HZ256));
+    EXPECT_TRUE(unit->writeGyroOdr(sh200q::GyroOdr::HZ250));
+
+    sh200q::AccelOdr ao{};
+    sh200q::GyroOdr go{};
+    EXPECT_TRUE(unit->readAccelOdr(ao));
+    EXPECT_EQ(ao, sh200q::AccelOdr::HZ256);
+    EXPECT_TRUE(unit->readGyroOdr(go));
+    EXPECT_EQ(go, sh200q::GyroOdr::HZ250);
+
+    EXPECT_TRUE(unit->startPeriodicMeasurement());
+    EXPECT_TRUE(unit->inPeriodic());
+}
+
 TEST_F(TestSH200Q, PeriodicMeasurement)
 {
     SCOPED_TRACE(ustr);

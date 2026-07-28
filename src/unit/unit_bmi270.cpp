@@ -350,6 +350,64 @@ bool UnitBMI270::readGyroRange(bmi270::GyroRange& range)
     return true;
 }
 
+bool UnitBMI270::writeAccelODR(const bmi270::AccelODR odr)
+{
+    if (inPeriodic()) {
+        M5_LIB_LOGD("Periodic measurements are running");
+        return false;
+    }
+    // The rate shares REG_ACC_CONF with the bandwidth and filter performance, so the whole register
+    // is recomposed from the configuration rather than read-modify-written
+    if (!write_register8_verified(REG_ACC_CONF, acc_conf_value(_cfg.accel_filter_perf, _cfg.accel_bwp, odr))) {
+        return false;
+    }
+    _cfg.accel_odr = odr;
+    return true;
+}
+
+bool UnitBMI270::writeGyroODR(const bmi270::GyroODR odr)
+{
+    if (inPeriodic()) {
+        M5_LIB_LOGD("Periodic measurements are running");
+        return false;
+    }
+    if (!write_register8_verified(REG_GYR_CONF, gyr_conf_value(_cfg.gyro_filter_perf, _cfg.gyro_bwp, odr))) {
+        return false;
+    }
+    _cfg.gyro_odr = odr;
+    _interval     = odr_interval_ms(odr);  // update() rate-limits on this
+    return true;
+}
+
+bool UnitBMI270::readAccelODR(bmi270::AccelODR& odr)
+{
+    uint8_t reg{};
+    if (!readRegister8(REG_ACC_CONF, reg, 0)) {
+        return false;
+    }
+    const uint8_t v = reg & 0x0F;
+    if (v < static_cast<uint8_t>(bmi270::AccelODR::Rate12_5Hz) ||
+        v > static_cast<uint8_t>(bmi270::AccelODR::Rate1600Hz)) {
+        return false;  // Reserved or a rate this driver does not model
+    }
+    odr = static_cast<bmi270::AccelODR>(v);
+    return true;
+}
+
+bool UnitBMI270::readGyroODR(bmi270::GyroODR& odr)
+{
+    uint8_t reg{};
+    if (!readRegister8(REG_GYR_CONF, reg, 0)) {
+        return false;
+    }
+    const uint8_t v = reg & 0x0F;
+    if (v < static_cast<uint8_t>(bmi270::GyroODR::Rate25Hz) || v > static_cast<uint8_t>(bmi270::GyroODR::Rate3200Hz)) {
+        return false;  // Reserved or a rate this driver does not model
+    }
+    odr = static_cast<bmi270::GyroODR>(v);
+    return true;
+}
+
 bool UnitBMI270::upload_config()
 {
     const size_t total = sizeof(bmi270_config_file);

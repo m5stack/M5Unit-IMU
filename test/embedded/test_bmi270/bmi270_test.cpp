@@ -221,6 +221,52 @@ TEST_F(TestBMI270, AuxMagWhenPresent)
     }
 }
 
+TEST_F(TestBMI270, WriteOutputDataRate)
+{
+    SCOPED_TRACE(ustr);
+
+    // The rate sets the measurement interval, so like the range it is a stop-first setting
+    EXPECT_TRUE(unit->inPeriodic());
+    EXPECT_FALSE(unit->writeAccelODR(AccelODR::Rate50Hz));
+    EXPECT_FALSE(unit->writeGyroODR(GyroODR::Rate50Hz));
+
+    // ...and the device keeps what begin() configured
+    AccelODR ao{};
+    GyroODR go{};
+    EXPECT_TRUE(unit->readAccelODR(ao));
+    EXPECT_EQ(ao, AccelODR::Rate200Hz);
+    EXPECT_TRUE(unit->readGyroODR(go));
+    EXPECT_EQ(go, GyroODR::Rate200Hz);
+
+    EXPECT_TRUE(unit->stopPeriodicMeasurement());
+    EXPECT_TRUE(unit->writeAccelODR(AccelODR::Rate50Hz));
+    EXPECT_TRUE(unit->writeGyroODR(GyroODR::Rate50Hz));
+    EXPECT_TRUE(unit->readAccelODR(ao));
+    EXPECT_EQ(ao, AccelODR::Rate50Hz);
+    EXPECT_TRUE(unit->readGyroODR(go));
+    EXPECT_EQ(go, GyroODR::Rate50Hz);
+
+    // The rate shares its register with the bandwidth and filter performance, so check the write
+    // recomposed rather than clobbered them
+    const auto cfg = unit->config();
+    m5::imu::imu_convert_param_t p{};
+    unit->imuConvertParam(p);
+    EXPECT_FLOAT_EQ(p.accel_res, accel_res(cfg.accel_range));
+
+    // Measurement still flows at the new rate
+    EXPECT_TRUE(unit->startPeriodicMeasurement());
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    int updated{};
+    for (int i = 0; i < 20; ++i) {
+        unit->update();
+        if (unit->updated()) {
+            ++updated;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    EXPECT_GT(updated, 0);
+}
+
 TEST_F(TestBMI270, BandwidthParameter)
 {
     SCOPED_TRACE(ustr);

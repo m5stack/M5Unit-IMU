@@ -223,6 +223,58 @@ bool UnitSH200Q::readGyroRange(sh200q::GyroRange& range)
     return true;
 }
 
+bool UnitSH200Q::writeAccelOdr(const sh200q::AccelOdr odr)
+{
+    if (inPeriodic()) {
+        M5_LIB_LOGD("Periodic measurements are running");
+        return false;
+    }
+    if (!write_register8_verified(REG_ACC_CONFIG, ACC_CONFIG_BASE | (static_cast<uint8_t>(odr) << 3))) {
+        return false;
+    }
+    _cfg.accel_odr = odr;
+    return true;
+}
+
+bool UnitSH200Q::writeGyroOdr(const sh200q::GyroOdr odr)
+{
+    if (inPeriodic()) {
+        M5_LIB_LOGD("Periodic measurements are running");
+        return false;
+    }
+    if (!write_register8_verified(REG_GYRO_CONFIG, GYRO_CONFIG_BASE | (static_cast<uint8_t>(odr) << 1))) {
+        return false;
+    }
+    _cfg.gyro_odr = odr;
+    _interval     = 1000U / sh200q::gyro_odr_hz(odr);  // update() rate-limits on this
+    return true;
+}
+
+bool UnitSH200Q::readAccelOdr(sh200q::AccelOdr& odr)
+{
+    uint8_t reg{};
+    if (!readRegister8(REG_ACC_CONFIG, reg, 0)) {
+        return false;
+    }
+    // bits[4:3], every one of the 4 values is a documented rate
+    odr = static_cast<sh200q::AccelOdr>((reg >> 3) & 0x03);
+    return true;
+}
+
+bool UnitSH200Q::readGyroOdr(sh200q::GyroOdr& odr)
+{
+    uint8_t reg{};
+    if (!readRegister8(REG_GYRO_CONFIG, reg, 0)) {
+        return false;
+    }
+    const uint8_t v = (reg >> 1) & 0x07;
+    if (v > static_cast<uint8_t>(sh200q::GyroOdr::HZ250)) {
+        return false;  // Reserved or a rate this driver does not model
+    }
+    odr = static_cast<sh200q::GyroOdr>(v);
+    return true;
+}
+
 bool UnitSH200Q::read_measurement(sh200q::Data& d)
 {
     // No data-ready flag is used: INT_STATUS behavior with interrupts disabled is undocumented,
