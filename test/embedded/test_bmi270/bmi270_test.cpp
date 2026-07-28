@@ -6,15 +6,22 @@
 /*
   UnitTest for UnitBMI270
 
-  Default (no TEST_BUILTIN): external wiring via I2CComponentTestBase (GROVE / standard I2C),
-  e.g. a UnitDoF6 plugged into a host's Grove port.
+  Default (no TEST_BUILTIN): external wiring via I2CComponentTestBase (GROVE / standard I2C).
 
-  Attach only a UnitDoF6 or a Unit Mini IMU-Pro (U171) on that path -- NOT a DoF9/DoF10. This
-  suite builds a UnitBMI270AuxBMM150, so the AUX probe runs.
-  On DoF9/DoF10 the BMI270's AUX pins share the main bus, so enabling AUX makes the BMI270 a
-  second I2C master and the bus collides; recovery needs the unit to be power-cycled. The DoF9 /
-  DoF10 composites disable the probe themselves (see UnitDoF9's constructor), so test_dof9 /
-  test_dof10 are the safe way to exercise those boards.
+  Attach ONLY a Unit Mini IMU-Pro (U171) on that path -- no DoF board of any kind. This suite builds
+  a UnitBMI270AuxBMM150, so the AUX probe runs, and the U171 is the one M5 unit whose BMM150 really
+  sits on the AUX interface. On the DoF boards the BMI270's AUX pins share the main I2C bus, so
+  enabling AUX turns the BMI270 into a second bus master and the bus collides.
+
+  That includes the DoF6, which is the same board family with the magnetometer left unpopulated. It
+  usually survives a run here because the probe finds nothing and switches the interface straight
+  back off (see UnitBMI270AuxBMM150::setup_aux_bmm150), so the BMI270 is only a second master for a
+  few milliseconds -- but the window is real, and losing that race has been observed: the unit then
+  answered every read with 0x20 instead of CHIP_ID 0x24 until it was physically unplugged, re-flashing
+  the host being no help since the unit keeps its power. Passing is luck, not safety.
+
+  Use test_dof6 for a DoF6 and test_dof9 / test_dof10 for those boards -- all three instantiate the
+  plain UnitBMI270, which never touches the AUX interface.
 
   With -DTEST_BUILTIN: the board's built-in BMI270 is exercised over M5.In_I2C. The built-in
   BMI270 sits at either 0x68 or 0x69 depending on the board (CoreS3/CoreS3SE: 0x69;
