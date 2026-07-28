@@ -189,7 +189,7 @@ TEST_F(TestSH200Q, StartPeriodicWithArgs)
 
     EXPECT_TRUE(unit->stopPeriodicMeasurement());
 
-    // Non-default settings are written to the chip and synced to config()
+    // Non-default settings are written to the chip
     EXPECT_TRUE(unit->startPeriodicMeasurement(sh200q::AccelRange::G4, sh200q::GyroRange::DPS1000,
                                                sh200q::AccelOdr::HZ512, sh200q::GyroOdr::HZ250,
                                                sh200q::GyroDlpf::BW100));
@@ -202,12 +202,15 @@ TEST_F(TestSH200Q, StartPeriodicWithArgs)
     EXPECT_TRUE(unit->readGyroRange(gr));
     EXPECT_EQ(gr, sh200q::GyroRange::DPS1000);
 
-    const auto cfg = unit->config();
-    EXPECT_EQ(cfg.accel_range, sh200q::AccelRange::G4);
-    EXPECT_EQ(cfg.gyro_range, sh200q::GyroRange::DPS1000);
-    EXPECT_EQ(cfg.accel_odr, sh200q::AccelOdr::HZ512);
-    EXPECT_EQ(cfg.gyro_odr, sh200q::GyroOdr::HZ250);
-    EXPECT_EQ(cfg.gyro_dlpf, sh200q::GyroDlpf::BW100);
+    // config() reports what was configured for begin(), not what the device is doing now, so the
+    // arguments passed above are verified by reading the registers back. gyro_dlpf has no read API
+    // yet, so it is left to the "measurement flows" check below
+    sh200q::AccelOdr ao{};
+    sh200q::GyroOdr go{};
+    EXPECT_TRUE(unit->readAccelOdr(ao));
+    EXPECT_EQ(ao, sh200q::AccelOdr::HZ512);
+    EXPECT_TRUE(unit->readGyroOdr(go));
+    EXPECT_EQ(go, sh200q::GyroOdr::HZ250);
 
     // Measurement actually flows with the new settings
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
@@ -225,5 +228,6 @@ TEST_F(TestSH200Q, StartPeriodicWithArgs)
     EXPECT_TRUE(unit->stopPeriodicMeasurement());
     EXPECT_TRUE(unit->startPeriodicMeasurement());
     EXPECT_TRUE(unit->inPeriodic());
-    EXPECT_EQ(unit->config().gyro_odr, sh200q::GyroOdr::HZ250);
+    EXPECT_TRUE(unit->readGyroOdr(go));
+    EXPECT_EQ(go, sh200q::GyroOdr::HZ250);
 }

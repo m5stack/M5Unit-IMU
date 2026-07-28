@@ -113,9 +113,16 @@ bool UnitBMI270::begin()
         return false;
     }
 
-    return _cfg.start_periodic
-               ? startPeriodicMeasurement(_cfg.accel_range, _cfg.gyro_range, _cfg.accel_odr, _cfg.gyro_odr)
-               : true;
+    // Seed the live state from the begin settings; start_periodic_measurement() keeps it in step
+    _accel_range = _cfg.accel_range;
+    _gyro_range  = _cfg.gyro_range;
+    _accel_odr   = _cfg.accel_odr;
+    _gyro_odr    = _cfg.gyro_odr;
+
+    return _cfg.start_periodic ? startPeriodicMeasurement(_cfg.accel_range, _cfg.gyro_range, _cfg.accel_odr,
+                                                          _cfg.gyro_odr, _cfg.accel_filter_perf, _cfg.accel_bwp,
+                                                          _cfg.gyro_filter_perf, _cfg.gyro_bwp)
+                              : true;
 }
 
 bool UnitBMI270::softReset()
@@ -207,7 +214,10 @@ void UnitBMI270::update(const bool force)
 }
 
 bool UnitBMI270::start_periodic_measurement(const bmi270::AccelRange accel_range, const bmi270::GyroRange gyro_range,
-                                            const bmi270::AccelODR accel_odr, const bmi270::GyroODR gyro_odr)
+                                            const bmi270::AccelODR accel_odr, const bmi270::GyroODR gyro_odr,
+                                            const bmi270::FilterPerf accel_filter_perf,
+                                            const bmi270::AccelBwp accel_bwp,
+                                            const bmi270::FilterPerf gyro_filter_perf, const bmi270::GyroBwp gyro_bwp)
 {
     if (inPeriodic()) {
         return false;
@@ -215,25 +225,28 @@ bool UnitBMI270::start_periodic_measurement(const bmi270::AccelRange accel_range
 
     // The accelerometer's averaging-only bandwidth values are reserved while the filter runs in
     // Performance mode, so refuse that pair instead of writing a reserved code to the register
-    if (!bwp_fits(_cfg.accel_filter_perf, _cfg.accel_bwp)) {
+    if (!bwp_fits(accel_filter_perf, accel_bwp)) {
         M5_LIB_LOGE("accel_bwp 0x%02X is reserved while accel_filter_perf is Performance",
-                    static_cast<uint8_t>(_cfg.accel_bwp));
+                    static_cast<uint8_t>(accel_bwp));
         return false;
     }
 
     if (!write_register8_verified(REG_PWR_CTRL, PWR_CTRL_ACC_GYR_TEMP_ON) ||
-        !write_register8_verified(REG_ACC_CONF,
-                                  acc_conf_value(_cfg.accel_filter_perf, _cfg.accel_bwp, accel_odr)) ||
+        !write_register8_verified(REG_ACC_CONF, acc_conf_value(accel_filter_perf, accel_bwp, accel_odr)) ||
         !writeAccelRange(accel_range) ||
-        !write_register8_verified(REG_GYR_CONF, gyr_conf_value(_cfg.gyro_filter_perf, _cfg.gyro_bwp, gyro_odr)) ||
+        !write_register8_verified(REG_GYR_CONF, gyr_conf_value(gyro_filter_perf, gyro_bwp, gyro_odr)) ||
         !writeGyroRange(gyro_range)) {
         M5_LIB_LOGE("Failed to configure");
         return false;
     }
 
-    // accel_range/gyro_range are synced to _cfg by writeAccelRange/writeGyroRange above
-    _cfg.accel_odr = accel_odr;
-    _cfg.gyro_odr  = gyro_odr;
+    // accel_range/gyro_range are tracked by writeAccelRange/writeGyroRange above
+    _accel_odr         = accel_odr;
+    _gyro_odr          = gyro_odr;
+    _accel_filter_perf = accel_filter_perf;
+    _accel_bwp         = accel_bwp;
+    _gyro_filter_perf  = gyro_filter_perf;
+    _gyro_bwp          = gyro_bwp;
 
     _periodic = true;
     _latest   = 0;
@@ -243,7 +256,8 @@ bool UnitBMI270::start_periodic_measurement(const bmi270::AccelRange accel_range
 
 bool UnitBMI270::start_periodic_measurement()
 {
-    return start_periodic_measurement(_cfg.accel_range, _cfg.gyro_range, _cfg.accel_odr, _cfg.gyro_odr);
+    return start_periodic_measurement(_accel_range, _gyro_range, _accel_odr, _gyro_odr, _accel_filter_perf,
+                                      _accel_bwp, _gyro_filter_perf, _gyro_bwp);
 }
 
 bool UnitBMI270::stop_periodic_measurement()
@@ -253,10 +267,12 @@ bool UnitBMI270::stop_periodic_measurement()
 }
 
 bool UnitBMI270::startPeriodicMeasurement(const bmi270::AccelRange accel_range, const bmi270::GyroRange gyro_range,
-                                          const bmi270::AccelODR accel_odr, const bmi270::GyroODR gyro_odr)
+                                          const bmi270::AccelODR accel_odr, const bmi270::GyroODR gyro_odr,
+                                          const bmi270::FilterPerf accel_filter_perf, const bmi270::AccelBwp accel_bwp,
+                                          const bmi270::FilterPerf gyro_filter_perf, const bmi270::GyroBwp gyro_bwp)
 {
-    return PeriodicMeasurementAdapter<UnitBMI270, bmi270::Data>::startPeriodicMeasurement(accel_range, gyro_range,
-                                                                                          accel_odr, gyro_odr);
+    return PeriodicMeasurementAdapter<UnitBMI270, bmi270::Data>::startPeriodicMeasurement(
+        accel_range, gyro_range, accel_odr, gyro_odr, accel_filter_perf, accel_bwp, gyro_filter_perf, gyro_bwp);
 }
 
 bool UnitBMI270::startPeriodicMeasurement()
@@ -307,7 +323,7 @@ bool UnitBMI270::writeAccelRange(const bmi270::AccelRange range)
         return false;
     }
     if (write_register8_verified(REG_ACC_RANGE, static_cast<uint8_t>(range))) {
-        _cfg.accel_range = range;
+        _accel_range = range;
         return true;
     }
     return false;
@@ -320,7 +336,7 @@ bool UnitBMI270::writeGyroRange(const bmi270::GyroRange range)
         return false;
     }
     if (write_register8_verified(REG_GYR_RANGE, static_cast<uint8_t>(range))) {
-        _cfg.gyro_range = range;
+        _gyro_range = range;
         return true;
     }
     return false;
@@ -358,10 +374,10 @@ bool UnitBMI270::writeAccelODR(const bmi270::AccelODR odr)
     }
     // The rate shares REG_ACC_CONF with the bandwidth and filter performance, so the whole register
     // is recomposed from the configuration rather than read-modify-written
-    if (!write_register8_verified(REG_ACC_CONF, acc_conf_value(_cfg.accel_filter_perf, _cfg.accel_bwp, odr))) {
+    if (!write_register8_verified(REG_ACC_CONF, acc_conf_value(_accel_filter_perf, _accel_bwp, odr))) {
         return false;
     }
-    _cfg.accel_odr = odr;
+    _accel_odr = odr;
     return true;
 }
 
@@ -371,10 +387,10 @@ bool UnitBMI270::writeGyroODR(const bmi270::GyroODR odr)
         M5_LIB_LOGD("Periodic measurements are running");
         return false;
     }
-    if (!write_register8_verified(REG_GYR_CONF, gyr_conf_value(_cfg.gyro_filter_perf, _cfg.gyro_bwp, odr))) {
+    if (!write_register8_verified(REG_GYR_CONF, gyr_conf_value(_gyro_filter_perf, _gyro_bwp, odr))) {
         return false;
     }
-    _cfg.gyro_odr = odr;
+    _gyro_odr = odr;
     _interval     = odr_interval_ms(odr);  // update() rate-limits on this
     return true;
 }
@@ -507,8 +523,8 @@ Capability UnitBMI270::readImuRaw(m5::imu::imu_raw_data_t& out)
 
 void UnitBMI270::imuConvertParam(m5::imu::imu_convert_param_t& out) const
 {
-    out.accel_res   = accel_res(_cfg.accel_range);
-    out.gyro_res    = gyro_res(_cfg.gyro_range);
+    out.accel_res   = accel_res(_accel_range);
+    out.gyro_res    = gyro_res(_gyro_range);
     out.temp_res    = 1.0f / 512.0f;
     out.temp_offset = 23.0f;
 }

@@ -71,9 +71,13 @@ UnitBMI270AuxBMM150::UnitBMI270AuxBMM150(const uint8_t addr) : UnitBMI270(addr)
 }
 
 bool UnitBMI270AuxBMM150::start_periodic_measurement(const bmi270::AccelRange accel_range,
-                                                      const bmi270::GyroRange gyro_range,
-                                                      const bmi270::AccelODR accel_odr,
-                                                      const bmi270::GyroODR gyro_odr)
+                                                     const bmi270::GyroRange gyro_range,
+                                                     const bmi270::AccelODR accel_odr,
+                                                     const bmi270::GyroODR gyro_odr,
+                                                     const bmi270::FilterPerf accel_filter_perf,
+                                                     const bmi270::AccelBwp accel_bwp,
+                                                     const bmi270::FilterPerf gyro_filter_perf,
+                                                     const bmi270::GyroBwp gyro_bwp)
 {
     // Reject an unusable preset before touching any register. Failing inside the probe would be
     // indistinguishable from "no BMM150 on this board", which degrades to 6-axis and would silently
@@ -87,7 +91,8 @@ bool UnitBMI270AuxBMM150::start_periodic_measurement(const bmi270::AccelRange ac
         return false;
     }
 
-    if (!UnitBMI270::start_periodic_measurement(accel_range, gyro_range, accel_odr, gyro_odr)) {
+    if (!UnitBMI270::start_periodic_measurement(accel_range, gyro_range, accel_odr, gyro_odr, accel_filter_perf,
+                                               accel_bwp, gyro_filter_perf, gyro_bwp)) {
         return false;
     }
 

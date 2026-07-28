@@ -39,6 +39,9 @@ public:
       @struct config_t
       @brief Settings for begin()
       @note Defaults match the original M5StickC library (8G / 2000dps / 256Hz / 500Hz / DLPF 50Hz)
+      @note These are the settings applied by begin(). They are not updated by the runtime setters
+      (writeAccelRange() and friends), so config() keeps reporting what was configured -- read the
+      device with readAccelRange() etc. to find out what is in effect now
      */
     struct config_t {
         //! Start periodic measurement on begin()?
@@ -187,7 +190,17 @@ protected:
     M5_UNIT_COMPONENT_PERIODIC_MEASUREMENT_ADAPTER_HPP_BUILDER(UnitSH200Q, sh200q::Data);
 
 private:
+    // Settings for begin(); never written to after that. What is currently on the device lives in
+    // the live-state members below, so config() keeps meaning "what was configured"
     config_t _cfg{};
+    // Mirrors of the registers this driver can change at runtime. imuConvertParam() needs the range
+    // actually in effect (a stale factor would silently misreport every sample), and the no-argument
+    // startPeriodicMeasurement() resumes from these rather than reverting to _cfg
+    sh200q::AccelRange _accel_range{};
+    sh200q::GyroRange _gyro_range{};
+    sh200q::AccelOdr _accel_odr{};
+    sh200q::GyroOdr _gyro_odr{};
+    sh200q::GyroDlpf _gyro_dlpf{};
     uint32_t _pushed{}, _consumed{};  // readImuRaw pop counters (do not disturb latest()/oldest())
     std::unique_ptr<m5::container::CircularBuffer<sh200q::Data>> _data{};
 };

@@ -68,6 +68,12 @@ bool UnitMPU6xxx::begin()
         return false;
     }
 
+    // Seed the live state from the begin settings; start_periodic_measurement() keeps it in step
+    _accel_range     = _cfg.accel_range;
+    _gyro_range      = _cfg.gyro_range;
+    _dlpf            = _cfg.dlpf;
+    _sample_rate_div = _cfg.sample_rate_div;
+
     return _cfg.start_periodic
                ? startPeriodicMeasurement(_cfg.accel_range, _cfg.gyro_range, _cfg.dlpf, _cfg.sample_rate_div)
                : true;
@@ -123,9 +129,9 @@ bool UnitMPU6xxx::start_periodic_measurement(const mpu6886::AccelRange accel_ran
     }
     m5::utility::delay(50);  // Wait for gyro (typ 35ms) / accel (typ 10ms) startup
 
-    // accel_range/gyro_range are synced to _cfg by writeAccelRange/writeGyroRange above
-    _cfg.dlpf            = dlpf;
-    _cfg.sample_rate_div = sample_rate_div;
+    // accel_range/gyro_range are tracked by writeAccelRange/writeGyroRange above
+    _dlpf            = dlpf;
+    _sample_rate_div = sample_rate_div;
 
     _periodic = true;
     _latest   = 0;
@@ -135,7 +141,7 @@ bool UnitMPU6xxx::start_periodic_measurement(const mpu6886::AccelRange accel_ran
 
 bool UnitMPU6xxx::start_periodic_measurement()
 {
-    return start_periodic_measurement(_cfg.accel_range, _cfg.gyro_range, _cfg.dlpf, _cfg.sample_rate_div);
+    return start_periodic_measurement(_accel_range, _gyro_range, _dlpf, _sample_rate_div);
 }
 
 bool UnitMPU6xxx::stop_periodic_measurement()
@@ -193,7 +199,7 @@ bool UnitMPU6xxx::writeAccelRange(const mpu6886::AccelRange range)
         return false;
     }
     if (write_register8_verified(REG_ACCEL_CONFIG, static_cast<uint8_t>(range) << 3)) {
-        _cfg.accel_range = range;
+        _accel_range = range;
         return true;
     }
     return false;
@@ -206,7 +212,7 @@ bool UnitMPU6xxx::writeGyroRange(const mpu6886::GyroRange range)
         return false;
     }
     if (write_register8_verified(REG_GYRO_CONFIG, static_cast<uint8_t>(range) << 3)) {
-        _cfg.gyro_range = range;
+        _gyro_range = range;
         return true;
     }
     return false;
@@ -229,6 +235,48 @@ bool UnitMPU6xxx::readGyroRange(mpu6886::GyroRange& range)
         return false;
     }
     range = static_cast<mpu6886::GyroRange>((reg >> 3) & 0x03);
+    return true;
+}
+
+bool UnitMPU6xxx::writeSampleRateDiv(const uint8_t div)
+{
+    if (inPeriodic()) {
+        M5_LIB_LOGD("Periodic measurements are running");
+        return false;
+    }
+    if (!write_register8_verified(REG_SMPLRT_DIV, div)) {
+        return false;
+    }
+    _sample_rate_div = div;
+    _interval        = 1 + div;  // update() rate-limits on this
+    return true;
+}
+
+bool UnitMPU6xxx::readSampleRateDiv(uint8_t& div)
+{
+    return readRegister8(REG_SMPLRT_DIV, div, 0);
+}
+
+bool UnitMPU6xxx::writeDlpf(const mpu6886::Dlpf dlpf)
+{
+    if (inPeriodic()) {
+        M5_LIB_LOGD("Periodic measurements are running");
+        return false;
+    }
+    if (!write_register8_verified(REG_CONFIG, static_cast<uint8_t>(dlpf))) {
+        return false;
+    }
+    _dlpf = dlpf;
+    return true;
+}
+
+bool UnitMPU6xxx::readDlpf(mpu6886::Dlpf& dlpf)
+{
+    uint8_t reg{};
+    if (!readRegister8(REG_CONFIG, reg, 0)) {
+        return false;
+    }
+    dlpf = static_cast<mpu6886::Dlpf>(reg & 0x07);  // bits[2:0], all 8 values are documented
     return true;
 }
 
@@ -288,8 +336,8 @@ Capability UnitMPU6xxx::readImuRaw(m5::imu::imu_raw_data_t& out)
 
 void UnitMPU6xxx::imuConvertParam(m5::imu::imu_convert_param_t& out) const
 {
-    out.accel_res   = accel_res(_cfg.accel_range);
-    out.gyro_res    = gyro_res(_cfg.gyro_range);
+    out.accel_res   = accel_res(_accel_range);
+    out.gyro_res    = gyro_res(_gyro_range);
     out.temp_res    = temperature_res();
     out.temp_offset = temperature_offset();
 }

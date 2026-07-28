@@ -308,9 +308,47 @@ TEST_F(TestMPU6886, SoftReset)
     EXPECT_TRUE(updated);
 }
 
+TEST_F(TestMPU6886, WriteSampling)
+{
+    SCOPED_TRACE(ustr);
+
+    // Both settings change the measurement cadence or filtering, so like the range they are
+    // stop-first
+    EXPECT_TRUE(unit->inPeriodic());
+    EXPECT_FALSE(unit->writeSampleRateDiv(9));
+    EXPECT_FALSE(unit->writeDlpf(Dlpf::BW41));
+
+    EXPECT_TRUE(unit->stopPeriodicMeasurement());
+    EXPECT_TRUE(unit->writeSampleRateDiv(9));
+    EXPECT_TRUE(unit->writeDlpf(Dlpf::BW41));
+
+    uint8_t div{};
+    Dlpf dl{};
+    EXPECT_TRUE(unit->readSampleRateDiv(div));
+    EXPECT_EQ(div, 9);
+    EXPECT_TRUE(unit->readDlpf(dl));
+    EXPECT_EQ(dl, Dlpf::BW41);
+
+    // Measurement still flows at the new cadence
+    EXPECT_TRUE(unit->startPeriodicMeasurement());
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    int updated{};
+    for (int i = 0; i < 20; ++i) {
+        unit->update();
+        if (unit->updated()) {
+            ++updated;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    EXPECT_GT(updated, 0);
+}
+
 TEST_F(TestMPU6886, StartPeriodicWithArgs)
 {
     SCOPED_TRACE(ustr);
+
+    // config() reports the begin-time settings and is not touched by the calls below
+    const auto cfg_before = unit->config();
 
     EXPECT_TRUE(unit->stopPeriodicMeasurement());
 
@@ -325,11 +363,14 @@ TEST_F(TestMPU6886, StartPeriodicWithArgs)
     EXPECT_TRUE(unit->readGyroRange(gr));
     EXPECT_EQ(gr, GyroRange::DPS500);
 
-    const auto cfg = unit->config();
-    EXPECT_EQ(cfg.accel_range, AccelRange::G4);
-    EXPECT_EQ(cfg.gyro_range, GyroRange::DPS500);
-    EXPECT_EQ(cfg.dlpf, Dlpf::BW92);
-    EXPECT_EQ(cfg.sample_rate_div, 7);
+    // config() reports what was configured for begin(), not what the device is doing now, so every
+    // argument passed above is verified by reading the registers back
+    uint8_t div{};
+    Dlpf dl{};
+    EXPECT_TRUE(unit->readSampleRateDiv(div));
+    EXPECT_EQ(div, 7);
+    EXPECT_TRUE(unit->readDlpf(dl));
+    EXPECT_EQ(dl, Dlpf::BW92);
 
     // Measurement actually flows with the new settings
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
@@ -343,9 +384,12 @@ TEST_F(TestMPU6886, StartPeriodicWithArgs)
     }
     EXPECT_TRUE(updated);
 
-    // The no-argument overload resumes with the settings synced by the call above
+    // The no-argument overload resumes from the live state, not from config_t
     EXPECT_TRUE(unit->stopPeriodicMeasurement());
     EXPECT_TRUE(unit->startPeriodicMeasurement());
     EXPECT_TRUE(unit->inPeriodic());
-    EXPECT_EQ(unit->config().sample_rate_div, 7);
+    EXPECT_TRUE(unit->readSampleRateDiv(div));
+    EXPECT_EQ(div, 7);
+    // ...while config() still reports what begin() was given
+    EXPECT_EQ(unit->config().sample_rate_div, cfg_before.sample_rate_div);
 }

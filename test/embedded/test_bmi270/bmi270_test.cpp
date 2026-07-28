@@ -247,11 +247,13 @@ TEST_F(TestBMI270, WriteOutputDataRate)
     EXPECT_EQ(go, GyroODR::Rate50Hz);
 
     // The rate shares its register with the bandwidth and filter performance, so check the write
-    // recomposed rather than clobbered them
-    const auto cfg = unit->config();
+    // recomposed rather than clobbered them: the conversion factor still has to match the range the
+    // device reports
+    AccelRange ar{};
+    EXPECT_TRUE(unit->readAccelRange(ar));
     m5::imu::imu_convert_param_t p{};
     unit->imuConvertParam(p);
-    EXPECT_FLOAT_EQ(p.accel_res, accel_res(cfg.accel_range));
+    EXPECT_FLOAT_EQ(p.accel_res, accel_res(ar));
 
     // Measurement still flows at the new rate
     EXPECT_TRUE(unit->startPeriodicMeasurement());
@@ -271,31 +273,30 @@ TEST_F(TestBMI270, BandwidthParameter)
 {
     SCOPED_TRACE(ustr);
 
-    const auto original = unit->config();
+    // Every REG_ACC_CONF/REG_GYR_CONF field is an argument of the full startPeriodicMeasurement(),
+    // so the bandwidth is exercised through that rather than through config_t (which only begin()
+    // reads)
+    const auto cfg = unit->config();
     EXPECT_TRUE(unit->stopPeriodicMeasurement());
 
     // The accelerometer's averaging-only bandwidths are reserved while the filter is in Performance
     // mode, so that pair must be refused rather than written to the register as a reserved code
-    auto cfg               = original;
-    cfg.accel_filter_perf  = FilterPerf::Performance;
-    cfg.accel_bwp          = AccelBwp::Avg16;
-    unit->config(cfg);
-    EXPECT_FALSE(unit->startPeriodicMeasurement());
+    EXPECT_FALSE(unit->startPeriodicMeasurement(cfg.accel_range, cfg.gyro_range, cfg.accel_odr, cfg.gyro_odr,
+                                                FilterPerf::Performance, AccelBwp::Avg16, FilterPerf::Performance,
+                                                GyroBwp::Norm));
     EXPECT_FALSE(unit->inPeriodic());
 
     // The same bandwidth is fine once the filter averages instead of filtering
-    cfg.accel_filter_perf = FilterPerf::PowerOptimized;
-    unit->config(cfg);
-    EXPECT_TRUE(unit->startPeriodicMeasurement());
+    EXPECT_TRUE(unit->startPeriodicMeasurement(cfg.accel_range, cfg.gyro_range, cfg.accel_odr, cfg.gyro_odr,
+                                               FilterPerf::PowerOptimized, AccelBwp::Avg16, FilterPerf::Performance,
+                                               GyroBwp::Norm));
     EXPECT_TRUE(unit->inPeriodic());
 
     // A non-default filter bandwidth on both sensors is accepted and measurement keeps flowing
     EXPECT_TRUE(unit->stopPeriodicMeasurement());
-    cfg.accel_filter_perf = FilterPerf::Performance;
-    cfg.accel_bwp         = AccelBwp::Osr2Avg2;
-    cfg.gyro_bwp          = GyroBwp::Osr4;
-    unit->config(cfg);
-    EXPECT_TRUE(unit->startPeriodicMeasurement());
+    EXPECT_TRUE(unit->startPeriodicMeasurement(cfg.accel_range, cfg.gyro_range, cfg.accel_odr, cfg.gyro_odr,
+                                               FilterPerf::Performance, AccelBwp::Osr2Avg2, FilterPerf::Performance,
+                                               GyroBwp::Osr4));
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
     int updated{};
     for (int i = 0; i < 20; ++i) {
@@ -307,10 +308,10 @@ TEST_F(TestBMI270, BandwidthParameter)
     }
     EXPECT_GT(updated, 0);
 
-    // Restore what begin() had set up for the tests that follow
+    // The no-argument overload resumes from the live state, i.e. the bandwidth set above
     EXPECT_TRUE(unit->stopPeriodicMeasurement());
-    unit->config(original);
     EXPECT_TRUE(unit->startPeriodicMeasurement());
+    EXPECT_TRUE(unit->inPeriodic());
 }
 
 TEST_F(TestBMI270, AuxMagPresetRejectsWhatTheFixedRateCannotComplete)
@@ -548,7 +549,9 @@ TEST_F(TestBMI270, StartPeriodicWithArgs)
 
     // Non-default settings are written to the chip and synced to config()
     EXPECT_TRUE(
-        unit->startPeriodicMeasurement(AccelRange::G4, GyroRange::DPS500, AccelODR::Rate50Hz, GyroODR::Rate50Hz));
+        unit->startPeriodicMeasurement(AccelRange::G4, GyroRange::DPS500, AccelODR::Rate50Hz, GyroODR::Rate50Hz,
+                                       FilterPerf::Performance, AccelBwp::NormAvg4, FilterPerf::Performance,
+                                       GyroBwp::Norm));
     EXPECT_TRUE(unit->inPeriodic());
 
     AccelRange ar{};
@@ -558,11 +561,14 @@ TEST_F(TestBMI270, StartPeriodicWithArgs)
     EXPECT_TRUE(unit->readGyroRange(gr));
     EXPECT_EQ(gr, GyroRange::DPS500);
 
-    const auto cfg = unit->config();
-    EXPECT_EQ(cfg.accel_range, AccelRange::G4);
-    EXPECT_EQ(cfg.gyro_range, GyroRange::DPS500);
-    EXPECT_EQ(cfg.accel_odr, AccelODR::Rate50Hz);
-    EXPECT_EQ(cfg.gyro_odr, GyroODR::Rate50Hz);
+    // config() reports what was configured for begin(), not what the device is doing now, so the
+    // arguments passed above are verified by reading the registers back
+    AccelODR ao{};
+    GyroODR go{};
+    EXPECT_TRUE(unit->readAccelODR(ao));
+    EXPECT_EQ(ao, AccelODR::Rate50Hz);
+    EXPECT_TRUE(unit->readGyroODR(go));
+    EXPECT_EQ(go, GyroODR::Rate50Hz);
 
     // Measurement actually flows with the new settings
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
@@ -576,9 +582,10 @@ TEST_F(TestBMI270, StartPeriodicWithArgs)
     }
     EXPECT_TRUE(updated);
 
-    // The no-argument overload resumes with the settings synced by the call above
+    // The no-argument overload resumes with the settings in effect, not the begin-time ones
     EXPECT_TRUE(unit->stopPeriodicMeasurement());
     EXPECT_TRUE(unit->startPeriodicMeasurement());
     EXPECT_TRUE(unit->inPeriodic());
-    EXPECT_EQ(unit->config().gyro_odr, GyroODR::Rate50Hz);
+    EXPECT_TRUE(unit->readGyroODR(go));
+    EXPECT_EQ(go, GyroODR::Rate50Hz);
 }

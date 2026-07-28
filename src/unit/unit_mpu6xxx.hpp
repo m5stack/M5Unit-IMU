@@ -39,6 +39,9 @@ public:
       @brief Settings for begin()
       @note Ring buffer depth is configured via component_config() (default:
       mpu6886::DEFAULT_STORED_SIZE)
+      @note These are the settings applied by begin(). They are not updated by the runtime setters
+      (writeAccelRange() and friends), so config() keeps reporting what was configured -- read the
+      device with readAccelRange() etc. to find out what is in effect now
      */
     struct config_t {
         //! Start periodic measurement on begin()?
@@ -99,6 +102,31 @@ public:
     //! @param[out] range Gyroscope range
     //! @return True if successful
     bool readGyroRange(mpu6886::GyroRange& range);
+    ///@}
+
+    ///@name Sampling (stop periodic measurement first)
+    ///@{
+    /*!
+      @brief Write the sample rate divider
+      @param[in] div Divider; the sample rate becomes 1kHz / (1 + div) with the DLPF enabled
+      @return True if successful
+      @note The periodic measurement interval is derived from this, so it is updated too
+      @warning During periodic measurement runs, an error is returned
+     */
+    bool writeSampleRateDiv(const uint8_t div);
+    //! @brief Read the sample rate divider from the device (REG_SMPLRT_DIV)
+    //! @param[out] div Divider
+    //! @return True if successful
+    bool readSampleRateDiv(uint8_t& div);
+    //! @brief Write the digital low-pass filter bandwidth
+    //! @param[in] dlpf Filter bandwidth
+    //! @return True if successful
+    //! @warning During periodic measurement runs, an error is returned
+    bool writeDlpf(const mpu6886::Dlpf dlpf);
+    //! @brief Read the digital low-pass filter bandwidth from the device (REG_CONFIG bits[2:0])
+    //! @param[out] dlpf Filter bandwidth
+    //! @return True if successful
+    bool readDlpf(mpu6886::Dlpf& dlpf);
     ///@}
 
     ///@name Reset
@@ -194,7 +222,16 @@ protected:
     M5_UNIT_COMPONENT_PERIODIC_MEASUREMENT_ADAPTER_HPP_BUILDER(UnitMPU6xxx, mpu6886::Data);
 
 private:
+    // Settings for begin(); never written to after that. What is currently on the device lives in
+    // the live-state members below, so config() keeps meaning "what was configured"
     config_t _cfg{};
+    // Mirrors of the registers this driver can change at runtime. imuConvertParam() needs the range
+    // actually in effect (a stale factor would silently misreport every sample), and the no-argument
+    // startPeriodicMeasurement() resumes from these rather than reverting to _cfg
+    mpu6886::AccelRange _accel_range{};
+    mpu6886::GyroRange _gyro_range{};
+    mpu6886::Dlpf _dlpf{};
+    uint8_t _sample_rate_div{};
     uint32_t _pushed{}, _consumed{};  // readImuRaw pop counters (do not disturb latest()/oldest())
     std::unique_ptr<m5::container::CircularBuffer<mpu6886::Data>> _data{};
 };

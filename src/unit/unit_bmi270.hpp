@@ -40,6 +40,9 @@ public:
       @brief Settings for begin()
       @note Ring buffer depth is configured via component_config() (default:
       bmi270::DEFAULT_STORED_SIZE)
+      @note These are the settings applied by begin(). They are not updated by the runtime setters
+      (writeAccelRange() and friends), so config() keeps reporting what was configured -- read the
+      device with readAccelRange() etc. to find out what is in effect now
      */
     struct config_t {
         //! Start periodic measurement on begin()?
@@ -163,11 +166,19 @@ public:
       @param gyro_range Gyroscope range
       @param accel_odr Accelerometer output data rate
       @param gyro_odr Gyroscope output data rate (periodic measurement interval is derived from this)
-      @return True if successful
+      @param accel_filter_perf Accelerometer filter performance mode
+      @param accel_bwp Accelerometer bandwidth parameter
+      @param gyro_filter_perf Gyroscope filter performance mode
+      @param gyro_bwp Gyroscope bandwidth parameter
+      @return True if successful, false if accel_bwp is reserved in accel_filter_perf (bmi270::bwp_fits())
+      @note Every field of REG_ACC_CONF/REG_GYR_CONF is an argument so that starting never depends on
+      config_t, which only begin() reads
       @note UnitBMI270AuxBMM150 overrides this to also (re)probe and configure its AUX BMM150
     */
     bool startPeriodicMeasurement(const bmi270::AccelRange accel_range, const bmi270::GyroRange gyro_range,
-                                  const bmi270::AccelODR accel_odr, const bmi270::GyroODR gyro_odr);
+                                  const bmi270::AccelODR accel_odr, const bmi270::GyroODR gyro_odr,
+                                  const bmi270::FilterPerf accel_filter_perf, const bmi270::AccelBwp accel_bwp,
+                                  const bmi270::FilterPerf gyro_filter_perf, const bmi270::GyroBwp gyro_bwp);
     //! @brief Start periodic measurement in the current settings
     //! @return True if successful
     bool startPeriodicMeasurement();
@@ -219,7 +230,11 @@ public:
 
 protected:
     virtual bool start_periodic_measurement(const bmi270::AccelRange accel_range, const bmi270::GyroRange gyro_range,
-                                            const bmi270::AccelODR accel_odr, const bmi270::GyroODR gyro_odr);
+                                            const bmi270::AccelODR accel_odr, const bmi270::GyroODR gyro_odr,
+                                            const bmi270::FilterPerf accel_filter_perf,
+                                            const bmi270::AccelBwp accel_bwp,
+                                            const bmi270::FilterPerf gyro_filter_perf,
+                                            const bmi270::GyroBwp gyro_bwp);
     bool start_periodic_measurement();
     bool stop_periodic_measurement();
     bool read_measurement(bmi270::Data& d);
@@ -237,7 +252,24 @@ protected:
     M5_UNIT_COMPONENT_PERIODIC_MEASUREMENT_ADAPTER_HPP_BUILDER(UnitBMI270, bmi270::Data);
 
 private:
+    // Settings for begin(); never written to after that. What is currently on the device lives in
+    // the live-state members below, so config() keeps meaning "what was configured"
     config_t _cfg{};
+    // Mirrors of the registers this driver can change at runtime. imuConvertParam() needs the range
+    // actually in effect (a stale factor would silently misreport every sample), and the no-argument
+    // startPeriodicMeasurement() resumes from these rather than reverting to _cfg
+    bmi270::AccelRange _accel_range{};
+    bmi270::GyroRange _gyro_range{};
+    bmi270::AccelODR _accel_odr{};
+    bmi270::GyroODR _gyro_odr{};
+    // Bandwidth and filter performance have no runtime setter of their own, but they share
+    // REG_ACC_CONF/REG_GYR_CONF with the rate: writeAccelODR() has to recompose the whole register,
+    // and taking these from _cfg there would silently apply a config() change the caller only meant
+    // to take effect at the next start
+    bmi270::FilterPerf _accel_filter_perf{};
+    bmi270::AccelBwp _accel_bwp{};
+    bmi270::FilterPerf _gyro_filter_perf{};
+    bmi270::GyroBwp _gyro_bwp{};
     int16_t _last_temp{};             // Latest valid REG_TEMPERATURE_0 reading (register update is not per-sample)
     uint32_t _pushed{}, _consumed{};  // readImuRaw pop counters (do not disturb latest()/oldest())
     std::unique_ptr<m5::container::CircularBuffer<bmi270::Data>> _data{};

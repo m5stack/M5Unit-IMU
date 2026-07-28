@@ -69,6 +69,13 @@ bool UnitSH200Q::begin()
         return false;
     }
 
+    // Seed the live state from the begin settings; start_periodic_measurement() keeps it in step
+    _accel_range = _cfg.accel_range;
+    _gyro_range  = _cfg.gyro_range;
+    _accel_odr   = _cfg.accel_odr;
+    _gyro_odr    = _cfg.gyro_odr;
+    _gyro_dlpf   = _cfg.gyro_dlpf;
+
     return _cfg.start_periodic ? startPeriodicMeasurement(_cfg.accel_range, _cfg.gyro_range, _cfg.accel_odr,
                                                           _cfg.gyro_odr, _cfg.gyro_dlpf)
                                : true;
@@ -137,10 +144,10 @@ bool UnitSH200Q::start_periodic_measurement(const sh200q::AccelRange accel_range
     }
     m5::utility::delay(10);
 
-    // accel_range/gyro_range are synced to _cfg by writeAccelRange/writeGyroRange above
-    _cfg.accel_odr = accel_odr;
-    _cfg.gyro_odr  = gyro_odr;
-    _cfg.gyro_dlpf = gyro_dlpf;
+    // accel_range/gyro_range are tracked by writeAccelRange/writeGyroRange above
+    _accel_odr = accel_odr;
+    _gyro_odr  = gyro_odr;
+    _gyro_dlpf = gyro_dlpf;
 
     _periodic = true;
     _latest   = 0;
@@ -150,7 +157,7 @@ bool UnitSH200Q::start_periodic_measurement(const sh200q::AccelRange accel_range
 
 bool UnitSH200Q::start_periodic_measurement()
 {
-    return start_periodic_measurement(_cfg.accel_range, _cfg.gyro_range, _cfg.accel_odr, _cfg.gyro_odr, _cfg.gyro_dlpf);
+    return start_periodic_measurement(_accel_range, _gyro_range, _accel_odr, _gyro_odr, _gyro_dlpf);
 }
 
 bool UnitSH200Q::stop_periodic_measurement()
@@ -184,7 +191,7 @@ bool UnitSH200Q::writeAccelRange(const sh200q::AccelRange range)
         return false;
     }
     if (write_register8_verified(REG_ACC_RANGE, static_cast<uint8_t>(range))) {
-        _cfg.accel_range = range;
+        _accel_range = range;
         return true;
     }
     return false;
@@ -197,7 +204,7 @@ bool UnitSH200Q::writeGyroRange(const sh200q::GyroRange range)
         return false;
     }
     if (write_register8_verified(REG_GYRO_RANGE, static_cast<uint8_t>(range))) {
-        _cfg.gyro_range = range;
+        _gyro_range = range;
         return true;
     }
     return false;
@@ -232,7 +239,7 @@ bool UnitSH200Q::writeAccelOdr(const sh200q::AccelOdr odr)
     if (!write_register8_verified(REG_ACC_CONFIG, ACC_CONFIG_BASE | (static_cast<uint8_t>(odr) << 3))) {
         return false;
     }
-    _cfg.accel_odr = odr;
+    _accel_odr = odr;
     return true;
 }
 
@@ -245,7 +252,7 @@ bool UnitSH200Q::writeGyroOdr(const sh200q::GyroOdr odr)
     if (!write_register8_verified(REG_GYRO_CONFIG, GYRO_CONFIG_BASE | (static_cast<uint8_t>(odr) << 1))) {
         return false;
     }
-    _cfg.gyro_odr = odr;
+    _gyro_odr = odr;
     _interval     = 1000U / sh200q::gyro_odr_hz(odr);  // update() rate-limits on this
     return true;
 }
@@ -335,8 +342,8 @@ Capability UnitSH200Q::readImuRaw(m5::imu::imu_raw_data_t& out)
 
 void UnitSH200Q::imuConvertParam(m5::imu::imu_convert_param_t& out) const
 {
-    out.accel_res   = accel_res(_cfg.accel_range);
-    out.gyro_res    = gyro_res(_cfg.gyro_range);
+    out.accel_res   = accel_res(_accel_range);
+    out.gyro_res    = gyro_res(_gyro_range);
     out.temp_res    = 1.0f / 333.87f;
     out.temp_offset = 21.0f;
 }
