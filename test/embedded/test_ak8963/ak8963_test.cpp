@@ -198,6 +198,79 @@ TEST_F(TestAK8963, SoftReset)
     EXPECT_TRUE(updated);
 }
 
+TEST_F(TestAK8963, WriteMeasurementMode)
+{
+    SCOPED_TRACE(ustr);
+
+    ak8963::MeasurementMode org_mode{};
+    ak8963::OutputBit org_bit{};
+    EXPECT_TRUE(unit->readMeasurementMode(org_mode, org_bit));
+    // begin() seeds the live state from config_t
+    EXPECT_EQ(org_mode, unit->config().measurement_mode);
+    EXPECT_EQ(org_bit, unit->config().output_bit);
+
+    // Changing the rate changes the measurement interval, so it is refused while running
+    EXPECT_FALSE(unit->writeMeasurementMode(ak8963::MeasurementMode::Cont8Hz, ak8963::OutputBit::Bit14));
+    ak8963::MeasurementMode mode{};
+    ak8963::OutputBit bit{};
+    EXPECT_TRUE(unit->readMeasurementMode(mode, bit));
+    EXPECT_EQ(mode, org_mode);
+    EXPECT_EQ(bit, org_bit);
+
+    EXPECT_TRUE(unit->stopPeriodicMeasurement());
+    EXPECT_TRUE(unit->writeMeasurementMode(ak8963::MeasurementMode::Cont8Hz, ak8963::OutputBit::Bit14));
+    EXPECT_TRUE(unit->readMeasurementMode(mode, bit));
+    EXPECT_EQ(mode, ak8963::MeasurementMode::Cont8Hz);
+    EXPECT_EQ(bit, ak8963::OutputBit::Bit14);
+
+    // 8Hz stretches the interval from 10ms to 125ms; without deriving it update() would poll 12x
+    // more often than the chip produces
+    EXPECT_TRUE(unit->startPeriodicMeasurement());
+    EXPECT_EQ(unit->interval(), ak8963::interval_ms(ak8963::MeasurementMode::Cont8Hz));
+
+    // 14bit samples announce themselves through ST2's BITM, which is what adj_*() keys the
+    // sensitivity off -- so the compensated field stays in the same physical range as in 16bit
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    m5::imu::imu_convert_param_t param{};
+    unit->imuConvertParam(param);
+    bool checked{false};
+    for (int i = 0; i < 100 && !checked; ++i) {
+        unit->update();
+        if (unit->updated()) {
+            const auto d = unit->latest();
+            EXPECT_FALSE(d.bit16()) << "ST2 BITM set although 14bit was requested";
+            m5::imu::imu_raw_data_t raw{};
+            while (m5::imu::any(unit->readImuRaw(raw))) {
+                const float mx   = raw.mag[0] * param.mag_res;
+                const float my   = raw.mag[1] * param.mag_res;
+                const float mz   = raw.mag[2] * param.mag_res;
+                const float norm = std::sqrt(mx * mx + my * my + mz * mz);
+                M5_LOGI("mag 14bit: %.1fuT (raw=[%ld,%ld,%ld])", norm, (long)raw.mag[0], (long)raw.mag[1],
+                        (long)raw.mag[2]);
+                EXPECT_GT(norm, 1.0f);
+                EXPECT_LT(norm, 2000.0f);
+                checked = true;
+                break;
+            }
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    EXPECT_TRUE(checked);
+
+    // A mode given to startPeriodicMeasurement() applies without a separate write
+    EXPECT_TRUE(unit->stopPeriodicMeasurement());
+    EXPECT_TRUE(unit->startPeriodicMeasurement(ak8963::MeasurementMode::Cont100Hz, ak8963::OutputBit::Bit16));
+    EXPECT_TRUE(unit->readMeasurementMode(mode, bit));
+    EXPECT_EQ(mode, ak8963::MeasurementMode::Cont100Hz);
+    EXPECT_EQ(bit, ak8963::OutputBit::Bit16);
+    EXPECT_EQ(unit->interval(), ak8963::interval_ms(ak8963::MeasurementMode::Cont100Hz));
+
+    // Restore what begin() had set up for the tests that follow
+    EXPECT_TRUE(unit->stopPeriodicMeasurement());
+    EXPECT_TRUE(unit->writeMeasurementMode(org_mode, org_bit));
+    EXPECT_TRUE(unit->startPeriodicMeasurement());
+}
+
 #if defined(TEST_BUILTIN)
 // Same wiring as TestAK8963, but begin() is told not to go on to start measuring. That is the only
 // path where the mode begin() leaves behind is observable: with start_periodic the subsequent

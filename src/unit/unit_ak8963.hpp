@@ -39,6 +39,13 @@ public:
     struct config_t {
         //! Start periodic measurement on begin()?
         bool start_periodic{true};
+        /*!
+          Continuous measurement rate. Cont100Hz keeps the 5mA magnetic drive on almost
+          continuously; Cont8Hz cuts that to roughly a 6% duty cycle. See ak8963::MeasurementMode
+         */
+        ak8963::MeasurementMode measurement_mode{ak8963::MeasurementMode::Cont100Hz};
+        //! Output bit width. Full scale is the same either way, only the resolution differs
+        ak8963::OutputBit output_bit{ak8963::OutputBit::Bit16};
     };
 
     explicit UnitAK8963(const uint8_t addr = DEFAULT_ADDRESS);
@@ -76,9 +83,42 @@ public:
     bool softReset();
     ///@}
 
+    ///@name Measurement setting (stop periodic measurement first)
+    ///@{
+    /*!
+      @brief Write the continuous measurement rate and output bit width
+      @param[in] mode Continuous measurement rate
+      @param[in] bit Output bit width
+      @return True if successful
+      @details Applied to the chip by the next startPeriodicMeasurement(), along with the periodic
+      measurement interval. Entering a continuous mode *is* measuring on this chip, so there is no
+      way to park the setting in REG_CNTL1 while stopped -- what this does write is the power-down
+      every mode transition has to pass through
+      @warning Fails while periodic measurement is running
+     */
+    bool writeMeasurementMode(const ak8963::MeasurementMode mode, const ak8963::OutputBit bit);
+    /*!
+      @brief Read the continuous measurement rate and output bit width
+      @param[out] mode Continuous measurement rate
+      @param[out] bit Output bit width
+      @return True if successful
+      @note Returns the setting this unit measures with, not a register read: REG_CNTL1 holds
+      power-down whenever measurement is stopped, so the chip cannot answer this while idle
+     */
+    bool readMeasurementMode(ak8963::MeasurementMode& mode, ak8963::OutputBit& bit) const;
+    ///@}
+
     ///@name Periodic measurement
     ///@{
-    //! @brief Start periodic measurement (16-bit continuous 100Hz)
+    /*!
+      @brief Start periodic measurement
+      @param[in] mode Continuous measurement rate
+      @param[in] bit Output bit width
+      @return True if successful
+     */
+    bool startPeriodicMeasurement(const ak8963::MeasurementMode mode, const ak8963::OutputBit bit);
+    //! @brief Start periodic measurement in the current settings
+    //! @return True if successful
     bool startPeriodicMeasurement();
     //! @brief Stop periodic measurement
     bool stopPeriodicMeasurement();
@@ -118,6 +158,7 @@ public:
     ///@}
 
 protected:
+    bool start_periodic_measurement(const ak8963::MeasurementMode mode, const ak8963::OutputBit bit);
     bool start_periodic_measurement();
     bool stop_periodic_measurement();
     bool read_measurement(ak8963::Data& d);
@@ -127,6 +168,10 @@ protected:
 
 private:
     config_t _cfg{};
+    // Live state, seeded from _cfg by begin() and thereafter owned by writeMeasurementMode(); _cfg
+    // is only ever read in begin()
+    ak8963::MeasurementMode _mode{ak8963::MeasurementMode::Cont100Hz};
+    ak8963::OutputBit _bit{ak8963::OutputBit::Bit16};
     std::array<uint8_t, 3> _asa{};  // Per-axis sensitivity adjustment (read once in begin, FUSE-ROM)
     uint32_t _pushed{}, _consumed{};
     std::unique_ptr<m5::container::CircularBuffer<ak8963::Data>> _data{};

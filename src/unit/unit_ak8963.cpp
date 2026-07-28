@@ -18,7 +18,6 @@ using m5::imu::Capability;
 
 namespace {
 constexpr uint8_t WHOAMI_VALUE{0x48};
-constexpr uint8_t BIT_16BIT{0x10};  // CNTL1 bit4: 16-bit output
 constexpr uint8_t SOFT_RESET{0x01};
 }  // namespace
 
@@ -68,7 +67,38 @@ bool UnitAK8963::begin()
         return false;
     }
 
-    return _cfg.start_periodic ? startPeriodicMeasurement() : true;
+    // Seed the live state from the begin settings; writeMeasurementMode() owns it from here on
+    _mode = _cfg.measurement_mode;
+    _bit  = _cfg.output_bit;
+
+    return _cfg.start_periodic ? startPeriodicMeasurement(_cfg.measurement_mode, _cfg.output_bit) : true;
+}
+
+bool UnitAK8963::writeMeasurementMode(const ak8963::MeasurementMode mode, const ak8963::OutputBit bit)
+{
+    if (inPeriodic()) {
+        M5_LIB_LOGD("Periodic measurements are running");
+        return false;
+    }
+    // A mode transition has to pass through power-down (datasheet 6.3), and being stopped does not
+    // put the chip there: stopPeriodicMeasurement() leaves it measuring by design, sleep() is what
+    // powers it down. Do that here so the next start begins from a defined state.
+    if (!writeRegister8(REG_CNTL1, static_cast<uint8_t>(Mode::PowerDown))) {
+        M5_LIB_LOGE("Failed to power down");
+        return false;
+    }
+    m5::utility::delay(10);
+    _mode     = mode;
+    _bit      = bit;
+    _interval = ak8963::interval_ms(mode);
+    return true;
+}
+
+bool UnitAK8963::readMeasurementMode(ak8963::MeasurementMode& mode, ak8963::OutputBit& bit) const
+{
+    mode = _mode;
+    bit  = _bit;
+    return true;
 }
 
 bool UnitAK8963::softReset()
@@ -126,33 +156,45 @@ void UnitAK8963::update(const bool force)
     }
 }
 
-bool UnitAK8963::start_periodic_measurement()
+bool UnitAK8963::start_periodic_measurement(const ak8963::MeasurementMode mode, const ak8963::OutputBit bit)
 {
     if (inPeriodic()) {
         return false;
     }
 
-    // Enter 16-bit continuous 100Hz. AK8963 requires a power-down between mode changes.
+    // AK8963 requires a power-down between mode changes.
     if (!writeRegister8(REG_CNTL1, static_cast<uint8_t>(Mode::PowerDown))) {
         M5_LIB_LOGE("Failed to power down");
         return false;
     }
     m5::utility::delay(10);
-    if (!writeRegister8(REG_CNTL1, static_cast<uint8_t>(BIT_16BIT | static_cast<uint8_t>(Mode::Cont100Hz)))) {
+    if (!writeRegister8(REG_CNTL1, ak8963::cntl1_value(mode, bit))) {
         M5_LIB_LOGE("Failed to set mode");
         return false;
     }
 
+    _mode     = mode;
+    _bit      = bit;
     _periodic = true;
     _latest   = 0;
-    _interval = ak8963::CONT100HZ_INTERVAL_MS;
+    _interval = ak8963::interval_ms(mode);
     return true;
+}
+
+bool UnitAK8963::start_periodic_measurement()
+{
+    return start_periodic_measurement(_mode, _bit);
 }
 
 bool UnitAK8963::stop_periodic_measurement()
 {
     _periodic = false;
     return true;
+}
+
+bool UnitAK8963::startPeriodicMeasurement(const ak8963::MeasurementMode mode, const ak8963::OutputBit bit)
+{
+    return PeriodicMeasurementAdapter<UnitAK8963, ak8963::Data>::startPeriodicMeasurement(mode, bit);
 }
 
 bool UnitAK8963::startPeriodicMeasurement()

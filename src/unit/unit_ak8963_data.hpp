@@ -31,11 +31,46 @@ enum class Mode : uint8_t {
     FuseRom   = 0x0F,  //!< @brief FUSE-ROM access (ASA readable only here)
 };
 
-//! @brief Sampling interval (ms) for Cont100Hz
-constexpr uint32_t CONT100HZ_INTERVAL_MS{10};
+/*!
+  @enum MeasurementMode
+  @brief Continuous measurement rate, the subset of Mode this driver measures in
+  @details Mode itself is the raw CNTL1 nibble and includes states the driver owns (FuseRom backs
+  the ASA read, PowerDown backs every mode transition), so only the two continuous rates are offered
+  here. The difference is almost entirely power: a measurement draws 5mA for 7.2ms, so Cont100Hz
+  (10ms period) is on nearly all the time while Cont8Hz (125ms) has a ~6% duty cycle
+ */
+enum class MeasurementMode : uint8_t {
+    Cont8Hz   = 0x02,  //!< @brief Continuous measurement, 8Hz
+    Cont100Hz = 0x06,  //!< @brief Continuous measurement, 100Hz
+};
+
+/*!
+  @enum OutputBit
+  @brief Output bit width (CNTL1 bit4 BIT)
+  @details Full scale is +/-4912µT either way; only the resolution changes. 14bit output is
+  sign-extended and right-aligned, so it needs no shifting -- just the coarser sensitivity below
+ */
+enum class OutputBit : uint8_t {
+    Bit14 = 0x00,  //!< @brief 14bit (0.6µT/LSB)
+    Bit16 = 0x10,  //!< @brief 16bit (0.15µT/LSB)
+};
+
+//! @brief Sampling interval (ms) for a continuous measurement rate
+constexpr uint32_t interval_ms(const MeasurementMode mode)
+{
+    return (mode == MeasurementMode::Cont8Hz) ? 125U : 10U;
+}
+
+//! @brief REG_CNTL1 value entering a continuous measurement mode
+constexpr uint8_t cntl1_value(const MeasurementMode mode, const OutputBit bit)
+{
+    return static_cast<uint8_t>(static_cast<uint8_t>(bit) | static_cast<uint8_t>(mode));
+}
 
 //! @brief 16bit-mode sensitivity (µT per raw LSB) = 4912/32760
 constexpr float RAW_UT_PER_LSB{4912.0f / 32760.0f};
+//! @brief 14bit-mode sensitivity (µT per raw LSB) = 4912/8190
+constexpr float RAW_UT_PER_LSB_14BIT{4912.0f / 8190.0f};
 //! @brief Library-wide magnetometer output scale (raw LSB per µT); see imu_convert_param_t
 constexpr float OUTPUT_LSB_PER_UT{16.0f};
 
@@ -55,10 +90,22 @@ struct Data {
     {
         return (raw[0] & 0x01) != 0;
     }
+    //! @brief Data overrun (ST1 bit1 DOR): a sample was read too late and one was skipped
+    inline bool dor() const
+    {
+        return (raw[0] & 0x02) != 0;
+    }
     //! @brief Magnetic overflow (ST2 bit3 HOFL); sample invalid if set
     inline bool overflow() const
     {
         return (raw[7] & 0x08) != 0;
+    }
+    //! @brief 16bit output? (ST2 bit4 BITM)
+    //! @note BITM mirrors CNTL1's BIT, so every sample carries the width it was taken at and adj_*()
+    //! cannot disagree with the chip
+    inline bool bit16() const
+    {
+        return (raw[7] & 0x10) != 0;
     }
     //! @brief Raw X (little-endian, signed 16bit)
     inline int16_t x_raw() const
@@ -93,10 +140,12 @@ struct Data {
     }
 
 private:
-    static inline int32_t adjust(const int16_t raw_axis, const uint8_t asa_axis)
+    inline int32_t adjust(const int16_t raw_axis, const uint8_t asa_axis) const
     {
-        // Hadj = raw * (ASA + 128) / 256, then rescale 0.15µT/LSB -> 16 LSB/µT
-        const float ut = raw_axis * ((asa_axis + 128) / 256.0f) * RAW_UT_PER_LSB;
+        // Hadj = raw * (ASA + 128) / 256, then rescale to 16 LSB/µT. The sensitivity comes from the
+        // sample's own BITM bit, so a 14bit sample is scaled by 0.6µT/LSB even if the chip has been
+        // switched to 16bit since
+        const float ut = raw_axis * ((asa_axis + 128) / 256.0f) * (bit16() ? RAW_UT_PER_LSB : RAW_UT_PER_LSB_14BIT);
         return static_cast<int32_t>(lroundf(ut * OUTPUT_LSB_PER_UT));
     }
 };
