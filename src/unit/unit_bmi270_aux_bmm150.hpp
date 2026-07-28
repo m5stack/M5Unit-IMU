@@ -56,10 +56,11 @@ public:
      */
     struct config_t : public UnitBMI270::config_t {
         /*!
-          Accuracy/power preset written to the BMM150's REG_REP_XY/REG_REP_Z. HighAccuracy cannot be
-          used here: its measurement takes 49.3ms, longer than the 40ms period of the bridge's
-          fixed 25Hz poll, so startPeriodicMeasurement() rejects it instead of letting the data
-          registers go stale
+          Accuracy/power preset begin() seeds the magnetometer's repetition from; change it
+          afterwards with writeAuxMagPreset()/writeAuxMagRepetition(). HighAccuracy cannot be used
+          here: its measurement takes 49.3ms, longer than the 40ms period of the bridge's fixed 25Hz
+          poll, so startPeriodicMeasurement() rejects it instead of letting the data registers go
+          stale
          */
         bmm150::Preset aux_mag_preset{bmm150::Preset::Regular};
     };
@@ -68,6 +69,9 @@ public:
     virtual ~UnitBMI270AuxBMM150()
     {
     }
+
+    //! @brief Seed the magnetometer's live state from config_t, then run the base begin()
+    virtual bool begin() override;
 
     ///@name Settings
     ///@{
@@ -116,12 +120,45 @@ public:
      */
     bool sleep() override;
 
+    ///@name AUX magnetometer setting (stop periodic measurement first)
+    ///@{
+    /*!
+      @brief Write the accuracy/power preset of the AUX BMM150
+      @param[in] preset Preset
+      @return True if successful
+      @note Convenience wrapper around writeAuxMagRepetition() with the preset's repetition values
+     */
+    bool writeAuxMagPreset(const bmm150::Preset preset);
+    /*!
+      @brief Write the repetition (oversampling) of the AUX BMM150
+      @param[in] rep_xy Value of REG_REP_XY (repetitions = 1 + 2 * rep_xy)
+      @param[in] rep_z Value of REG_REP_Z (repetitions = 1 + rep_z)
+      @return True if successful
+      @warning Fails while periodic measurement is running, and fails for a pair the bridge's fixed
+      25Hz poll cannot complete in time (bmm150::repetition_fits()); unlike a stand-alone UnitBMM150
+      there is no slower rate to fall back on, so the ceiling here is absolute
+      @note The value is applied to the magnetometer by the next startPeriodicMeasurement(). While
+      measurement is stopped the bridge is not in a state where the BMM150's registers can be
+      reached, so nothing is written to it here
+     */
+    bool writeAuxMagRepetition(const uint8_t rep_xy, const uint8_t rep_z);
+    /*!
+      @brief Read the repetition (oversampling) the AUX BMM150 is configured with
+      @param[out] rep_xy Value of REG_REP_XY
+      @param[out] rep_z Value of REG_REP_Z
+      @return True if successful
+      @note Returns the value this unit applies to the magnetometer, not a fresh register read: the
+      BMM150 is only reachable while the bridge is in setup mode, which periodic measurement is not
+     */
+    bool readAuxMagRepetition(uint8_t& rep_xy, uint8_t& rep_z) const;
+    ///@}
+
 protected:
     //! @brief Base configuration, then probe and configure the AUX BMM150
     //! @details A probe failure is not an error: it just means this board has no magnetometer on the
     //! interface, so it is switched back off and measurement continues with 6 axes. An
-    //! aux_mag_preset the fixed poll rate cannot keep up with *is* an error, and is rejected before
-    //! any register is touched
+    //! AUX mag repetition the fixed poll rate cannot keep up with *is* an error, and is rejected
+    //! before any register is touched
     virtual bool start_periodic_measurement(const bmi270::AccelRange accel_range, const bmi270::GyroRange gyro_range,
                                             const bmi270::AccelODR accel_odr, const bmi270::GyroODR gyro_odr,
                                             const bmi270::FilterPerf accel_filter_perf,
@@ -131,10 +168,34 @@ protected:
     //! @brief One 20 byte burst covering mag + accel + gyro, instead of the base's 12 byte accel/gyro read
     virtual bool read_sensor_burst(bmi270::Data& d) override;
 
-    // AUX support. On success start_periodic_measurement() leaves the interface in data mode (the
-    // BMI270 auto-polls the BMM150 at 25Hz into REG_DATA_0..REG_DATA_7) and _mag_trim holds the
-    // factory trim read through the bridge.
-    bool probe_aux_bmm150();
+    //! Whether this board carries a BMM150 on the interface. Answered once, then remembered:
+    //! re-running the detection below on every start costs a BMM150 soft reset plus three trim
+    //! bursts, and the answer cannot change while the unit stays powered
+    enum class AuxDetect : uint8_t {
+        Unknown,  //!< Not probed yet, or invalidated by begin()/sleep()
+        Absent,   //!< Nothing answered on the interface; it is left switched off
+        Present,  //!< A BMM150 answered and _mag_trim holds its factory trim
+    };
+
+    // AUX support, in the three stages start_periodic_measurement() drives them:
+    //
+    //   setup mode -> detect (only while Unknown) -> data mode
+    //
+    // On success the interface is left in data mode, where the BMI270 auto-polls the BMM150 at 25Hz
+    // into REG_DATA_0..REG_DATA_7.
+
+    // Drives the three stages, skipping the detection once it has an answer. False means this unit
+    // runs as a plain 6-axis BMI270, which on most boards is the expected outcome, not a failure
+    bool setup_aux_bmm150();
+    // Switches the interface on and into manual (single-register) access, so the BMM150's own
+    // registers can be reached with aux_read_register8()/aux_write_register8()
+    bool aux_enter_setup_mode();
+    // Resets the BMM150, checks its chip ID and reads its factory trim into _mag_trim. Requires
+    // setup mode. Returning false is the normal outcome on a board that wires nothing here
+    bool aux_detect_bmm150();
+    // Applies the repetition, starts the BMM150's normal mode and hands the interface over to the
+    // BMI270's auto-poll. Requires setup mode and a preceding successful detection
+    bool aux_enter_data_mode();
     // Polls REG_STATUS.aux_busy (bit2) until clear; gates every AUX manual transaction below
     bool aux_wait_ready();
     bool aux_write_register8(const uint8_t reg, const uint8_t val);
@@ -149,8 +210,15 @@ private:
     // Only the aux_mag_preset field is authoritative here -- config() refreshes the inherited ones
     // from the base rather than reading them back out of this copy
     config_t _cfg_aux_bmm150{};
-    bool _aux_mag{false};        // True once an AUX BMM150 was detected in start_periodic_measurement()
-    bmm150::trim_t _mag_trim{};  // Factory trim read via the AUX bridge, valid only if _aux_mag
+    // Live state, seeded from _cfg_aux_bmm150 by begin() and thereafter owned by
+    // writeAuxMagRepetition(); what aux_enter_data_mode() writes to the magnetometer
+    uint8_t _aux_rep_xy{};
+    uint8_t _aux_rep_z{};
+    // Does this board carry a BMM150? Answered once, kept across stop/start; invalidated by
+    // begin() (soft reset wipes the AUX setup) and sleep() (suspend resets the magnetometer)
+    AuxDetect _aux_detect{AuxDetect::Unknown};
+    bool _aux_mag{false};        // True while the bridge is in data mode and delivering mag samples
+    bmm150::trim_t _mag_trim{};  // Factory trim read via the AUX bridge, valid once _aux_detect is Present
 };
 
 }  // namespace unit

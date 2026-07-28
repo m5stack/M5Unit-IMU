@@ -85,6 +85,48 @@ UnitBMI270AuxBMM150::UnitBMI270AuxBMM150(const uint8_t addr) : UnitBMI270(addr)
 {
 }
 
+bool UnitBMI270AuxBMM150::begin()
+{
+    // Seed the live state from the begin settings, the way UnitBMI270::begin() does for its own.
+    // This must happen before the base runs, because its tail calls startPeriodicMeasurement(),
+    // which reads what is set here
+    _aux_rep_xy = bmm150::preset_rep_xy(_cfg_aux_bmm150.aux_mag_preset);
+    _aux_rep_z  = bmm150::preset_rep_z(_cfg_aux_bmm150.aux_mag_preset);
+    // The base's soft reset wipes the AUX configuration, so whatever was detected before is no
+    // longer set up
+    _aux_detect = AuxDetect::Unknown;
+    _aux_mag    = false;
+    return UnitBMI270::begin();
+}
+
+bool UnitBMI270AuxBMM150::writeAuxMagPreset(const bmm150::Preset preset)
+{
+    return writeAuxMagRepetition(bmm150::preset_rep_xy(preset), bmm150::preset_rep_z(preset));
+}
+
+bool UnitBMI270AuxBMM150::writeAuxMagRepetition(const uint8_t rep_xy, const uint8_t rep_z)
+{
+    if (inPeriodic()) {
+        M5_LIB_LOGD("Periodic measurements are running");
+        return false;
+    }
+    if (!bmm150::repetition_fits(AUX_BMM150_RATE, rep_xy, rep_z)) {
+        M5_LIB_LOGE("Repetition needs %uus, longer than the %uus period of the AUX BMM150's fixed rate",
+                    bmm150::measurement_time_us(rep_xy, rep_z), bmm150::rate_interval_us(AUX_BMM150_RATE));
+        return false;
+    }
+    _aux_rep_xy = rep_xy;
+    _aux_rep_z  = rep_z;
+    return true;
+}
+
+bool UnitBMI270AuxBMM150::readAuxMagRepetition(uint8_t& rep_xy, uint8_t& rep_z) const
+{
+    rep_xy = _aux_rep_xy;
+    rep_z  = _aux_rep_z;
+    return true;
+}
+
 bool UnitBMI270AuxBMM150::start_periodic_measurement(const bmi270::AccelRange accel_range,
                                                      const bmi270::GyroRange gyro_range,
                                                      const bmi270::AccelODR accel_odr,
@@ -94,15 +136,13 @@ bool UnitBMI270AuxBMM150::start_periodic_measurement(const bmi270::AccelRange ac
                                                      const bmi270::FilterPerf gyro_filter_perf,
                                                      const bmi270::GyroBwp gyro_bwp)
 {
-    // Reject an unusable preset before touching any register. Failing inside the probe would be
+    // Reject an unusable repetition before touching any register. Failing further in would be
     // indistinguishable from "no BMM150 on this board", which degrades to 6-axis and would silently
-    // swallow what is really a configuration error
-    if (!bmm150::repetition_fits(AUX_BMM150_RATE, bmm150::preset_rep_xy(_cfg_aux_bmm150.aux_mag_preset),
-                                 bmm150::preset_rep_z(_cfg_aux_bmm150.aux_mag_preset))) {
-        M5_LIB_LOGE("aux_mag_preset needs %uus, longer than the %uus period of the AUX BMM150's fixed rate",
-                    bmm150::measurement_time_us(bmm150::preset_rep_xy(_cfg_aux_bmm150.aux_mag_preset),
-                                                bmm150::preset_rep_z(_cfg_aux_bmm150.aux_mag_preset)),
-                    bmm150::rate_interval_us(AUX_BMM150_RATE));
+    // swallow what is really a configuration error. writeAuxMagRepetition() applies the same test,
+    // so this only ever catches a config_t::aux_mag_preset that begin() seeded
+    if (!bmm150::repetition_fits(AUX_BMM150_RATE, _aux_rep_xy, _aux_rep_z)) {
+        M5_LIB_LOGE("AUX mag repetition needs %uus, longer than the %uus period of its fixed rate",
+                    bmm150::measurement_time_us(_aux_rep_xy, _aux_rep_z), bmm150::rate_interval_us(AUX_BMM150_RATE));
         return false;
     }
 
@@ -111,12 +151,39 @@ bool UnitBMI270AuxBMM150::start_periodic_measurement(const bmi270::AccelRange ac
         return false;
     }
 
-    _aux_mag = probe_aux_bmm150();
-    if (!_aux_mag) {
-        // No BMM150 responded (normal on a board that wires nothing to the interface): switch it
-        // back off and carry on with 6-axis (accel/gyro/temp) only
+    _aux_mag = setup_aux_bmm150();
+    return true;
+}
+
+bool UnitBMI270AuxBMM150::setup_aux_bmm150()
+{
+    // Nothing is wired here on this board -- established on an earlier start and unchanged since,
+    // so skip the whole interface (the detection below is not free: a BMM150 soft reset, its
+    // settling delay and two chip ID reads, all of which end in a timeout when nothing answers)
+    if (_aux_detect == AuxDetect::Absent) {
+        return false;
+    }
+
+    if (!aux_enter_setup_mode()) {
+        return false;
+    }
+
+    if (_aux_detect == AuxDetect::Unknown) {
+        _aux_detect = aux_detect_bmm150() ? AuxDetect::Present : AuxDetect::Absent;
+        if (_aux_detect == AuxDetect::Absent) {
+            // Normal on a board that wires nothing to the interface: switch it back off and carry
+            // on with 6-axis (accel/gyro/temp) only
+            writeRegister8(REG_IF_CONF, IF_CONF_AUX_OFF);
+            M5_LIB_LOGI("AUX BMM150 not available; continuing with 6-axis (accel/gyro/temp) only");
+            return false;
+        }
+    }
+    // Present and already detected: _mag_trim still holds the factory trim (it is ROM, and a plain
+    // stop/start leaves the magnetometer running), so only the data-mode handover has to be redone
+
+    if (!aux_enter_data_mode()) {
         writeRegister8(REG_IF_CONF, IF_CONF_AUX_OFF);
-        M5_LIB_LOGI("AUX BMM150 not available; continuing with 6-axis (accel/gyro/temp) only");
+        return false;
     }
     return true;
 }
@@ -160,14 +227,17 @@ bool UnitBMI270AuxBMM150::sleep()
     if (_aux_mag && !aux_write_register8(REG_BMM150_POWER_CONTROL, BMM150_SUSPEND)) {
         M5_LIB_LOGW("Failed to suspend the AUX BMM150");
     }
-    _aux_mag = false;  // Re-probed by the next start_periodic_measurement()
+    // Suspend resets the magnetometer's registers, so the cached "Present" is not enough to skip
+    // the detection stage next time -- it is what powers the BMM150 back on
+    _aux_detect = AuxDetect::Unknown;
+    _aux_mag    = false;
     return UnitBMI270::sleep();
 }
 
-bool UnitBMI270AuxBMM150::probe_aux_bmm150()
+bool UnitBMI270AuxBMM150::aux_enter_setup_mode()
 {
-    // Setup mode: enable the AUX interface and switch it to manual (single-register) access
-    // so we can talk to the BMM150 directly (mirrors M5Unified's BMI270_Class::auxSetupMode()).
+    // Enable the AUX interface and switch it to manual (single-register) access so we can talk to
+    // the BMM150 directly (mirrors M5Unified's BMI270_Class::auxSetupMode()).
     if (!writeRegister8(REG_IF_CONF, IF_CONF_AUX_EN) || !writeRegister8(REG_PWR_CONF, 0x00) ||
         !writeRegister8(REG_PWR_CTRL, PWR_CTRL_ACC_GYR_TEMP_ON) ||
         !write_register8_verified(REG_AUX_CONF, AUX_CONF_VALUE) ||
@@ -176,7 +246,11 @@ bool UnitBMI270AuxBMM150::probe_aux_bmm150()
         M5_LIB_LOGE("Failed to configure the AUX interface");
         return false;
     }
+    return true;
+}
 
+bool UnitBMI270AuxBMM150::aux_detect_bmm150()
+{
     if (!aux_write_register8(REG_BMM150_POWER_CONTROL, BMM150_SOFT_RESET_AND_POWER_ON)) {
         M5_LIB_LOGE("Failed to reset the AUX BMM150");
         return false;
@@ -195,13 +269,16 @@ bool UnitBMI270AuxBMM150::probe_aux_bmm150()
         M5_LIB_LOGE("Failed to read the AUX BMM150 trim registers");
         return false;
     }
+    return true;
+}
 
+bool UnitBMI270AuxBMM150::aux_enter_data_mode()
+{
     // Set the repetition (oversampling) before leaving setup mode, the way UnitBMM150 does. Without
     // this the BMM150 stays at its power-on default, which is noisier than any preset. The pair was
     // already checked against AUX_BMM150_RATE in start_periodic_measurement()
-    if (!aux_write_register8(REG_BMM150_REP_XY, bmm150::preset_rep_xy(_cfg_aux_bmm150.aux_mag_preset)) ||
-        !aux_write_register8(REG_BMM150_REP_Z, bmm150::preset_rep_z(_cfg_aux_bmm150.aux_mag_preset))) {
-        M5_LIB_LOGE("Failed to set the AUX BMM150 repetition preset");
+    if (!aux_write_register8(REG_BMM150_REP_XY, _aux_rep_xy) || !aux_write_register8(REG_BMM150_REP_Z, _aux_rep_z)) {
+        M5_LIB_LOGE("Failed to set the AUX BMM150 repetition");
         return false;
     }
 

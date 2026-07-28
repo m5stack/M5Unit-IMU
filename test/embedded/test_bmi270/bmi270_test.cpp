@@ -314,28 +314,46 @@ TEST_F(TestBMI270, BandwidthParameter)
     EXPECT_TRUE(unit->inPeriodic());
 }
 
-TEST_F(TestBMI270, AuxMagPresetRejectsWhatTheFixedRateCannotComplete)
+TEST_F(TestBMI270, WriteAuxMagRepetition)
 {
     SCOPED_TRACE(ustr);
 
     const bool has_mag = m5::imu::any(unit->imuSpec() & m5::imu::Capability::Mag);
-    const auto original = unit->config();
+    uint8_t org_xy{}, org_z{}, rep_xy{}, rep_z{};
+    EXPECT_TRUE(unit->readAuxMagRepetition(org_xy, org_z));
+    // begin() seeds the live state from config_t
+    EXPECT_EQ(org_xy, bmm150::preset_rep_xy(unit->config().aux_mag_preset));
+    EXPECT_EQ(org_z, bmm150::preset_rep_z(unit->config().aux_mag_preset));
+
+    // Changing the repetition changes how long a measurement takes, so it is refused while running
+    EXPECT_FALSE(unit->writeAuxMagPreset(bmm150::Preset::EnhancedRegular));
+    EXPECT_TRUE(unit->readAuxMagRepetition(rep_xy, rep_z));
+    EXPECT_EQ(rep_xy, org_xy);
+    EXPECT_EQ(rep_z, org_z);
 
     EXPECT_TRUE(unit->stopPeriodicMeasurement());
 
-    // The bridge polls the AUX BMM150 at a fixed 30Hz (33.3ms), but HighAccuracy takes 49.3ms, so the
-    // measurement would never complete and the data registers would stop updating. That has to fail
-    // the start outright -- degrading to 6-axis would hide a configuration error behind the same
-    // path a board with no magnetometer takes
-    auto cfg           = original;
-    cfg.aux_mag_preset = bmm150::Preset::HighAccuracy;
-    unit->config(cfg);
-    EXPECT_FALSE(unit->startPeriodicMeasurement());
-    EXPECT_FALSE(unit->inPeriodic());
+    // The bridge polls the AUX BMM150 at a fixed 25Hz (40ms), but HighAccuracy takes 49.3ms, so the
+    // measurement would never complete and the data registers would stop updating. Unlike a
+    // stand-alone UnitBMM150 there is no slower rate to fall back on, so it is rejected outright
+    EXPECT_FALSE(unit->writeAuxMagPreset(bmm150::Preset::HighAccuracy));
+    // A rejected write leaves the previous value in place
+    EXPECT_TRUE(unit->readAuxMagRepetition(rep_xy, rep_z));
+    EXPECT_EQ(rep_xy, org_xy);
+    EXPECT_EQ(rep_z, org_z);
+
+    // An arbitrary pair that fits is accepted, not just the presets
+    EXPECT_TRUE(unit->writeAuxMagRepetition(3, 5));  // 145*7 + 500*6 + 980 = 4995us < 40000us
+    EXPECT_TRUE(unit->readAuxMagRepetition(rep_xy, rep_z));
+    EXPECT_EQ(rep_xy, 3);
+    EXPECT_EQ(rep_z, 5);
 
     // One that fits is accepted, and the magnetometer still reports if the board has one
-    cfg.aux_mag_preset = bmm150::Preset::EnhancedRegular;  // 16.7ms < 40ms
-    unit->config(cfg);
+    EXPECT_TRUE(unit->writeAuxMagPreset(bmm150::Preset::EnhancedRegular));  // 16.7ms < 40ms
+    EXPECT_TRUE(unit->readAuxMagRepetition(rep_xy, rep_z));
+    EXPECT_EQ(rep_xy, bmm150::preset_rep_xy(bmm150::Preset::EnhancedRegular));
+    EXPECT_EQ(rep_z, bmm150::preset_rep_z(bmm150::Preset::EnhancedRegular));
+
     EXPECT_TRUE(unit->startPeriodicMeasurement());
     EXPECT_TRUE(unit->inPeriodic());
     EXPECT_EQ(m5::imu::any(unit->imuSpec() & m5::imu::Capability::Mag), has_mag);
@@ -375,9 +393,95 @@ TEST_F(TestBMI270, AuxMagPresetRejectsWhatTheFixedRateCannotComplete)
 
     // Restore what begin() had set up for the tests that follow
     EXPECT_TRUE(unit->stopPeriodicMeasurement());
-    unit->config(original);
+    EXPECT_TRUE(unit->writeAuxMagRepetition(org_xy, org_z));
     EXPECT_TRUE(unit->startPeriodicMeasurement());
     EXPECT_EQ(m5::imu::any(unit->imuSpec() & m5::imu::Capability::Mag), has_mag);
+}
+
+TEST_F(TestBMI270, AuxDetectionIsCachedAcrossRestart)
+{
+    SCOPED_TRACE(ustr);
+
+    // Whether this board carries an AUX BMM150 is answered once and remembered, so a plain
+    // stop/start must not change the verdict -- and on a board that has one, the second start has
+    // to reach data mode without redoing the detection that filled in the trim
+    const bool has_mag = m5::imu::any(unit->imuSpec() & m5::imu::Capability::Mag);
+
+    // Timing the two paths is what actually shows the caching happens; the verdict alone would stay
+    // the same even if every start re-detected. begin() has already answered the question by the
+    // time this runs, so a plain stop/start is always the cached path -- sleep() is what puts the
+    // detection back to Unknown, because suspend resets the magnetometer.
+    //
+    // Measured over ROUNDS restarts each: the difference is a BMM150 soft reset plus its 3ms
+    // settling delay plus either three trim bursts (present) or two chip ID reads that time out on
+    // aux_busy (absent), all of it well under one millis() tick on its own.
+    // Only the startPeriodicMeasurement() calls are timed, never the sleep()/wakeup() around them:
+    // each round pays that cost once and it lands outside both accumulators, so the whole remaining
+    // gap is the detection the cached path skips. Comparing the two paths against each other rather
+    // than either against a fixed budget keeps this independent of the board's bus speed
+    constexpr int ROUNDS{5};
+    uint32_t detect_ms{}, cached_ms{};
+
+    EXPECT_TRUE(unit->stopPeriodicMeasurement());
+    for (int i = 0; i < ROUNDS; ++i) {
+        // Back to Unknown: the next start has to detect again
+        EXPECT_TRUE(unit->sleep()) << "round " << i;
+        EXPECT_TRUE(unit->wakeup()) << "round " << i;
+
+        auto at = m5::utility::millis();
+        EXPECT_TRUE(unit->startPeriodicMeasurement()) << "round " << i;
+        detect_ms += m5::utility::millis() - at;
+        EXPECT_EQ(m5::imu::any(unit->imuSpec() & m5::imu::Capability::Mag), has_mag) << "round " << i;
+        EXPECT_TRUE(unit->stopPeriodicMeasurement()) << "round " << i;
+
+        // Same call, same state, except the verdict is now cached
+        at = m5::utility::millis();
+        EXPECT_TRUE(unit->startPeriodicMeasurement()) << "round " << i;
+        cached_ms += m5::utility::millis() - at;
+        EXPECT_EQ(m5::imu::any(unit->imuSpec() & m5::imu::Capability::Mag), has_mag) << "round " << i;
+        EXPECT_TRUE(unit->stopPeriodicMeasurement()) << "round " << i;
+    }
+
+    M5_LOGI("AUX start x%d: re-detect=%lums cached=%lums (mag:%d)", ROUNDS, (unsigned long)detect_ms,
+            (unsigned long)cached_ms, has_mag);
+    EXPECT_GT(detect_ms, cached_ms) << "AUX detection is not being cached";
+
+    EXPECT_TRUE(unit->startPeriodicMeasurement());
+    EXPECT_EQ(m5::imu::any(unit->imuSpec() & m5::imu::Capability::Mag), has_mag);
+
+    if (!has_mag) {
+        return;
+    }
+
+    // The trim survived, so the compensated output is still sane rather than the garbage an
+    // uninitialised trim would produce
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    m5::imu::imu_convert_param_t param{};
+    unit->imuConvertParam(param);
+    bool checked{false};
+    for (int i = 0; i < 40 && !checked; ++i) {
+        unit->update();
+        m5::imu::imu_raw_data_t raw{};
+        while (m5::imu::any(unit->readImuRaw(raw))) {
+            if (raw.mag[0] == 0 && raw.mag[1] == 0 && raw.mag[2] == 0) {
+                continue;
+            }
+            const float mx = raw.mag[0] * param.mag_res;
+            const float my = raw.mag[1] * param.mag_res;
+            const float mz = raw.mag[2] * param.mag_res;
+            const float norm = std::sqrt(mx * mx + my * my + mz * mz);
+            M5_LOGI("AUX mag after restart: %.1fuT (raw=[%ld,%ld,%ld])", norm, (long)raw.mag[0], (long)raw.mag[1],
+                    (long)raw.mag[2]);
+            // Earth's field is tens of uT; hard iron on a dev board shifts it but cannot take it
+            // out of this range, whereas a lost trim lands orders of magnitude away
+            EXPECT_GT(norm, 1.0f);
+            EXPECT_LT(norm, 2000.0f);
+            checked = true;
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    EXPECT_TRUE(checked);
 }
 
 TEST_F(TestBMI270, ImuSpec)
