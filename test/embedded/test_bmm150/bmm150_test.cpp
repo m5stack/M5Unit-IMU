@@ -140,7 +140,10 @@ TEST_F(TestBMM150, PeriodicMeasurement)
         // Both are uT by construction (adj_* scales comp by 16, mag_res scales it back), so they have
         // to agree to within sensor noise -- a mismatch means one of those two factors is wrong
         EXPECT_NEAR(raw_norm, norm, norm * 0.1f + 3.0f);
-        EXPECT_GT(raw_norm, 15.0f);
+        // Same loose floor as norm above, for the same reason: an AtomS3R really does read under 15uT
+        // once hard iron cancels enough of the field, so a tighter floor here would only be flaky. The
+        // agreement check is what proves the scale.
+        EXPECT_GT(raw_norm, 1.0f);
     }
 }
 
