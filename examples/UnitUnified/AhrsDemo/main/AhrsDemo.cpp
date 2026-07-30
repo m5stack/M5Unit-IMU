@@ -970,17 +970,13 @@ void draw_gizmo(const float roll, const float pitch, const float yaw)
         text_canvas.printf("Temp:%6.2f C %s", ahrs.latest().temp, auto_cal_enabled ? "Cal:ON" : "Cal:--");
     }
 #if defined(USING_UNIT_DOF10) || defined(USING_UNIT_MINI_IMU_PRO)
-#if defined(USING_UNIT_DOF10)
     const float baro_alt = unit.baro().altitude();
-#else
-    // UnitBMP280 has no altitude(); reuse M5Unit-ENV's chip-agnostic barometric-formula helper
-    const float baro_alt = m5::unit::spa06::altitude_m(unit.baro().pressure(), 1013.25f);
-#endif
+    const float hpa      = unit.baro().pressure() / 100.0f;  // baro().pressure() is Pa
     text_canvas.setCursor(4, 38);
     if (compact) {
-        text_canvas.printf("P:%.0f A:%.0fm", unit.baro().pressure(), baro_alt);
+        text_canvas.printf("P:%.0f A:%.0fm", hpa, baro_alt);
     } else {
-        text_canvas.printf("P:%.1fhPa Alt:%.1fm", unit.baro().pressure(), baro_alt);
+        text_canvas.printf("P:%.1fhPa Alt:%.1fm", hpa, baro_alt);
     }
 #endif
     text_canvas.pushSprite(0, 0);
@@ -1111,17 +1107,13 @@ void handle_quaternion()
     float w{1.0f}, x{}, y{}, z{};
     ahrs.quaternion(w, x, y, z);
 #if defined(USING_UNIT_DOF10) || defined(USING_UNIT_MINI_IMU_PRO)
-#if defined(USING_UNIT_DOF10)
     const float baro_alt = unit.baro().altitude();
-#else
-    // UnitBMP280 has no altitude(); reuse M5Unit-ENV's chip-agnostic barometric-formula helper
-    const float baro_alt = m5::unit::spa06::altitude_m(unit.baro().pressure(), 1013.25f);
-#endif
+    const float hpa      = unit.baro().pressure() / 100.0f;  // baro().pressure() is Pa
     char buf[220];
     std::snprintf(buf, sizeof(buf),
                   "{\"w\":%.4f,\"x\":%.4f,\"y\":%.4f,\"z\":%.4f,\"filter\":\"%s\",\"temp\":%.1f,\"press\":%.1f,"
                   "\"alt\":%.1f,\"cal\":%s}",
-                  w, x, y, z, filter_name(current_filter), ahrs.latest().temp, unit.baro().pressure(), baro_alt,
+                  w, x, y, z, filter_name(current_filter), ahrs.latest().temp, hpa, baro_alt,
                   auto_cal_enabled ? "true" : "false");
 #else
     char buf[180];

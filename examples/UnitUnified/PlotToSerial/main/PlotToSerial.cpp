@@ -193,7 +193,7 @@ void draw_lcd()
     canvas.setCursor(4, 2 + line++ * line_height);
     canvas.printf("Mz:%+.1f", m.z_ut());
     canvas.setCursor(4, 2 + line++ * line_height);
-    canvas.printf("P:%.1fhPa", unit.baro().pressure());
+    canvas.printf("P:%.1fhPa", unit.baro().pressure() / 100.0f);  // baro().pressure() is Pa
     canvas.setCursor(4, 2 + line++ * line_height);
     canvas.printf("Alt:%.1fm bT:%.1fC", unit.baro().altitude(), unit.baro().temperature());
 #elif defined(USING_UNIT_MINI_IMU_PRO)
@@ -223,11 +223,9 @@ void draw_lcd()
     canvas.setCursor(4, 2 + line++ * line_height);
     canvas.printf("Mz:%+.1f", m.comp_z() / 16.0f);
     canvas.setCursor(4, 2 + line++ * line_height);
-    canvas.printf("P:%.1fhPa", unit.baro().pressure());
+    canvas.printf("P:%.1fhPa", unit.baro().pressure() / 100.0f);  // baro().pressure() is Pa
     canvas.setCursor(4, 2 + line++ * line_height);
-    // UnitBMP280 has no altitude(); reuse M5Unit-ENV's chip-agnostic barometric-formula helper
-    canvas.printf("Alt:%.1fm bT:%.1fC", m5::unit::spa06::altitude_m(unit.baro().pressure(), 1013.25f),
-                  unit.baro().temperature());
+    canvas.printf("Alt:%.1fm bT:%.1fC", unit.baro().altitude(), unit.baro().temperature());
 #endif
 
     canvas.pushSprite(0, 0);
@@ -366,8 +364,9 @@ void loop()
             M5.Log.printf(">mx:%.3f\n>my:%.3f\n>mz:%.3f\n", m.x_ut(), m.y_ut(), m.z_ut());
         }
         if (unit.baro().updated()) {
-            M5.Log.printf(">press:%.2f\n>alt:%.2f\n>btemp:%.2f\n", unit.baro().pressure(), unit.baro().altitude(),
-                          unit.baro().temperature());
+            // baro().pressure() is Pa; convert to hPa for the ">press:" trace to match the on-LCD unit
+            M5.Log.printf(">press:%.2f\n>alt:%.2f\n>btemp:%.2f\n", unit.baro().pressure() / 100.0f,
+                          unit.baro().altitude(), unit.baro().temperature());
         }
     }
 #elif defined(USING_UNIT_MINI_IMU_PRO)
@@ -387,9 +386,9 @@ void loop()
             }
         }
         if (unit.baro().updated()) {
-            // UnitBMP280 has no altitude(); reuse M5Unit-ENV's chip-agnostic barometric-formula helper
-            M5.Log.printf(">press:%.2f\n>alt:%.2f\n>btemp:%.2f\n", unit.baro().pressure(),
-                          m5::unit::spa06::altitude_m(unit.baro().pressure(), 1013.25f), unit.baro().temperature());
+            // baro().pressure() is Pa; convert to hPa for the ">press:" trace to match the on-LCD unit
+            M5.Log.printf(">press:%.2f\n>alt:%.2f\n>btemp:%.2f\n", unit.baro().pressure() / 100.0f,
+                          unit.baro().altitude(), unit.baro().temperature());
         }
     }
 #else
