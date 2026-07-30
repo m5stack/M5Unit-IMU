@@ -104,7 +104,11 @@ bool UnitBMI270::begin()
     // first register read may return stale data or not be answered at all. Discard one read before
     // validating CHIP_ID (mirrors M5Unified's BMI270_Class, which reads WhoAmI twice).
     read_register8_quiet(REG_CHIP_ID, id);
-    if (!readRegister8(REG_CHIP_ID, id, 0) || id != CHIP_ID) {
+    // A wedged BMI270 still answers, it just answers wrong, so the recovery below is only worth
+    // trying once something acknowledged this address. Nothing answering means nothing is here --
+    // which is the normal outcome of a probe -- and it must not be written to on the way out
+    const bool answered = readRegister8(REG_CHIP_ID, id, 0);
+    if (!answered || (id != CHIP_ID && !recover_wedged_interface(id))) {
         M5_LIB_LOGE("Not BMI270 %02X", id);
         return false;
     }
@@ -501,6 +505,57 @@ bool UnitBMI270::read_register8_quiet(const uint8_t reg, uint8_t& out)
         return false;
     }
     return readWithTransaction(&out, 1) == m5::hal::error::error_t::OK;
+}
+
+bool UnitBMI270::recover_wedged_interface(const uint8_t id)
+{
+    // Only a value whose set bits are a subset of the real CHIP_ID is worth this. I2C is open drain,
+    // so anything else sharing the bus can pull a bit from 1 to 0 but never the other way: a BMI270
+    // whose reply collided with another driver reads back as 0x20 or 0x00, never as 0x25. Any other
+    // value is a different chip answering at this address, and writing a reset command to that would
+    // be poking registers of a device we know nothing about.
+    if ((id & static_cast<uint8_t>(~CHIP_ID)) != 0) {
+        return false;
+    }
+    // This only reaches the mild form, where the chip still answers and just answers short: the
+    // reset command below has to get through for any of it to work. It is deliberately not a cure
+    // for the severe form -- a BMI270 whose auxiliary interface was switched on while its pins sat
+    // on the host bus holds SDA low and takes no writes at all, measured on a DoF10, and there the
+    // unit has to be unplugged (see UnitDoF9/UnitDoF10,
+    // and the BMI270 datasheet, section 4.10.1: "No other I2C master or slave devices must be
+    // attached to the auxiliary sensor interface").
+    //
+    // For the form it does reach, the soft reset is the only thing short of a power cycle that
+    // clears the auxiliary configuration (BMI270 datasheet, section 4.17: "largely equivalent to a
+    // power cycle"),
+    // and it sits below the CHIP_ID check in begin() -- so without this one attempt that check would
+    // keep rejecting the very chip that is waiting to be reset.
+    M5_LIB_LOGW("CHIP_ID read as %02X; resetting in case the interface was left wedged", id);
+    if (!writeRegister8(REG_CMD, CMD_SOFTRESET)) {
+        return false;
+    }
+
+    // Same tolerant poll softReset() uses, for the same ~2ms reboot; a NAK here is expected, and the
+    // reset default of REG_PWR_CONF being readable again is what says the interface is back
+    uint8_t pwr_conf{};
+    uint32_t retry = PWR_CONF_POLL_RETRY;
+    do {
+        m5::utility::delay(1);
+        if (!read_register8_quiet(REG_PWR_CONF, pwr_conf)) {
+            pwr_conf = 0;
+        }
+    } while (pwr_conf == 0 && --retry);
+
+    // Quiet reads throughout: this whole path is a rescue attempt, and failing it just means the
+    // caller reports the chip ID it originally saw. The discarded first read is the same dummy
+    // transaction begin() performs, since a reset leaves the interface needing one again
+    uint8_t recovered{};
+    read_register8_quiet(REG_CHIP_ID, recovered);
+    if (!read_register8_quiet(REG_CHIP_ID, recovered) || recovered != CHIP_ID) {
+        return false;
+    }
+    M5_LIB_LOGI("Recovered a wedged BMI270 interface");
+    return true;
 }
 
 Capability UnitBMI270::readImuRaw(m5::imu::imu_raw_data_t& out)

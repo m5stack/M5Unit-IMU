@@ -247,6 +247,12 @@ protected:
     // the dummy transaction that brings the I2C interface up after power-on, the two polls that wait
     // out the ~2ms reboot after a soft reset, and the verified-write readback that is retried
     bool read_register8_quiet(const uint8_t reg, uint8_t& out);
+    // Last resort for a CHIP_ID that came back wrong: soft reset the device and read it again.
+    // Call only once the address has acknowledged, and only with the value it answered: the reset
+    // is skipped unless that value is one the real CHIP_ID could have decayed into on a contended
+    // bus (see the .cpp), so a different chip living at this address is never written to. Reaches
+    // only the form where the chip still answers: a bus being held low takes no writes at all
+    bool recover_wedged_interface(const uint8_t id);
     // Uploads the 8192 byte configuration blob (unit_bmi270_config.inl) to REG_INIT_DATA,
     // split into chunks that fit within the I2C write buffer (see .cpp for chunk size
     // rationale). Returns false (and logs) on the first failed chunk, unlike M5Unified's
