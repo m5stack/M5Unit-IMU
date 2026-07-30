@@ -28,9 +28,14 @@ UnitDoF9::UnitDoF9(const uint8_t bmi_addr) : Component(0xFF), _bmi(bmi_addr), _b
     component_config(cfg);
 
     // The DoF's BMM350 is a real device on the main bus, not a BMI270 AUX magnetometer, and the
-    // BMI270's AUX pins are tied to that same bus: switching the interface on would turn the BMI270
-    // into a second I2C master and lock the bus until the unit is power-cycled. Hence plain
-    // UnitBMI270 here rather than UnitBMI270AuxBMM150 -- do not "upgrade" it.
+    // BMI270's AUX pins are tied to that same bus. Measured on a DoF10 rather than here: writing
+    // IF_CONF.aux_en succeeds and the very next transaction is already gone, with SDA held low from
+    // then on. No auxiliary transaction has to be triggered for it, nothing the host can write brings
+    // it back -- not nine clock pulses, IF_CONF <- 0, PWR_CTRL <- 0 or even the soft reset command --
+    // and it outlives a host reset, so the only cure is unplugging the unit. The DoF9 has not been
+    // put through that measurement, but it is the same board family and the cost of guessing wrong
+    // is a unit that has to be pulled out. Hence plain UnitBMI270 here rather than
+    // UnitBMI270AuxBMM150 -- do not "upgrade" it.
 
     _valid = add(_bmi, 0) && add(_bmm, 1);
 }
