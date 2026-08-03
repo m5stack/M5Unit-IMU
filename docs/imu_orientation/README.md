@@ -91,7 +91,7 @@ Note: v1.3 switched the IMU from MPU6886 to a 6-axis BMI270 (still no magnetomet
 
 <img src="imu-station.jpg" width="480" alt="M5Station IMU orientation">
 
-[Source](https://docs.m5stack.com/ja/core/station_bat)
+[Source](https://docs.m5stack.com/en/core/station_bat)
 
 ## CoreS3 / CoreS3-Lite — BMI270 (0x69) + BMM150 (0x10, AUX)
 
@@ -214,7 +214,7 @@ hardware. (StickC-Plus / StickC-Plus2 below are MPU6886 throughout.)
 
 <img src="imu-cardputer-adv.jpg" width="480" alt="Cardputer-Adv IMU orientation">
 
-[Source](https://docs.m5stack.com/ja/core/Cardputer-Adv)
+[Source](https://docs.m5stack.com/en/core/Cardputer-Adv)
 
 ## PaperS3 — BMI270 (0x68)
 
