@@ -183,7 +183,7 @@ inline Vector3 predict_mag(const Quaternion& q, const float bx, const float bz)
 
 }  // namespace
 
-void EKFFilter::reset()
+void EKFFilter::reset_state()
 {
     _q          = Quaternion::identity();
     _bias_rad_s = Vector3();
@@ -195,6 +195,11 @@ void EKFFilter::reset()
     for (int i = 4; i < 7; ++i) {
         _p(i, i) = bias_var_rad2;
     }
+}
+
+void EKFFilter::reset()
+{
+    reset_state();
 }
 
 void EKFFilter::predict(const float dt, const Vector3& gyro_rad_s)

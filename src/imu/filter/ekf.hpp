@@ -47,7 +47,7 @@ class EKFFilter : public AhrsFilterBase {
 public:
     EKFFilter()
     {
-        reset();
+        reset_state();
     }
 
     virtual void reset() override;
@@ -108,6 +108,8 @@ public:
     bool writeQuaternion(const float w, const float x, const float y, const float z);
 
 private:
+    // Non-virtual state initializer shared by ctor and reset(); safe to call from ctor
+    void reset_state();
     void predict(const float dt, const m5::math::Vector3& gyro_rad_s);
     bool apply_axis3_update(const m5::math::Matrix<3, 7>& h, const m5::math::Vector3& innovation,
                             const float noise_var);
