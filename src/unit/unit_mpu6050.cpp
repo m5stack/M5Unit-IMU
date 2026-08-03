@@ -5,7 +5,7 @@
  */
 /*!
   @file unit_mpu6050.cpp
-  @brief UnitMPU6050 statics
+  @brief UnitMPU6050 static members
 */
 #include "unit_mpu6050.hpp"
 #include <M5Utility.hpp>

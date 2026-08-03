@@ -5,7 +5,7 @@
  */
 /*!
   @file unit_mpu6886.cpp
-  @brief UnitMPU6886 statics
+  @brief UnitMPU6886 static members
 */
 #include "unit_mpu6886.hpp"
 #include <M5Utility.hpp>

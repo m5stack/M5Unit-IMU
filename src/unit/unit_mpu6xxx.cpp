@@ -29,7 +29,7 @@ constexpr uint8_t SLEEP_ENABLE{0x40};  // bit6 SLEEP, CLKSEL left at the interna
 namespace m5 {
 namespace unit {
 
-// class UnitMPU6xxx (abstract base; identity is shadowed by each concrete derived's own statics)
+// class UnitMPU6xxx (abstract base; identity is shadowed by each concrete derived's own static members)
 const char UnitMPU6xxx::name[] = "UnitMPU6xxx";
 const types::uid_t UnitMPU6xxx::uid{"UnitMPU6xxx"_mmh3};
 const types::attr_t UnitMPU6xxx::attr{attribute::AccessI2C};
