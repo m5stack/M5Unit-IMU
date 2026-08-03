@@ -60,7 +60,19 @@ bool UnitMPU6xxx::begin()
     _pushed = _consumed = 0;
 
     uint8_t id{};
-    if (!readRegister8(REG_WHO_AM_I, id, 0) || !accepts_whoami(id)) {
+    // First-transaction NO_ACK insurance for SoftwareI2C hosts (NessoN1 SoftwareI2C /
+    // NanoC6 & NanoH2 Ex_I2C, especially H2): retry the WHO_AM_I read a few times before
+    // failing. Cannot reorder to write-first here because address 0x68 is shared by many
+    // IMUs (ICM-20xxx etc.); a bare soft-reset write could corrupt whichever chip answers.
+    bool who_ok{false};
+    for (int i = 0; i < 3; ++i) {
+        if (readRegister8(REG_WHO_AM_I, id, 0) && accepts_whoami(id)) {
+            who_ok = true;
+            break;
+        }
+        m5::utility::delay(1);
+    }
+    if (!who_ok) {
         M5_LIB_LOGE("WHO_AM_I mismatch %02X", id);
         return false;
     }
