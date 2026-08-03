@@ -65,3 +65,15 @@ bin/
 obj/
 
 *.code-workspace
+
+# Doxygen
+docs/html/
+
+# Temporary
+tmp/
+
+# Secrets
+.env*
+*.pem
+*.key
+*.cert
