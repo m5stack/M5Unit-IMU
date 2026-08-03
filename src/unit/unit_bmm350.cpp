@@ -178,13 +178,18 @@ bool UnitBMM350::begin()
     // Startup time from POR (datasheet 3ms)
     m5::utility::delay(3);
 
-    uint8_t id{};
-    if (!read_register8(REG_CHIP_ID, id) || id != CHIP_ID_VALUE) {
-        M5_LIB_LOGE("Not BMM350 %02X", id);
+    // Start with a write (softReset) to warm the bus before reading CHIP_ID. Avoids
+    // intermittent first-transaction NO_ACK on SoftwareI2C hosts (NessoN1 SoftwareI2C /
+    // NanoC6 & NanoH2 Ex_I2C). Safe here because BMM350's I2C address 0x14 is unique to
+    // this chip in the M5 lineup (no shared-address risk). Wrong-chip cases will surface
+    // as softReset() failure below rather than a WHO_AM_I mismatch message.
+    if (!softReset()) {
         return false;
     }
 
-    if (!softReset()) {
+    uint8_t id{};
+    if (!read_register8(REG_CHIP_ID, id) || id != CHIP_ID_VALUE) {
+        M5_LIB_LOGE("Not BMM350 %02X", id);
         return false;
     }
 
