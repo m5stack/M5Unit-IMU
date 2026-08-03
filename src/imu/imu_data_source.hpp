@@ -49,9 +49,9 @@ public:
       @brief Put the device into its lowest reversible power state
       @return True if this source implements sleeping and the device accepted it
       @details Optional: the default does nothing and returns false, so sources that cannot be
-      suspended stay safe to aggregate. Implementations are expected to remember whether
-      periodic measurement was running, so that wakeup() can restore it, and to leave no
-      samples being produced while asleep.
+      suspended stay safe to aggregate. Implementations leave the device producing no samples
+      while asleep. Periodic measurement is stopped; wakeup() does not restore it and callers
+      must invoke startPeriodicMeasurement() again to resume sampling.
      */
     virtual bool sleep()
     {
@@ -60,9 +60,10 @@ public:
     /*!
       @brief Bring the device back from sleep()
       @return True if this source implements waking and the device accepted it
-      @details Optional: the default does nothing and returns false. Implementations restore
-      the measurement state that sleep() captured. Calling this without a preceding sleep()
-      must be harmless.
+      @details Optional: the default does nothing and returns false. Implementations bring the
+      device back to a configurable state; they do not restore the measurement mode that was
+      active before sleep(). Callers must invoke startPeriodicMeasurement() again to resume
+      sampling. Calling this without a preceding sleep() must be harmless.
      */
     virtual bool wakeup()
     {
