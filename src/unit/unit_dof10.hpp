@@ -30,7 +30,10 @@ class UnitDoF10 : public Component {
     M5_UNIT_COMPONENT_HPP_BUILDER(UnitDoF10, 0xFF /* dummy: parent has no device of its own */);
 
 public:
+    //! @brief Construct with the BMI270's I2C address (the composite children derive from this)
+    //! @param[in] bmi_addr BMI270 I2C address (defaults to 0x68)
     explicit UnitDoF10(const uint8_t bmi_addr = 0x68);
+    //! @brief Destructor
     virtual ~UnitDoF10()
     {
     }
@@ -58,7 +61,7 @@ public:
     }
 
 protected:
-    //! @brief Share this composite's bus with each child, duplicated at the child's address
+    // Share this composite's bus with each child, duplicated at the child's address
     virtual std::shared_ptr<Adapter> ensure_adapter(const uint8_t ch) override;
 
 private:

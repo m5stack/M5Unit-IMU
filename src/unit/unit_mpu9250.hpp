@@ -29,7 +29,11 @@ class UnitMPU9250 : public UnitMPU6500 {
     M5_UNIT_COMPONENT_HPP_BUILDER(UnitMPU9250, 0x68);
 
 public:
+    //! @brief Construct with the MPU9250's accel/gyro address and the internal AK8963 mag address
+    //! @param[in] addr MPU9250 accel/gyro I2C address (defaults to the chip's factory address)
+    //! @param[in] mag_addr AK8963 magnetometer I2C address (defaults to 0x0C, its factory address)
     explicit UnitMPU9250(const uint8_t addr = DEFAULT_ADDRESS, const uint8_t mag_addr = 0x0C);
+    //! @brief Destructor
     virtual ~UnitMPU9250()
     {
     }
@@ -44,7 +48,7 @@ public:
     virtual bool begin() override;
 
 protected:
-    //! @brief Only a real MPU9250's accel/gyro die (WHO_AM_I 0x71) is accepted here
+    // Only a real MPU9250's accel/gyro die (WHO_AM_I 0x71) is accepted here
     inline bool accepts_whoami(const uint8_t id) const override
     {
         return id == 0x71;

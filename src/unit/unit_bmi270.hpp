@@ -71,7 +71,10 @@ public:
         bmi270::GyroBwp gyro_bwp{bmi270::GyroBwp::Norm};
     };
 
+    //! @brief Construct with the I2C address the chip will answer on
+    //! @param[in] addr I2C address (defaults to the chip's factory address)
     explicit UnitBMI270(const uint8_t addr = DEFAULT_ADDRESS);
+    //! @brief Destructor
     virtual ~UnitBMI270()
     {
     }
@@ -238,9 +241,9 @@ protected:
     bool start_periodic_measurement();
     bool stop_periodic_measurement();
     bool read_measurement(bmi270::Data& d);
-    //! @brief Read one sample's sensor registers into d
-    //! @details Split out of read_measurement() so a subclass can widen the burst without repeating
-    //! the temperature handling that follows it (see UnitBMI270AuxBMM150)
+    // Read one sample's sensor registers into d. Split out of read_measurement() so a subclass
+    // can widen the burst without repeating the temperature handling that follows it (see
+    // UnitBMI270AuxBMM150).
     virtual bool read_sensor_burst(bmi270::Data& d);
     bool write_register8_verified(const uint8_t reg, const uint8_t val);
     // readRegister8() without its "Failed to write" log, for the reads whose failure is expected:

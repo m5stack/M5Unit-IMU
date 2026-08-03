@@ -65,7 +65,10 @@ public:
         bmm150::Preset aux_mag_preset{bmm150::Preset::Regular};
     };
 
+    //! @brief Construct with the BMI270's I2C address (the AUX BMM150 sits behind the bridge)
+    //! @param[in] addr I2C address (defaults to the chip's factory address)
     explicit UnitBMI270AuxBMM150(const uint8_t addr = DEFAULT_ADDRESS);
+    //! @brief Destructor
     virtual ~UnitBMI270AuxBMM150()
     {
     }
@@ -154,11 +157,11 @@ public:
     ///@}
 
 protected:
-    //! @brief Base configuration, then probe and configure the AUX BMM150
-    //! @details A probe failure is not an error: it just means this board has no magnetometer on the
-    //! interface, so it is switched back off and measurement continues with 6 axes. An
-    //! AUX mag repetition the fixed poll rate cannot keep up with *is* an error, and is rejected
-    //! before any register is touched
+    // Base configuration, then probe and configure the AUX BMM150.
+    // A probe failure is not an error: it just means this board has no magnetometer on the
+    // interface, so it is switched back off and measurement continues with 6 axes. An
+    // AUX mag repetition the fixed poll rate cannot keep up with *is* an error, and is rejected
+    // before any register is touched.
     virtual bool start_periodic_measurement(const bmi270::AccelRange accel_range, const bmi270::GyroRange gyro_range,
                                             const bmi270::AccelODR accel_odr, const bmi270::GyroODR gyro_odr,
                                             const bmi270::FilterPerf accel_filter_perf,
