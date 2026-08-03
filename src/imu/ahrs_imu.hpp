@@ -32,8 +32,8 @@ namespace imu {
   AhrsController (so it plugs into presets, add(), selectFilter(), etc. unchanged) and
   additionally exposes getAccel/getGyro/getMag/getTemp/getImuData/getAhrsData/setCalibration.
   The getters read the already axis-corrected, offset-compensated latest() sample; setCalibration
-  forwards to writeAutoCalibration(); getAhrsData() fills in the attitude output M5Unified
-  declares (getAhrsData) but leaves unimplemented.
+  forwards to writeAutoCalibration(); getAhrsData() provides the attitude output for the
+  getAhrsData() slot that M5Unified's IMU_Class declares but does not implement.
  */
 class AhrsImu : public AhrsController {
 public:
@@ -201,9 +201,9 @@ public:
       @param[out] pitch Pitch (Y axis)
       @param[out] roll Roll (X axis)
       @param[out] yaw Yaw (Z axis)
-      @details Forwards to euler(); implements the attitude output M5Unified's IMU_Class
-      declares (getAhrsData) but leaves unimplemented. Argument order matches M5Unified's
-      planned signature (pitch, roll, yaw).
+      @details Forwards to euler(). Provides the getAhrsData() attitude output that
+      M5Unified's IMU_Class declares but does not implement. Argument order matches
+      M5Unified's planned signature (pitch, roll, yaw).
      */
     inline void getAhrsData(float* const pitch, float* const roll, float* const yaw) const
     {
@@ -327,7 +327,7 @@ public:
     }
 
 private:
-    //! @brief Right-handed third axis for a given first two (ported from m5::IMU_Class getAxis2)
+    // Right-handed third axis for a given first two (ported from m5::IMU_Class getAxis2)
     static inline axis_t getAxis2(const axis_t axis0, const axis_t axis1)
     {
         uint8_t axis2   = static_cast<uint8_t>(((1 << (axis0 >> 1)) | (1 << (axis1 >> 1))) ^ 0x07);
