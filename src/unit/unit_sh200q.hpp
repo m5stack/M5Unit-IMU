@@ -58,7 +58,10 @@ public:
         sh200q::GyroDlpf gyro_dlpf{sh200q::GyroDlpf::BW50};
     };
 
+    //! @brief Construct with the I2C address the chip will answer on
+    //! @param[in] addr I2C address (defaults to the chip's factory address)
     explicit UnitSH200Q(const uint8_t addr = DEFAULT_ADDRESS);
+    //! @brief Destructor
     virtual ~UnitSH200Q()
     {
     }
@@ -159,7 +162,9 @@ public:
                                   const sh200q::GyroDlpf gyro_dlpf);
     //! @brief Start periodic measurement in the current settings
     bool startPeriodicMeasurement();
-    //! @brief Stop periodic measurement
+    //! @brief Mark periodic measurement as stopped (bookkeeping only; the chip stays running --
+    //! call sleep() to power-down for actual quiescence)
+    //! @return True on success
     bool stopPeriodicMeasurement();
     ///@}
 
@@ -172,8 +177,11 @@ public:
         return m5::imu::Capability::Accel | m5::imu::Capability::Gyro | m5::imu::Capability::Temp;
     }
     //! @brief Read the latest raw IMU data
+    //! @param[out] out Destination buffer filled with the most recent sample
+    //! @return Capability of the sample (which axes were populated)
     virtual m5::imu::Capability readImuRaw(m5::imu::imu_raw_data_t& out) override;
     //! @brief Gets the conversion parameters for raw IMU data
+    //! @param[out] out Destination for the scale factors this driver applies
     virtual void imuConvertParam(m5::imu::imu_convert_param_t& out) const override;
     ///@}
 
