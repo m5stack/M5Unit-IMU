@@ -736,6 +736,12 @@ void warn_if_dof_address_differs()
     if (M5.getBoard() == m5::board_t::board_M5Stack) {
         return;
     }
+    // The probe below reads through Wire, so it only sees the bus on hosts whose backend is Wire.
+    // On NessoN1 (SoftwareI2C) and NanoC6/NanoH2 (ExI2C), the bus lives elsewhere -- a Wire read
+    // would either see nothing or the wrong device. A mismatch still surfaces as a begin failure.
+    if (m5::unit::wiring::i2cPins().backend != m5::unit::wiring::I2CPins::Backend::Wire) {
+        return;
+    }
     uint8_t detected{DOF_BMI270_ADDRESS};
     m5::unit::bmi270::detectAddress(
         [](const uint8_t addr, const uint8_t reg, uint8_t& out) {

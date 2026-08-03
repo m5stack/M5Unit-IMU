@@ -279,8 +279,10 @@ void setup()
     // Wire.begin() whenever their backend is Wire), probe both candidates as a diagnostic and warn if
     // the address actually present differs from the one this build targets. Arduino-only: the probe
     // talks over Wire directly; ESP-IDF builds skip it (a mismatch still shows as a begin failure).
-    // Also skipped on classic Core, where Port C runs on the lgfx I2C_Class and Wire is never begun.
-    if (M5.getBoard() != m5::board_t::board_M5Stack) {
+    // Also skipped on classic Core (Port C uses the lgfx I2C_Class, Wire is never begun) and on
+    // NessoN1 (SoftwareI2C) / NanoC6 / NanoH2 (ExI2C), where the real bus is not Wire either.
+    if (M5.getBoard() != m5::board_t::board_M5Stack &&
+        m5::unit::wiring::i2cPins().backend == m5::unit::wiring::I2CPins::Backend::Wire) {
         uint8_t detected{DOF_BMI270_ADDRESS};
         m5::unit::bmi270::detectAddress(
             [](const uint8_t addr, const uint8_t reg, uint8_t& out) {
