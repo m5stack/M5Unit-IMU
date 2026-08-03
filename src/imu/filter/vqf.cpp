@@ -53,7 +53,7 @@ void VQFFilter::update(const float dt, const float accel[3], const float gyro[3]
     if (dt <= 0.0f) {
         return;
     }
-    ensureSamplePeriod(dt);
+    ensure_sample_period(dt);
     _mag_seen = _mag_seen || (mag != nullptr);
 
     // Unit conversion: this repository's gyro (dps)/accel (G) -> VQF's rad/s and m/s^2
@@ -159,7 +159,7 @@ bool VQFFilter::writeBiasClip(const float bias_clip_dps)
     params.biasClip       = static_cast<vqf_real_t>(bias_clip_dps);
     const VQFState state  = _vqf->getState();
     _vqf.reset(new ::VQF(params, static_cast<vqf_real_t>(_built_dt)));
-    _vqf->setState(state);  // keep the estimators armed, as ensureSamplePeriod() does
+    _vqf->setState(state);  // keep the estimators armed, as ensure_sample_period() does
     return true;
 }
 
@@ -172,7 +172,7 @@ m5::math::Vector3 VQFFilter::readGyroBias() const
                              static_cast<float>(bias[2]) * VQF_RAD2DEG);
 }
 
-void VQFFilter::ensureSamplePeriod(const float dt)
+void VQFFilter::ensure_sample_period(const float dt)
 {
     const float diff_ratio = std::fabs(dt - _built_dt) / _built_dt;
     if (diff_ratio <= VQF_RESAMPLE_THRESHOLD_RATIO) {

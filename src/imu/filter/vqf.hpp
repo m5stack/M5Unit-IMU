@@ -272,9 +272,9 @@ public:
 private:
     //! @brief (Re)build _vqf for the given dt if none exists yet, or if dt has drifted from
     //! the period it was last built with by more than VQF_RESAMPLE_THRESHOLD_RATIO
-    void ensureSamplePeriod(const float dt);
+    void ensure_sample_period(const float dt);
 
-    std::unique_ptr<::VQF> _vqf{};  // basicvqf's filter instance (see VQFFilter()/ensureSamplePeriod())
+    std::unique_ptr<::VQF> _vqf{};  // basicvqf's filter instance (see VQFFilter()/ensure_sample_period())
     float _built_dt{};                   // Sample period _vqf was (re)built with, in seconds
     bool _mag_seen{};                    // Any mag sample consumed? Gates the heading convention fix
 };
