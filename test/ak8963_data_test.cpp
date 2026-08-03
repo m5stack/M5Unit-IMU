@@ -51,8 +51,8 @@ TEST(AK8963Data, StatusBits)
 TEST(AK8963Data, AdjustedOutputIs16LsbPerMicroTesla)
 {
     Data d{};
-    set_le16(d, 1, 1000);     // X raw
-    d.raw[7] = BITM;          // ST2: sample was taken in 16bit mode
+    set_le16(d, 1, 1000);        // X raw
+    d.raw[7] = BITM;             // ST2: sample was taken in 16bit mode
     d.asa    = {128, 128, 128};  // ASA=128 -> adjustment factor exactly 1.0
     // out = 1000 * 1.0 * (4912/32760) * 16 = 1000 * 2.39902... = 2399
     EXPECT_EQ(d.adj_x(), 2399);
@@ -61,7 +61,7 @@ TEST(AK8963Data, AdjustedOutputIs16LsbPerMicroTesla)
 TEST(AK8963Data, AsaScalesPerAxis)
 {
     Data d{};
-    set_le16(d, 3, 1000);       // Y raw
+    set_le16(d, 3, 1000);  // Y raw
     d.raw[7] = BITM;
     d.asa    = {128, 256 - 1, 0};  // ASAY=255 -> factor (255+128)/256 = 1.49609375
     // out = 1000 * 1.49609375 * (4912/32760) * 16 = round(3589.2) = 3589

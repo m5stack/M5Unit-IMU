@@ -253,7 +253,7 @@ bool UnitSH200Q::writeGyroOdr(const sh200q::GyroOdr odr)
         return false;
     }
     _gyro_odr = odr;
-    _interval     = 1000U / sh200q::gyro_odr_hz(odr);  // update() rate-limits on this
+    _interval = 1000U / sh200q::gyro_odr_hz(odr);  // update() rate-limits on this
     return true;
 }
 

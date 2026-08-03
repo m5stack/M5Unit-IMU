@@ -155,9 +155,9 @@ bool VQFFilter::writeBiasClip(const float bias_clip_dps)
     // VQFParams::biasClip is only read when the coefficients are derived, i.e. in VQF's
     // constructors -- there is no setter for it (unlike tauAcc/tauMag). Rebuilding is the only
     // way to honour a new value; see the warning on this function in vqf.hpp.
-    VQFParams params      = _vqf->getParams();
-    params.biasClip       = static_cast<vqf_real_t>(bias_clip_dps);
-    const VQFState state  = _vqf->getState();
+    VQFParams params     = _vqf->getParams();
+    params.biasClip      = static_cast<vqf_real_t>(bias_clip_dps);
+    const VQFState state = _vqf->getState();
     _vqf.reset(new ::VQF(params, static_cast<vqf_real_t>(_built_dt)));
     _vqf->setState(state);  // keep the estimators armed, as ensure_sample_period() does
     return true;

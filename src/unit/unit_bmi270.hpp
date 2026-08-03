@@ -235,8 +235,7 @@ protected:
     virtual bool start_periodic_measurement(const bmi270::AccelRange accel_range, const bmi270::GyroRange gyro_range,
                                             const bmi270::AccelODR accel_odr, const bmi270::GyroODR gyro_odr,
                                             const bmi270::FilterPerf accel_filter_perf,
-                                            const bmi270::AccelBwp accel_bwp,
-                                            const bmi270::FilterPerf gyro_filter_perf,
+                                            const bmi270::AccelBwp accel_bwp, const bmi270::FilterPerf gyro_filter_perf,
                                             const bmi270::GyroBwp gyro_bwp);
     bool start_periodic_measurement();
     bool stop_periodic_measurement();

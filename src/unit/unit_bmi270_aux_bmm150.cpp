@@ -127,14 +127,10 @@ bool UnitBMI270AuxBMM150::readAuxMagRepetition(uint8_t& rep_xy, uint8_t& rep_z) 
     return true;
 }
 
-bool UnitBMI270AuxBMM150::start_periodic_measurement(const bmi270::AccelRange accel_range,
-                                                     const bmi270::GyroRange gyro_range,
-                                                     const bmi270::AccelODR accel_odr,
-                                                     const bmi270::GyroODR gyro_odr,
-                                                     const bmi270::FilterPerf accel_filter_perf,
-                                                     const bmi270::AccelBwp accel_bwp,
-                                                     const bmi270::FilterPerf gyro_filter_perf,
-                                                     const bmi270::GyroBwp gyro_bwp)
+bool UnitBMI270AuxBMM150::start_periodic_measurement(
+    const bmi270::AccelRange accel_range, const bmi270::GyroRange gyro_range, const bmi270::AccelODR accel_odr,
+    const bmi270::GyroODR gyro_odr, const bmi270::FilterPerf accel_filter_perf, const bmi270::AccelBwp accel_bwp,
+    const bmi270::FilterPerf gyro_filter_perf, const bmi270::GyroBwp gyro_bwp)
 {
     // Reject an unusable repetition before touching any register. Failing further in would be
     // indistinguishable from "no BMM150 on this board", which degrades to 6-axis and would silently
@@ -147,7 +143,7 @@ bool UnitBMI270AuxBMM150::start_periodic_measurement(const bmi270::AccelRange ac
     }
 
     if (!UnitBMI270::start_periodic_measurement(accel_range, gyro_range, accel_odr, gyro_odr, accel_filter_perf,
-                                               accel_bwp, gyro_filter_perf, gyro_bwp)) {
+                                                accel_bwp, gyro_filter_perf, gyro_bwp)) {
         return false;
     }
 

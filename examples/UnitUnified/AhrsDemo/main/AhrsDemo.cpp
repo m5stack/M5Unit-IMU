@@ -652,7 +652,7 @@ bool begin_builtin()
 {
     const auto board = M5.getBoard();
     const auto kind  = m5::unit::imu::detectBuiltinImu(
-         [](uint8_t a, uint8_t reg, uint8_t& out) { return M5.In_I2C.readRegister(a, reg, &out, 1, 400000); });
+        [](uint8_t a, uint8_t reg, uint8_t& out) { return M5.In_I2C.readRegister(a, reg, &out, 1, 400000); });
 
     diag.board = board;
     diag.imu   = kind;
@@ -831,15 +831,15 @@ bool begin_unit_dof9_dof10()
 {
     bool ok = wire_grove_unit(unit);
     warn_if_dof_address_differs();
-    ok              = ok && Units.begin() && m5::imu::presets::unitDoF(ahrs, unit.imu(), unit.mag());
+    ok = ok && Units.begin() && m5::imu::presets::unitDoF(ahrs, unit.imu(), unit.mag());
 #if defined(USING_UNIT_DOF10)
     diag.unit_label = "UnitDoF10 (BMI270+BMM350+SPA06)";
 #else
     diag.unit_label = "UnitDoF9 (BMI270+BMM350)";
 #endif
-    diag.accel_src  = &unit.imu();
-    diag.mag_src    = &unit.mag();
-    diag.mag_label  = "BMM350 (0x14)";
+    diag.accel_src = &unit.imu();
+    diag.mag_src   = &unit.mag();
+    diag.mag_label = "BMM350 (0x14)";
     if (!ok) {
 #if defined(USING_UNIT_DOF10)
         note_begin_failure("UnitDoF10 not found (check GROVE cable)");

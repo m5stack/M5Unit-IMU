@@ -165,8 +165,7 @@ protected:
     virtual bool start_periodic_measurement(const bmi270::AccelRange accel_range, const bmi270::GyroRange gyro_range,
                                             const bmi270::AccelODR accel_odr, const bmi270::GyroODR gyro_odr,
                                             const bmi270::FilterPerf accel_filter_perf,
-                                            const bmi270::AccelBwp accel_bwp,
-                                            const bmi270::FilterPerf gyro_filter_perf,
+                                            const bmi270::AccelBwp accel_bwp, const bmi270::FilterPerf gyro_filter_perf,
                                             const bmi270::GyroBwp gyro_bwp) override;
     //! @brief One 20 byte burst covering mag + accel + gyro, instead of the base's 12 byte accel/gyro read
     virtual bool read_sensor_burst(bmi270::Data& d) override;

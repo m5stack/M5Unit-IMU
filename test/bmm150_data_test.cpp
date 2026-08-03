@@ -325,11 +325,11 @@ TEST(BMM150Data, HighAccuracyDoesNotFitThirtyHertz)
 {
     // The 30Hz default period is 33.3ms but HighAccuracy needs 49.3ms, so the measurement never
     // completes and the data registers stop updating -- repetition_fits() has to reject that pair
-    EXPECT_FALSE(repetition_fits(DataRate::Rate30Hz, preset_rep_xy(Preset::HighAccuracy),
-                                 preset_rep_z(Preset::HighAccuracy)));
+    EXPECT_FALSE(
+        repetition_fits(DataRate::Rate30Hz, preset_rep_xy(Preset::HighAccuracy), preset_rep_z(Preset::HighAccuracy)));
     // 20Hz (50ms) is its documented ceiling and does fit
-    EXPECT_TRUE(repetition_fits(DataRate::Rate20Hz, preset_rep_xy(Preset::HighAccuracy),
-                                preset_rep_z(Preset::HighAccuracy)));
+    EXPECT_TRUE(
+        repetition_fits(DataRate::Rate20Hz, preset_rep_xy(Preset::HighAccuracy), preset_rep_z(Preset::HighAccuracy)));
     // Every other preset keeps up with 30Hz
     EXPECT_TRUE(repetition_fits(DataRate::Rate30Hz, preset_rep_xy(Preset::Regular), preset_rep_z(Preset::Regular)));
     EXPECT_TRUE(repetition_fits(DataRate::Rate30Hz, preset_rep_xy(Preset::EnhancedRegular),

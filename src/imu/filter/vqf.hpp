@@ -275,8 +275,8 @@ private:
     void ensure_sample_period(const float dt);
 
     std::unique_ptr<::VQF> _vqf{};  // basicvqf's filter instance (see VQFFilter()/ensure_sample_period())
-    float _built_dt{};                   // Sample period _vqf was (re)built with, in seconds
-    bool _mag_seen{};                    // Any mag sample consumed? Gates the heading convention fix
+    float _built_dt{};              // Sample period _vqf was (re)built with, in seconds
+    bool _mag_seen{};               // Any mag sample consumed? Gates the heading convention fix
 };
 
 }  // namespace imu

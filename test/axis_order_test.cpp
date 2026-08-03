@@ -113,7 +113,10 @@ AxisOrder make_order(const AxisPermutation permutation, const int sign_mask)
 void expect_same_transform(const AxisOrder& lhs, const AxisOrder& rhs)
 {
     const float probes[4][3] = {
-        {1.0f, 2.0f, 3.0f}, {-4.0f, 5.0f, -6.0f}, {7.0f, -8.0f, 9.0f}, {0.5f, -0.5f, 2.5f},
+        {1.0f, 2.0f, 3.0f},
+        {-4.0f, 5.0f, -6.0f},
+        {7.0f, -8.0f, 9.0f},
+        {0.5f, -0.5f, 2.5f},
     };
     for (const auto& probe : probes) {
         float a[3] = {probe[0], probe[1], probe[2]};

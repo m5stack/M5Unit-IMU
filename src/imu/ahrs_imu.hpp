@@ -254,8 +254,7 @@ public:
       @param mag_strength Magnetometer strength
       @details Alias for writeAutoCalibration().
      */
-    inline void setCalibration(const uint8_t accel_strength, const uint8_t gyro_strength,
-                               const uint8_t mag_strength)
+    inline void setCalibration(const uint8_t accel_strength, const uint8_t gyro_strength, const uint8_t mag_strength)
     {
         writeAutoCalibration(accel_strength, gyro_strength, mag_strength);
     }
@@ -288,8 +287,7 @@ public:
             static_cast<uint8_t>(axis1 >> 1),
             static_cast<uint8_t>(axis2 >> 1),
         };
-        if (idx[0] > 2 || idx[1] > 2 || idx[2] > 2 || idx[0] == idx[1] || idx[1] == idx[2] ||
-            idx[0] == idx[2]) {
+        if (idx[0] > 2 || idx[1] > 2 || idx[2] > 2 || idx[0] == idx[1] || idx[1] == idx[2] || idx[0] == idx[2]) {
             return false;
         }
         AxisOrder order;
@@ -330,10 +328,10 @@ private:
     // Right-handed third axis for a given first two (ported from m5::IMU_Class getAxis2)
     static inline axis_t getAxis2(const axis_t axis0, const axis_t axis1)
     {
-        uint8_t axis2   = static_cast<uint8_t>(((1 << (axis0 >> 1)) | (1 << (axis1 >> 1))) ^ 0x07);
-        axis2           = static_cast<uint8_t>(axis2 & 0x06);
+        uint8_t axis2     = static_cast<uint8_t>(((1 << (axis0 >> 1)) | (1 << (axis1 >> 1))) ^ 0x07);
+        axis2             = static_cast<uint8_t>(axis2 & 0x06);
         const uint8_t ax0 = axis2 ? static_cast<uint8_t>(axis2 - 2) : 4;
-        axis2 = static_cast<uint8_t>(axis2 + (((axis0 & 0x06) == ax0) == ((axis0 & 1) == (axis1 & 1))));
+        axis2             = static_cast<uint8_t>(axis2 + (((axis0 & 0x06) == ax0) == ((axis0 & 1) == (axis1 & 1))));
         return static_cast<axis_t>(axis2);
     }
 

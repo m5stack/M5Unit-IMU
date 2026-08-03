@@ -140,8 +140,7 @@ bool UnitBMM150::start_periodic_measurement(const bmm150::DataRate rate, const b
                     measurement_time_us(preset_rep_xy(preset), preset_rep_z(preset)), rate_interval_us(rate));
         return false;
     }
-    if (!write_repetition_unchecked(preset_rep_xy(preset), preset_rep_z(preset)) ||
-        !write_data_rate_unchecked(rate)) {
+    if (!write_repetition_unchecked(preset_rep_xy(preset), preset_rep_z(preset)) || !write_data_rate_unchecked(rate)) {
         M5_LIB_LOGE("Failed to initialize");
         return false;
     }
@@ -226,8 +225,8 @@ bool UnitBMM150::writeRepetition(const uint8_t rep_xy, const uint8_t rep_z)
         return false;
     }
     if (!repetition_fits(rate, rep_xy, rep_z)) {
-        M5_LIB_LOGE("Repetition %u/%u needs %uus, longer than the %uus period of the current rate",
-                    rep_xy, rep_z, measurement_time_us(rep_xy, rep_z), rate_interval_us(rate));
+        M5_LIB_LOGE("Repetition %u/%u needs %uus, longer than the %uus period of the current rate", rep_xy, rep_z,
+                    measurement_time_us(rep_xy, rep_z), rate_interval_us(rate));
         return false;
     }
     return write_repetition_unchecked(rep_xy, rep_z);
@@ -252,8 +251,8 @@ bool UnitBMM150::writeDataRate(const bmm150::DataRate rate)
         return false;
     }
     if (!repetition_fits(rate, rep_xy, rep_z)) {
-        M5_LIB_LOGE("The current repetition %u/%u needs %uus, longer than the %uus period of the new rate",
-                    rep_xy, rep_z, measurement_time_us(rep_xy, rep_z), rate_interval_us(rate));
+        M5_LIB_LOGE("The current repetition %u/%u needs %uus, longer than the %uus period of the new rate", rep_xy,
+                    rep_z, measurement_time_us(rep_xy, rep_z), rate_interval_us(rate));
         return false;
     }
     return write_data_rate_unchecked(rate);

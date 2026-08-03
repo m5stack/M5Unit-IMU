@@ -473,9 +473,9 @@ TEST_F(TestBMI270, AuxDetectionIsCachedAcrossRestart)
             if (raw.mag[0] == 0 && raw.mag[1] == 0 && raw.mag[2] == 0) {
                 continue;
             }
-            const float mx = raw.mag[0] * param.mag_res;
-            const float my = raw.mag[1] * param.mag_res;
-            const float mz = raw.mag[2] * param.mag_res;
+            const float mx   = raw.mag[0] * param.mag_res;
+            const float my   = raw.mag[1] * param.mag_res;
+            const float mz   = raw.mag[2] * param.mag_res;
             const float norm = std::sqrt(mx * mx + my * my + mz * mz);
             M5_LOGI("AUX mag after restart: %.1fuT (raw=[%ld,%ld,%ld])", norm, (long)raw.mag[0], (long)raw.mag[1],
                     (long)raw.mag[2]);
@@ -622,7 +622,7 @@ TEST_F(TestBMI270, SleepWhileStoppedAndRedundantWakeup)
     SCOPED_TRACE(ustr);
 
     EXPECT_TRUE(unit->stopPeriodicMeasurement());
-    EXPECT_TRUE(unit->sleep());   // already stopped: still suspends
+    EXPECT_TRUE(unit->sleep());  // already stopped: still suspends
     EXPECT_TRUE(unit->wakeup());
     EXPECT_TRUE(unit->wakeup());  // waking an awake chip is harmless
 
@@ -692,10 +692,9 @@ TEST_F(TestBMI270, StartPeriodicWithArgs)
     EXPECT_TRUE(unit->stopPeriodicMeasurement());
 
     // Non-default settings are written to the chip and synced to config()
-    EXPECT_TRUE(
-        unit->startPeriodicMeasurement(AccelRange::G4, GyroRange::DPS500, AccelODR::Rate50Hz, GyroODR::Rate50Hz,
-                                       FilterPerf::Performance, AccelBwp::NormAvg4, FilterPerf::Performance,
-                                       GyroBwp::Norm));
+    EXPECT_TRUE(unit->startPeriodicMeasurement(AccelRange::G4, GyroRange::DPS500, AccelODR::Rate50Hz, GyroODR::Rate50Hz,
+                                               FilterPerf::Performance, AccelBwp::NormAvg4, FilterPerf::Performance,
+                                               GyroBwp::Norm));
     EXPECT_TRUE(unit->inPeriodic());
 
     AccelRange ar{};

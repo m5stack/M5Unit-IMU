@@ -91,14 +91,14 @@ enum class FilterPerf : uint8_t {
   mode, so the combination is validated (see bwp_fits())
  */
 enum class AccelBwp : uint8_t {
-    Osr4Avg1,   //!< @brief OSR4 filter / no averaging
-    Osr2Avg2,   //!< @brief OSR2 filter / average 2 samples
-    NormAvg4,   //!< @brief Normal filter (power-on default) / average 4 samples
-    CicAvg8,    //!< @brief CIC filter / average 8 samples
-    Avg16,      //!< @brief Average 16 samples (PowerOptimized only; reserved in Performance mode)
-    Avg32,      //!< @brief Average 32 samples (PowerOptimized only)
-    Avg64,      //!< @brief Average 64 samples (PowerOptimized only)
-    Avg128,     //!< @brief Average 128 samples (PowerOptimized only)
+    Osr4Avg1,  //!< @brief OSR4 filter / no averaging
+    Osr2Avg2,  //!< @brief OSR2 filter / average 2 samples
+    NormAvg4,  //!< @brief Normal filter (power-on default) / average 4 samples
+    CicAvg8,   //!< @brief CIC filter / average 8 samples
+    Avg16,     //!< @brief Average 16 samples (PowerOptimized only; reserved in Performance mode)
+    Avg32,     //!< @brief Average 32 samples (PowerOptimized only)
+    Avg64,     //!< @brief Average 64 samples (PowerOptimized only)
+    Avg128,    //!< @brief Average 128 samples (PowerOptimized only)
 };
 
 /*!
@@ -117,7 +117,8 @@ enum class GyroBwp : uint8_t {
 //! @note The accelerometer's averaging-only values (Avg16 and up) are reserved in Performance mode
 constexpr bool bwp_fits(const FilterPerf perf, const AccelBwp bwp)
 {
-    return (perf == FilterPerf::PowerOptimized) || (static_cast<uint8_t>(bwp) <= static_cast<uint8_t>(AccelBwp::CicAvg8));
+    return (perf == FilterPerf::PowerOptimized) ||
+           (static_cast<uint8_t>(bwp) <= static_cast<uint8_t>(AccelBwp::CicAvg8));
 }
 
 //! @brief REG_ACC_CONF value for the given settings

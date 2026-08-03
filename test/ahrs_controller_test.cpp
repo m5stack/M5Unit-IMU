@@ -890,8 +890,8 @@ TEST(AhrsController, MagCalibrationRadiusIsLearnedFromTheFieldByDefault)
     for (int i = 0; i < 3000; ++i) {
         const float angle = static_cast<float>(i) * 0.02f;
         ag.pushAccelGyro(0, 0, 1, 0, 0, 0);
-        mag.pushMag(static_cast<int32_t>(FIELD_UT * std::cos(angle)),
-                    static_cast<int32_t>(FIELD_UT * std::sin(angle)), 0);
+        mag.pushMag(static_cast<int32_t>(FIELD_UT * std::cos(angle)), static_cast<int32_t>(FIELD_UT * std::sin(angle)),
+                    0);
         ahrs.update(0.01f);
     }
 

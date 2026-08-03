@@ -244,7 +244,7 @@ TEST_F(TestMPU6886, SleepWhileStoppedAndRedundantWakeup)
     SCOPED_TRACE(ustr);
 
     EXPECT_TRUE(unit->stopPeriodicMeasurement());
-    EXPECT_TRUE(unit->sleep());   // already stopped: still sleeps
+    EXPECT_TRUE(unit->sleep());  // already stopped: still sleeps
     EXPECT_TRUE(unit->wakeup());
     EXPECT_TRUE(unit->wakeup());  // waking an awake chip is harmless
 

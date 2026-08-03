@@ -152,8 +152,8 @@ inline AxisPermutation permutation_from_indices(const uint8_t (&p)[3])
  */
 inline AxisOrder compose(const AxisOrder& first, const AxisOrder& second)
 {
-    const uint8_t* pa = axis_permutation_indices(first.permutation);
-    const uint8_t* pb = axis_permutation_indices(second.permutation);
+    const uint8_t* pa   = axis_permutation_indices(first.permutation);
+    const uint8_t* pb   = axis_permutation_indices(second.permutation);
     const bool inv_a[3] = {first.invert_x, first.invert_y, first.invert_z};
     const bool inv_b[3] = {second.invert_x, second.invert_y, second.invert_z};
 
