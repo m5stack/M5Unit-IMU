@@ -67,10 +67,14 @@ public:
         float mag_offset[3]{};    //!< @brief Magnetometer offset (uT), X/Y/Z
     };
 
+    //! @brief Construct with no sources and the default filter (Complementary)
     AhrsController();
+    //! @brief Destructor
     ~AhrsController();
 
+    //! @brief Copy construction is disabled (holds pointers to registered sources)
     AhrsController(const AhrsController&) = delete;
+    //! @brief Copy assignment is disabled (holds pointers to registered sources)
     AhrsController& operator=(const AhrsController&) = delete;
 
     /*!

@@ -46,7 +46,10 @@ public:
         bmm150::DataRate rate{bmm150::DataRate::Rate30Hz};
     };
 
+    //! @brief Construct with the I2C address the chip will answer on
+    //! @param[in] addr I2C address (defaults to the chip's factory address)
     explicit UnitBMM150(const uint8_t addr = DEFAULT_ADDRESS);
+    //! @brief Destructor
     virtual ~UnitBMM150()
     {
     }

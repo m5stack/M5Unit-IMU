@@ -44,7 +44,10 @@ public:
         bmm350::Averaging avg{bmm350::Averaging::X4};
     };
 
+    //! @brief Construct with the I2C address the chip will answer on
+    //! @param[in] addr I2C address (defaults to the chip's factory address)
     explicit UnitBMM350(const uint8_t addr = DEFAULT_ADDRESS);
+    //! @brief Destructor
     virtual ~UnitBMM350()
     {
     }
