@@ -1371,7 +1371,7 @@ void loop()
     // MagDis field keeps reading "-".
     // Note that selectFilter() constructs a fresh VQFFilter, so switching filters and coming back
     // returns the setting to its default.
-    if (M5.BtnB.wasClicked() && current_filter == m5::imu::FilterType::VQF && ahrs.filter() != nullptr) {
+    if (M5.BtnB.wasSingleClicked() && current_filter == m5::imu::FilterType::VQF && ahrs.filter() != nullptr) {
         auto* vqf            = static_cast<m5::imu::VQFFilter*>(ahrs.filter());
         const bool enable_it = !vqf->readMagDisturbanceRejection();
         vqf->writeMagDisturbanceRejection(enable_it);
