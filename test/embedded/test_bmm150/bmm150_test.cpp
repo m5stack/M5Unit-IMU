@@ -95,7 +95,9 @@ TEST_F(TestBMM150, PeriodicMeasurement)
         unit->update();
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
-    EXPECT_TRUE(got_valid);
+    EXPECT_TRUE(got_valid) << "Every compensated sample was OVERFLOW. Run away from ferromagnetic surfaces "
+                              "(steel desks, tool holders, speakers, magnetic stands): they distort the earth "
+                              "field beyond BMM150's ~1300uT (X/Y) / 2500uT (Z) input range.";
     EXPECT_TRUE(std::isfinite(norm));
 
     // Only a sanity range here -- the real scaling guard is the comp vs readImuRaw comparison below.
@@ -128,7 +130,9 @@ TEST_F(TestBMM150, PeriodicMeasurement)
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
     }
-    EXPECT_TRUE(got_raw);
+    EXPECT_TRUE(got_raw) << "Every readImuRaw() sample was OVERFLOW. Run away from ferromagnetic surfaces "
+                            "(steel desks, tool holders, speakers, magnetic stands): they distort the earth "
+                            "field beyond BMM150's ~1300uT (X/Y) / 2500uT (Z) input range.";
     if (got_raw) {
         const float rx       = raw.mag[0] * cp.mag_res;
         const float ry       = raw.mag[1] * cp.mag_res;
