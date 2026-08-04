@@ -157,8 +157,12 @@ TEST_F(TestAHRS, StaticConvergence)
     // 静置想定: roll/pitch は水平姿勢 (0度) 付近に収束するはず
     float roll{}, pitch{}, yaw{};
     ahrs.euler(roll, pitch, yaw);
-    EXPECT_NEAR(roll, 0.0f, STATIC_TOLERANCE_DEG);
-    EXPECT_NEAR(pitch, 0.0f, STATIC_TOLERANCE_DEG);
+    EXPECT_NEAR(roll, 0.0f, STATIC_TOLERANCE_DEG)
+        << "The unit must be flat and static on a level bench. If failing repeatedly, verify placement. "
+        << "Measured roll=" << roll << " deg, pitch=" << pitch << " deg.";
+    EXPECT_NEAR(pitch, 0.0f, STATIC_TOLERANCE_DEG)
+        << "The unit must be flat and static on a level bench. If failing repeatedly, verify placement. "
+        << "Measured roll=" << roll << " deg, pitch=" << pitch << " deg.";
 
     float w{}, x{}, y{}, z{};
     ahrs.quaternion(w, x, y, z);
@@ -189,8 +193,12 @@ TEST_F(TestAHRS, AllFiltersConverge)
         // 静置想定。VQF/Fusion 等の初期収束の遅さを考慮し、緩めの tolerance で判定
         float roll{}, pitch{}, yaw{};
         ahrs.euler(roll, pitch, yaw);
-        EXPECT_NEAR(roll, 0.0f, FILTER_TOLERANCE_DEG);
-        EXPECT_NEAR(pitch, 0.0f, FILTER_TOLERANCE_DEG);
+        EXPECT_NEAR(roll, 0.0f, FILTER_TOLERANCE_DEG)
+            << "The unit must be flat and static on a level bench. If failing repeatedly, verify placement. "
+            << "Filter=" << filter_name(type) << ", measured roll=" << roll << " deg, pitch=" << pitch << " deg.";
+        EXPECT_NEAR(pitch, 0.0f, FILTER_TOLERANCE_DEG)
+            << "The unit must be flat and static on a level bench. If failing repeatedly, verify placement. "
+            << "Filter=" << filter_name(type) << ", measured roll=" << roll << " deg, pitch=" << pitch << " deg.";
     }
 }
 
