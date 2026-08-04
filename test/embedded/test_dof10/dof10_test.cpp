@@ -98,7 +98,7 @@ TEST_F(TestDoF10, BaroThroughSharedAdapter)
     }
     EXPECT_GT(updated, 0);
 
-    const float hpa = unit->baro().pressure();
+    const float hpa = unit->baro().pressure() / 100.0f;  // pressure() is Pa; the range below is hPa
     EXPECT_TRUE(std::isfinite(hpa));
     EXPECT_GT(hpa, 300.0f);
     EXPECT_LT(hpa, 1100.0f);
