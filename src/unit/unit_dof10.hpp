@@ -11,8 +11,7 @@
 #define M5_UNIT_IMU_UNIT_UNIT_DOF10_HPP
 
 #include <M5UnitComponent.hpp>
-// UnitSPA06 is provided by M5Unit-ENV (the barometer drivers live there)
-#include <unit/unit_SPA06.hpp>
+#include <M5UnitUnifiedENV.h>  // UnitSPA06 is provided by M5Unit-ENV (the barometer drivers live there)
 #include "unit_bmi270.hpp"
 #include "unit_bmm350.hpp"
 

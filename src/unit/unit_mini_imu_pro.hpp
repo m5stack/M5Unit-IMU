@@ -11,8 +11,7 @@
 #define M5_UNIT_IMU_UNIT_UNIT_MINI_IMU_PRO_HPP
 
 #include <M5UnitComponent.hpp>
-// UnitBMP280 is provided by M5Unit-ENV (the barometer drivers live there)
-#include <unit/unit_BMP280.hpp>
+#include <M5UnitUnifiedENV.h>  // UnitBMP280 is provided by M5Unit-ENV (the barometer drivers live there)
 #include "unit_bmi270_aux_bmm150.hpp"
 
 namespace m5 {
