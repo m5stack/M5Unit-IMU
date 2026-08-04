@@ -78,7 +78,7 @@ TEST(MagDetect, EnableAuxBypassNoOpWithoutMpu9250)
     FakeBus bus;
     bus.mem[{0x68, 0x75}] = 0x19;  // MPU6886, not MPU9250
     const bool enabled    = enableAuxBypass([&](uint8_t a, uint8_t r, uint8_t& o) { return bus.read(a, r, o); },
-                                         [&](uint8_t a, uint8_t r, uint8_t v) { return bus.write(a, r, v); });
+                                            [&](uint8_t a, uint8_t r, uint8_t v) { return bus.write(a, r, v); });
     EXPECT_FALSE(enabled);
     EXPECT_TRUE(bus.writes.empty());  // must not touch a non-MPU9250 host's registers
 }
@@ -89,7 +89,7 @@ TEST(MagDetect, EnableAuxBypassSetsBypassOnMpu9250)
     bus.mem[{0x68, 0x75}] = 0x71;  // MPU9250
     bus.mem[{0x68, 0x6A}] = 0x20;  // USER_CTRL with I2C_MST_EN set
     const bool enabled    = enableAuxBypass([&](uint8_t a, uint8_t r, uint8_t& o) { return bus.read(a, r, o); },
-                                         [&](uint8_t a, uint8_t r, uint8_t v) { return bus.write(a, r, v); });
+                                            [&](uint8_t a, uint8_t r, uint8_t v) { return bus.write(a, r, v); });
     EXPECT_TRUE(enabled);
     EXPECT_EQ((bus.writes[{0x68, 0x6A}]), 0x00);  // I2C_MST_EN cleared
     EXPECT_EQ((bus.writes[{0x68, 0x37}]), 0x02);  // BYPASS_EN set
