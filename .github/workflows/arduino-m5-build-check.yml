@@ -122,6 +122,16 @@ jobs:
             platform-version: 3.2.5
             board: m5stack_core2
             build-properties: "-DUSING_UNIT_BMM350"
+          # UnitDoF10 (composite: BMI270 + BMM350 AUX + SPA06 baro): exercises the M5Unit-ENV
+          # umbrella-header LDF activation path (<M5UnitUnifiedENV.h>). Regression guard for the
+          # m5stack:esp32 fork toolchain; full unit/board coverage lives in platformio-build-check.yml.
+          - sketch: PlotToSerial
+            platform-url: https://m5stack.oss-cn-shenzhen.aliyuncs.com/resource/arduino/package_m5stack_index.json
+            platform: m5stack
+            archi: esp32
+            platform-version: 3.2.5
+            board: m5stack_core2
+            build-properties: "-DUSING_UNIT_DOF10"
           # AhrsDemo: own source (WiFi web viewer + LCD gizmo + begin_builtin dispatch). BUILTIN
           # compiles the most AhrsDemo-unique code; verifies it builds on the m5stack fork toolchain.
           - sketch: AhrsDemo
