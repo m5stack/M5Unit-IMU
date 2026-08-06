@@ -11,13 +11,13 @@ dependencies:
   m5stack/M5UnitUnified:
     git: https://github.com/m5stack/M5UnitUnified.git
     version: main
-  # Barometer drivers (UnitSPA06 for DoF10 / UnitBMP280 for MiniIMUPro) live in M5Unit-ENV. Held on
-  # the develop branch for now: this repository's example code depends on UnitSPA06::pressure()
-  # returning Pa to match UnitBMP280 (and QMP6988 / BME688), which is a develop-only change that has
-  # not landed on master yet. Switch to a version constraint once the change ships.
+  # Barometer drivers (UnitSPA06 for DoF10 / UnitBMP280 for MiniIMUPro) live in M5Unit-ENV.
+  # Pinned to master (which now includes the 1.7.1 release that ships the UnitSPA06::pressure() ->
+  # Pa change this repository depends on). Switch to a tag/version constraint after M5UnitUnified
+  # itself moves off git-ref (currently the stack is not on the ESP Component Registry).
   m5stack/M5Unit-ENV:
     git: https://github.com/m5stack/M5Unit-ENV.git
-    version: develop
+    version: master
 
 targets:
   - esp32
