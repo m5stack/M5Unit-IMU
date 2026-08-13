@@ -138,6 +138,60 @@ public:
     virtual void update(const float dt, const imu_physical_data_t& sample) = 0;
 };
 
+/*!
+  @class MotionEventController
+  @brief Aggregator: registers multiple MotionEventSource and dispatches via first-in-wins claim
+  @details Mirrors AhrsController::add() claim policy: each bit is assigned to the first source
+  whose spec includes it; later sources that also claim it are ignored for that bit.
+ */
+class MotionEventController {
+public:
+    //! @brief Maximum number of sources held internally (fixed upper bound to avoid std::vector on embedded)
+    static constexpr uint8_t MAX_SOURCES = 4;
+
+    MotionEventController() = default;
+
+    //! @brief Register a source (unclaimed bits in its spec are assigned)
+    //! @return true on success, false when MAX_SOURCES reached
+    bool add(MotionEventSource& src);
+
+    //! @brief OR of every registered source's spec
+    MotionEventKind supported() const;
+
+    //! @brief OR of every registered source's enabledEvents()
+    MotionEventKind enabledEvents() const;
+
+    //! @brief Whether kind is included in supported()
+    bool has(MotionEventKind kind) const;
+
+    //! @brief Dispatch to the source claiming kind
+    bool enable(MotionEventKind kind, const void* cfg);
+    bool disable(MotionEventKind kind);
+
+    //! @brief Disable every kind on every registered source
+    bool disableAll();
+
+    //! @brief Poll every source's readEventStatus() and aggregate the results
+    //! @return Bitwise OR of events that newly fired during this update() call
+    MotionEventKind update();
+    MotionEventKind update(const float dt);
+
+    //! @brief Snapshot of the most recent update() result
+    bool latest(MotionEventStatus& out) const;
+
+private:
+    struct Entry {
+        MotionEventSource* src{nullptr};
+        MotionEventKind claim{MotionEventKind::None};
+    };
+    Entry _entries[MAX_SOURCES]{};
+    uint8_t _count{0};
+    MotionEventStatus _latest{};
+
+    Entry* find_owner(MotionEventKind kind);
+    const Entry* find_owner(MotionEventKind kind) const;
+};
+
 }  // namespace imu
 }  // namespace m5
 
