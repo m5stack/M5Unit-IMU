@@ -15,6 +15,7 @@
 
 #include "imu/imu_types.hpp"
 #include "imu/imu_data_source.hpp"
+#include "imu/motion_events.hpp"
 #include "imu/axis_order.hpp"
 #include "imu/ahrs_controller.hpp"
 #include "imu/ahrs_imu.hpp"
