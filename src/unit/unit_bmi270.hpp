@@ -284,6 +284,21 @@ protected:
     // BMI270_Class::_upload_file() which always returns true regardless of write result.
     bool upload_config();
 
+    // Programs the any_motion feature engine registers (ANYMO_1/ANYMO_2) from cfg and maps its
+    // output onto INT1 so INT_STATUS_0 latches it. See unit_bmi270.cpp for the register layout.
+    bool write_any_motion_features(const m5::imu::AnyMotionConfig& c);
+    // Clears the any_motion feature's enable bit and its INT_MAP_FEAT routing, without disturbing
+    // the duration/threshold/axis fields written by write_any_motion_features()
+    bool clear_any_motion_features();
+    // Reads len bytes starting at ofs_bytes (an address within the currently FEAT_PAGE-selected
+    // FEATURES[16] window, REG_FEATURES..REG_FEATURES+0x0F)
+    bool read_feature_bytes(const uint16_t ofs_bytes, uint8_t* buf, const size_t len);
+    // Writes len bytes starting at ofs_bytes (same window as read_feature_bytes())
+    bool write_feature_bytes(const uint16_t ofs_bytes, const uint8_t* buf, const size_t len);
+    // Current accelerometer ODR in Hz (_accel_odr decoded), used to convert AnyMotionConfig's
+    // duration_ms into the feature engine's sample-count field
+    uint16_t accelOdrHz() const;
+
     M5_UNIT_COMPONENT_PERIODIC_MEASUREMENT_ADAPTER_HPP_BUILDER(UnitBMI270, bmi270::Data);
 
 private:
@@ -308,8 +323,8 @@ private:
     int16_t _last_temp{};             // Latest valid REG_TEMPERATURE_0 reading (register update is not per-sample)
     uint32_t _pushed{}, _consumed{};  // readImuRaw pop counters (do not disturb latest()/oldest())
     std::unique_ptr<m5::container::CircularBuffer<bmi270::Data>> _data{};
-    // Motion event bookkeeping. Feature engine register access is implemented in a later change;
-    // for now these fields only track enable/disable state and the latched status flag.
+    // Motion event bookkeeping: enable/disable state, the config last handed to enableEvent(), and
+    // the locally latched status flag for INT_STATUS_0's read-to-clear any_motion_out bit.
     m5::imu::MotionEventKind _enabled_mask{m5::imu::MotionEventKind::None};
     m5::imu::AnyMotionConfig _any_motion_cfg{};
     bool _any_motion_pending{false};
@@ -327,6 +342,7 @@ constexpr uint8_t REG_DATA_0{0x04};         // AUX (mag) burst start: 20 bytes =
 constexpr uint8_t REG_STATUS{0x03};         // bit2 = aux_man_op busy (named REG_STATUS, not STATUS: ESP-IDF's
                                             // ets_sys.h has a global `typedef enum STATUS STATUS`)
 constexpr uint8_t REG_DATA_8{0x0C};         // 12 bytes: accel X/Y/Z, gyro X/Y/Z (little-endian)
+constexpr uint8_t REG_INT_STATUS_0{0x1C};   // bit6 any_motion_out (read-clear); see the feature engine block below
 constexpr uint8_t REG_INT_STATUS_1{0x1D};   // bit7 acc_drdy, bit6 gyr_drdy, bit5 aux_drdy
 constexpr uint8_t REG_TEMPERATURE_0{0x22};  // 2 bytes, little-endian, 0x8000 = invalid
 constexpr uint8_t REG_INTERNAL_STATUS{0x21};
@@ -342,6 +358,23 @@ constexpr uint8_t REG_AUX_IF_CONF{
 constexpr uint8_t REG_AUX_RD_ADDR{0x4D};  // write triggers an AUX read transaction
 constexpr uint8_t REG_AUX_WR_ADDR{0x4E};  // write triggers an AUX write transaction (of REG_AUX_WR_DATA)
 constexpr uint8_t REG_AUX_WR_DATA{0x4F};
+// FEATURES bank (datasheet section 4.8, register table 5.2.39/5.2.40): a 16 byte window at
+// REG_FEATURES..REG_FEATURES+0x0F whose content is selected by REG_FEAT_PAGE. Unlike
+// REG_INIT_ADDR_0/REG_INIT_DATA above (write-only, used once for the config blob upload), this
+// window is directly byte-addressable for runtime read/modify/write of a feature's configuration.
+// any_motion (page 1) occupies the last 4 bytes of the window: ANYMO_1 (duration + per-axis
+// select) at REG_FEATURES_ANY_MOTION, ANYMO_2 (threshold + out_conf + enable) at
+// REG_FEATURES_ANY_MOTION_2. Only any_motion is programmed by this driver; other pages/features
+// are out of scope.
+constexpr uint8_t REG_FEAT_PAGE{0x2F};              // FEATURES window page select, bits[2:0]
+constexpr uint8_t REG_FEATURES{0x30};               // FEATURES[16] window base (0x30-0x3F)
+constexpr uint8_t FEAT_PAGE_ANY_MOTION{0x01};       // Page holding ANYMO_1/ANYMO_2
+constexpr uint8_t REG_FEATURES_ANY_MOTION{0x3C};    // ANYMO_1, 2 bytes, followed by ANYMO_2
+constexpr uint8_t REG_FEATURES_ANY_MOTION_2{0x3E};  // ANYMO_2 alone (threshold/out_conf/enable)
+constexpr uint8_t INT_STATUS_0_ANY_MOTION_OUT_BIT{1 << 6};
+constexpr uint8_t REG_INT_MAP_FEAT{0x56};                   // INT1_MAP_FEAT
+constexpr uint8_t INT_MAP_FEAT_ANY_MOTION_OUT_BIT{1 << 6};  // any_motion_out -> INT1
+
 constexpr uint8_t REG_INIT_CTRL{0x59};
 constexpr uint8_t REG_INIT_ADDR_0{0x5B};  // followed by INIT_ADDR_1 (0x5C)
 constexpr uint8_t REG_INIT_DATA{0x5E};
