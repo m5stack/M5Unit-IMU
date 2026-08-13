@@ -302,6 +302,9 @@ bool UnitBMI270::stopPeriodicMeasurement()
 
 bool UnitBMI270::sleep()
 {
+    // Explicitly disable motion events; the user must re-enable them after wakeup().
+    disableAllEvents();
+
     // A suspended chip must not be polled, so stop measuring first (unlike softReset(),
     // suspending during periodic measurement is allowed)
     if (inPeriodic() && !stopPeriodicMeasurement()) {
