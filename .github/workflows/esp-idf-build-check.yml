@@ -88,6 +88,11 @@ jobs:
           - label: AhrsDemo-UnitDoF10
             variant: USING_UNIT_DOF10
             path: examples/UnitUnified/AhrsDemo
+          # MotionEvents: own source (MotionEventController + SoftwareFreeFall plugin + LCD sprite).
+          # Regression guard on native ESP-IDF build; PlotToSerial covers wiring/chip coverage.
+          - label: MotionEvents-UnitDoF6
+            variant: USING_UNIT_DOF6
+            path: examples/UnitUnified/MotionEvents
     steps:
       - name: Checkout
         uses: actions/checkout@v4

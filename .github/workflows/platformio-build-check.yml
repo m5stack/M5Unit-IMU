@@ -190,6 +190,15 @@ jobs:
             framework: Arduino
             espressif32: latest
             env: BuiltIn_Tab5_AhrsDemo_Arduino_latest
+          # MotionEvents: own source (MotionEventController + SoftwareFreeFall + LCD sprite). BMI270
+          # any_motion feature engine path is chip-specific; PlotToSerial already validates wiring
+          # coverage across boards, so MotionEvents CI needs only the Core2 representative.
+          - example: MotionEvents
+            unit: UnitDoF6
+            board: Core2
+            framework: Arduino
+            espressif32: latest
+            env: UnitDoF6_MotionEvents_Core2_Arduino_latest
 
     steps:
       - name: Checkout
