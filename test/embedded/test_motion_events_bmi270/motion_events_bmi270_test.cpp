@@ -51,8 +51,7 @@ protected:
         // internal bus and construct with the result -- no build-time address needed.
         uint8_t addr{0x68};
         m5::unit::bmi270::detectAddress(
-            [](uint8_t a, uint8_t reg, uint8_t& out) { return M5.In_I2C.readRegister(a, reg, &out, 1, 400000); },
-            addr);
+            [](uint8_t a, uint8_t reg, uint8_t& out) { return M5.In_I2C.readRegister(a, reg, &out, 1, 400000); }, addr);
         auto ptr = new m5::unit::UnitBMI270(addr);
 #else
         // GROVE: the bus is not connected yet at get_instance() time, so no probe -- use the

@@ -145,7 +145,7 @@ TEST_F(TestMotionEventsMPU6886, disable_restores_pre_enable_pwr_mgmt_1)
     EXPECT_TRUE(unit->readRegister8(REG_PWR_MGMT_1, pwr_before, 0));
 
     AnyMotionConfig cfg;
-    cfg.threshold_mg = 500;
+    cfg.threshold_mg   = 500;
     const bool enabled = motion.enable(MotionEventKind::AnyMotion, &cfg);
     EXPECT_TRUE(enabled);
     if (!enabled) {

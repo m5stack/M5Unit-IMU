@@ -27,13 +27,13 @@ constexpr uint8_t REG_ACCEL_WOM_Y_THR{0x21};
 constexpr uint8_t REG_ACCEL_WOM_Z_THR{0x22};
 constexpr uint8_t REG_ACCEL_INTEL_CTRL{0x69};
 
-constexpr uint8_t INT_ENABLE_WOM_XYZ{0xE0};             // WOM_X_INT_EN | WOM_Y_INT_EN | WOM_Z_INT_EN
-constexpr uint8_t ACCEL_INTEL_CTRL_EN_MODE_ON{0xC0};    // ACCEL_INTEL_EN | ACCEL_INTEL_MODE
-constexpr uint8_t PWR_MGMT_1_CYCLE_BIT{0x20};           // CYCLE = 1 (accel low-power mode)
-constexpr uint8_t PWR_MGMT_1_SLEEP_BIT{0x40};           // SLEEP bit, cleared before enabling cycle mode
-constexpr uint8_t PWR_MGMT_2_STBY_XG_YG_ZG{0x07};       // STBY_XG | STBY_YG | STBY_ZG (gyro standby)
-constexpr uint8_t ACCEL_CONFIG2_LPF_218HZ{0x01};        // A_DLPF_CFG = 1 (218.1 Hz)
-constexpr uint8_t INT_STATUS_WOM_INT_MASK{0xE0};        // WOM_X_INT | WOM_Y_INT | WOM_Z_INT
+constexpr uint8_t INT_ENABLE_WOM_XYZ{0xE0};           // WOM_X_INT_EN | WOM_Y_INT_EN | WOM_Z_INT_EN
+constexpr uint8_t ACCEL_INTEL_CTRL_EN_MODE_ON{0xC0};  // ACCEL_INTEL_EN | ACCEL_INTEL_MODE
+constexpr uint8_t PWR_MGMT_1_CYCLE_BIT{0x20};         // CYCLE = 1 (accel low-power mode)
+constexpr uint8_t PWR_MGMT_1_SLEEP_BIT{0x40};         // SLEEP bit, cleared before enabling cycle mode
+constexpr uint8_t PWR_MGMT_2_STBY_XG_YG_ZG{0x07};     // STBY_XG | STBY_YG | STBY_ZG (gyro standby)
+constexpr uint8_t ACCEL_CONFIG2_LPF_218HZ{0x01};      // A_DLPF_CFG = 1 (218.1 Hz)
+constexpr uint8_t INT_STATUS_WOM_INT_MASK{0xE0};      // WOM_X_INT | WOM_Y_INT | WOM_Z_INT
 }  // namespace
 
 bool UnitMPU6886::enableEvent(m5::imu::MotionEventKind kind, const void* cfg)
@@ -77,7 +77,8 @@ bool UnitMPU6886::enableEvent(m5::imu::MotionEventKind kind, const void* cfg)
     if (!writeRegister8(REG_SMPLRT_DIV, 49)) return false;
 
     // Step 8: enable cycle mode (accelerometer low-power mode)
-    if (!writeRegister8(REG_PWR_MGMT_1, (_pre_wom.pwr_mgmt_1 & ~PWR_MGMT_1_SLEEP_BIT) | PWR_MGMT_1_CYCLE_BIT)) return false;
+    if (!writeRegister8(REG_PWR_MGMT_1, (_pre_wom.pwr_mgmt_1 & ~PWR_MGMT_1_SLEEP_BIT) | PWR_MGMT_1_CYCLE_BIT))
+        return false;
 
     _enabled_mask |= m5::imu::MotionEventKind::AnyMotion;
     return true;
