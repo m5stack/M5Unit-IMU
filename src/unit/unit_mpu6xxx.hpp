@@ -15,6 +15,7 @@
 #include <memory>
 #include "unit_mpu6886_data.hpp"
 #include "../imu/imu_data_source.hpp"
+#include "../imu/motion_events.hpp"
 
 namespace m5 {
 namespace unit {
@@ -30,7 +31,8 @@ namespace unit {
  */
 class UnitMPU6xxx : public Component,
                     public PeriodicMeasurementAdapter<UnitMPU6xxx, mpu6886::Data>,
-                    public m5::imu::IMUDataSource {
+                    public m5::imu::IMUDataSource,
+                    public m5::imu::MotionEventSource {
     M5_UNIT_COMPONENT_HPP_BUILDER(UnitMPU6xxx, 0x68);
 
 public:
@@ -194,6 +196,37 @@ public:
     //! @brief Gets the conversion parameters for raw IMU data
     //! @param[out] out Conversion parameters
     virtual void imuConvertParam(m5::imu::imu_convert_param_t& out) const override;
+    ///@}
+
+    ///@name MotionEventSource
+    ///@{
+    //! @brief Motion event capability. Default: none. Chip-specific derived classes override.
+    //! @note The WoM register layout differs across MPU-6886 / MPU-9250 / MPU-6050, so the base
+    //! deliberately reports no capability; only UnitMPU6886 currently overrides with real support.
+    virtual m5::imu::MotionEventKind motionEventSpec() const override
+    {
+        return m5::imu::MotionEventKind::None;
+    }
+    //! @brief Currently enabled event mask. Default: none.
+    virtual m5::imu::MotionEventKind enabledEvents() const override
+    {
+        return m5::imu::MotionEventKind::None;
+    }
+    //! @brief Enable a motion event. Base returns false; MPU-6886 override enables AnyMotion (WoM).
+    virtual bool enableEvent(m5::imu::MotionEventKind, const void*) override
+    {
+        return false;
+    }
+    //! @brief Disable a motion event. Base returns false; MPU-6886 override restores pre-WoM state.
+    virtual bool disableEvent(m5::imu::MotionEventKind) override
+    {
+        return false;
+    }
+    //! @brief Poll and clear pending event status. Base returns false; MPU-6886 override latches INT_STATUS.
+    virtual bool readEventStatus(m5::imu::MotionEventStatus&) override
+    {
+        return false;
+    }
     ///@}
 
 protected:

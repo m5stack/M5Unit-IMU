@@ -27,6 +27,25 @@ public:
     {
     }
 
+    ///@name MotionEventSource (Wake-on-Motion)
+    ///@{
+    //! @brief Reports AnyMotion capability (WoM per datasheet section 5.1).
+    m5::imu::MotionEventKind motionEventSpec() const override
+    {
+        return m5::imu::MotionEventKind::AnyMotion;
+    }
+    m5::imu::MotionEventKind enabledEvents() const override
+    {
+        return _enabled_mask;
+    }
+    //! @brief Enable AnyMotion. cfg must point to a valid AnyMotionConfig.
+    bool enableEvent(m5::imu::MotionEventKind kind, const void* cfg) override;
+    //! @brief Disable AnyMotion and restore the pre-WoM chip state.
+    bool disableEvent(m5::imu::MotionEventKind kind) override;
+    //! @brief Poll INT_STATUS and clear pending WoM flags into out.fired.
+    bool readEventStatus(m5::imu::MotionEventStatus& out) override;
+    ///@}
+
 protected:
     inline bool accepts_whoami(const uint8_t id) const override
     {
@@ -40,6 +59,20 @@ protected:
     {
         return 25.0f;
     }
+
+private:
+    struct PreWomSnapshot {
+        uint8_t pwr_mgmt_1{0};
+        uint8_t pwr_mgmt_2{0};
+        uint8_t accel_config2{0};
+        uint8_t smplrt_div{0};
+        uint8_t int_enable{0};
+        uint8_t accel_intel_ctrl{0};
+        bool captured{false};
+    };
+    PreWomSnapshot _pre_wom{};
+    m5::imu::MotionEventKind _enabled_mask{m5::imu::MotionEventKind::None};
+    m5::imu::AnyMotionConfig _wom_cfg{};
 };
 
 }  // namespace unit
