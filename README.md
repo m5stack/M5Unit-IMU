@@ -15,22 +15,6 @@ the MPU6886, which features a 16-bit ADC, built-in programmable digital filters,
 temperature sensor. It communicates with the host via an I2C interface (addr:0x68) and supports
 low-power mode.
 
-### SKU:U228
-
-Unit DoF6 (TBD)
-
-### SKU:U229
-
-Unit DoF9 (TBD)
-
-### SKU:U230
-
-Unit DoF10 (TBD)
-
-### SKU:U231
-
-Unit BMM350 (TBD)
-
 ### SKU:U171
 
 Unit Mini IMU-Pro is a 10-axis motion sensor unit: a BMI270 6-axis accel/gyro (0x68) and a BMP280
@@ -39,37 +23,95 @@ interface rather than to the GROVE bus (driver: `UnitMiniIMUPro` composite; the 
 `UnitBMP280` comes from M5Unit-ENV). Because the magnetometer is an AUX target, `imu()` alone
 provides all nine axes -- the same arrangement as the built-in IMU on CoreS3 and AtomS3R.
 
-> **Multiple DoF units on one bus:** BMM350 (0x14) and SPA06-003 (0x76) have fixed addresses; only the
-> BMI270 is switchable (SW1 0x68/0x69, `DOF_BMI270_ADDRESS` in the examples). To use more than one
-> DoF9/DoF10 on a single host, either (a) use DoF6 pairs (BMI270 only), (b) put the second unit on a
-> separate bus (GROVE Port C on the free Arduino `Wire` — M5Unified uses In_I2C/Ex_I2C, not `Wire`), or
-> (c) use a UnitPaHub: each unit on its own mux channel coexists at the same address (the framework
-> selects the channel per transaction; see M5Unit-PaHub for hub examples).
->
-> ```cpp
-> // (c) sketch: two DoF9 on one host via UnitPaHub channels
-> // paHub.add(dofA, 0); paHub.add(dofB, 1);
-> // Units.add(paHub, Wire); Units.begin();  // channels are selected automatically per transaction
-> ```
->
-> On a classic M5Stack Core the DoF BMI270 (0x68) collides with the built-in IMU on GROVE Port A, so
-> route the unit to GROVE Port C (`Wire`) — the PlotToSerial/AhrsDemo examples do this automatically.
->
-> **UnitMiniIMU + UnitBMM350 (9-axis pair, AhrsDemo):** both units share ONE GROVE bus — split the
-> port with a hub (e.g. Unit HUB). 0x68 + 0x14 coexist without an address conflict. On a classic
-> M5Stack Core the shared bus is routed to GROVE Port C (needs the M5GO/Fire base) for the same
-> built-in-IMU reason; the example does this automatically.
->
-> **Built-in IMU + UnitBMM350 (AhrsDemo `USING_BUILTIN_IMU_WITH_BMM350`):** most hosts with a
-> built-in IMU have no magnetometer (see the table below), so plugging a Unit BMM350 into the GROVE
-> port is the cheapest way to make them 9-axis. The magnetometer needs no bus juggling — 0x14
-> collides with nothing — except on a classic M5Stack Core, where the default GROVE port *is* the
-> internal bus the built-in IMU already uses, so the example routes it to Port C.
->
-> Unlike the DoF units, the two devices are separate enclosures: **mount the Unit BMM350 in the same
-> orientation as the host**, or express the difference with `AhrsController::writeMagAxisOrder()`.
-> The library corrects the BMM350 chip against the unit's own case; how that case sits relative to
-> the host is a mounting decision only you know.
+### SKU:U228
+
+Unit DoF6 is a six-axis inertial sensor unit equipped with a low-power BMI270 inertial measurement
+sensor. The BMI270 integrates a 16-bit, three-axis accelerometer and a 16-bit, three-axis
+gyroscope, and supports multiple measurement ranges, on-chip motion detection, and fast startup.
+The unit can collect acceleration, angular velocity, and temperature data in real time, and
+communicates via the I2C bus (the BMI270 default address is 0x68 and can be switched to 0x69 using
+the onboard switch). It is suitable for applications that require motion-state detection,
+including robot attitude sensing, motion detection, smart wearables, gimbal control, and
+human-machine interaction.
+
+### SKU:U229
+
+Unit DoF9 is a six-axis inertial and three-axis geomagnetic sensor unit equipped with a low-power
+BMI270 inertial measurement sensor and a BMM350 three-axis magnetometer. The BMI270 integrates a
+16-bit, three-axis accelerometer and a 16-bit, three-axis gyroscope, and supports multiple
+measurement ranges and on-chip motion detection. The BMM350 supports three-axis magnetic field
+measurement and uses TMR (tunnel magnetoresistance) technology, providing approximately 0.1 μT
+magnetic field resolution and good temperature stability. The unit can collect acceleration,
+angular velocity, temperature, and three-axis geomagnetic field data in real time, and
+communicates via the I2C bus (the BMI270 default address is 0x68 and can be switched to 0x69 using
+the onboard switch; the BMM350 address is 0x14). It is suitable for applications such as robot
+attitude sensing, heading detection, electronic compasses, motion tracking, navigation assistance,
+and gimbal control.
+
+### SKU:U230
+
+Unit DoF10 is a six-axis inertial, three-axis geomagnetic, and barometric sensor unit equipped with
+a low-power BMI270 inertial measurement sensor, a BMM350 three-axis magnetometer, and an SPA06-003
+barometric pressure sensor. The BMI270 integrates a 16-bit, three-axis accelerometer and a 16-bit,
+three-axis gyroscope, and supports multiple measurement ranges and on-chip motion detection. The
+BMM350 supports three-axis magnetic field measurement and uses TMR (tunnel magnetoresistance)
+technology, providing approximately 0.1 μT magnetic field resolution and good temperature
+stability. The SPA06-003 supports barometric pressure, temperature, and relative altitude
+measurement. The unit can collect acceleration, angular velocity, temperature, three-axis
+geomagnetic field, and barometric pressure data in real time, and communicates via the I2C bus
+(the BMI270 default address is 0x68 and can be switched to 0x69 using the onboard switch; the
+BMM350 address is 0x14; the SPA06-003 address is 0x76). It is suitable for applications such as
+robot attitude sensing, heading detection, electronic compasses, motion tracking, barometric
+altimetry, floor-change detection, and drones.
+
+### SKU:U231
+
+Unit BMM350 is a three-axis geomagnetic sensor unit equipped with a BMM350 three-axis magnetometer.
+The BMM350 supports three-axis magnetic field measurement and uses TMR (tunnel magnetoresistance)
+technology, providing approximately 0.1 μT magnetic field resolution and good temperature
+stability. The unit can collect three-axis geomagnetic field data from the surrounding environment
+in real time, and communicates via the I2C bus (the BMM350 address is 0x14 and communication
+speeds of 100 kHz and 400 kHz are supported). It is suitable for applications such as robot
+navigation, heading detection, electronic compasses, motion tracking, and magnetic field sensing.
+
+## Combining units on one host
+
+**Multiple DoF units on one bus:** BMM350 (0x14) and SPA06-003 (0x76) have fixed addresses; only
+the BMI270 is switchable (SW1 0x68/0x69, `DOF_BMI270_ADDRESS` in the examples). To use more than
+one DoF9/DoF10 on a single host, either (a) use DoF6 pairs (BMI270 only), (b) put the second unit
+on a separate bus (GROVE Port C on the free Arduino `Wire` — M5Unified uses In_I2C/Ex_I2C, not
+`Wire`), or (c) use a UnitPaHub: each unit on its own mux channel coexists at the same address
+(the framework selects the channel per transaction; see M5Unit-PaHub for hub examples).
+
+```cpp
+// (c) sketch: two DoF9 on one host via UnitPaHub channels
+// paHub.add(dofA, 0); paHub.add(dofB, 1);
+// Units.add(paHub, Wire); Units.begin();  // channels are selected automatically per transaction
+```
+
+On classic M5Stack Gray/Fire the DoF BMI270 (0x68) collides with the built-in IMU on the internal
+I2C bus (which is also what GROVE Port A exposes on this board id), so the PlotToSerial/AhrsDemo
+examples route the unit to GROVE Port C (needs the M5GO/Fire base). The examples key off
+`M5.getBoard() == board_M5Stack`, which does not distinguish Basic/Gray/Fire, so the Port C
+routing applies to plain Basic too even though it has no built-in IMU to collide with.
+
+**UnitMiniIMU + UnitBMM350 (9-axis pair, AhrsDemo):** both units share ONE GROVE bus — split the
+port with a hub (e.g. Unit HUB). 0x68 + 0x14 coexist without an address conflict. On classic
+M5Stack Gray/Fire the shared bus is routed to GROVE Port C (needs the M5GO/Fire base) for the
+same built-in-IMU reason; the example does this automatically (same `board_M5Stack` branch, so
+also applied on Basic).
+
+**Built-in IMU + UnitBMM350 (AhrsDemo `USING_BUILTIN_IMU_WITH_BMM350`):** most hosts with a
+built-in IMU have no magnetometer (see the table below), so plugging a Unit BMM350 into the GROVE
+port is the cheapest way to make them 9-axis. The magnetometer needs no bus juggling — 0x14
+collides with nothing — except on classic M5Stack Gray/Fire, where the default GROVE port *is*
+the internal bus the built-in IMU already uses, so the example routes it to Port C (same
+`board_M5Stack` branch, so also applied on Basic).
+
+Unlike the DoF units, the two devices are separate enclosures: **mount the Unit BMM350 in the same
+orientation as the host**, or express the difference with `AhrsController::writeMagAxisOrder()`.
+The library corrects the BMM350 chip against the unit's own case; how that case sits relative to
+the host is a mounting decision only you know.
 
 ## Built-in IMUs by board revision
 
@@ -107,6 +149,11 @@ responds. All chips below have drivers in this library.
 | Tab5 | | BMI270 (0x68) | none |
 | Nesso N1 | | BMI270 (0x68) | none |
 
+> **Not yet hardware-verified.** MPU9250 + AK8963, SH200Q, and MAG3110 have drivers and probe
+> binding, but no physical board of the matching revision has been on hand to confirm scale,
+> orientation, and mag trim (SH200Q also under review for a suspected axis-system mismatch).
+> Reports welcome via issue.
+
 The list is not exhaustive (boards without an established IMU configuration are omitted). Mounting
 orientation differs per board -- see the
 [built-in IMU orientation diagrams](docs/imu_orientation/README.md).
@@ -114,11 +161,11 @@ orientation differs per board -- see the
 ## Related Link
 
 - [Unit Mini IMU & Datasheet](https://docs.m5stack.com/en/products/sku/U095)
+- [Unit Mini IMU-Pro & Datasheet](https://docs.m5stack.com/en/products/sku/U171)
 - [Unit DoF6 & Datasheet](https://docs.m5stack.com/en/products/sku/U228)
 - [Unit DoF9 & Datasheet](https://docs.m5stack.com/en/products/sku/U229)
 - [Unit DoF10 & Datasheet](https://docs.m5stack.com/en/products/sku/U230)
 - [Unit BMM350 & Datasheet](https://docs.m5stack.com/en/products/sku/U231)
-- [Unit Mini IMU-Pro & Datasheet](https://docs.m5stack.com/en/products/sku/U171)
 - [Built-in IMU orientation diagrams](docs/imu_orientation/README.md) — per-board axis-orientation
   references for the built-in IMUs (for setting the correct axis remap)
 
