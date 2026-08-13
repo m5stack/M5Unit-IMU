@@ -181,6 +181,9 @@ bool UnitMPU6xxx::stopPeriodicMeasurement()
 
 bool UnitMPU6xxx::sleep()
 {
+    // Explicitly disable motion events; the user must re-enable them after wakeup().
+    disableAllEvents();
+
     // A sleeping chip must not be polled, so stop measuring first (unlike softReset(), sleeping
     // during periodic measurement is allowed)
     if (inPeriodic() && !stopPeriodicMeasurement()) {
