@@ -16,6 +16,7 @@
 #include "unit_bmi270_data.hpp"
 #include "unit_bmm150_data.hpp"
 #include "../imu/imu_data_source.hpp"
+#include "../imu/motion_events.hpp"
 
 namespace m5 {
 namespace unit {
@@ -31,7 +32,8 @@ namespace unit {
  */
 class UnitBMI270 : public Component,
                    public PeriodicMeasurementAdapter<UnitBMI270, bmi270::Data>,
-                   public m5::imu::IMUDataSource {
+                   public m5::imu::IMUDataSource,
+                   public m5::imu::MotionEventSource {
     M5_UNIT_COMPONENT_HPP_BUILDER(UnitBMI270, 0x69);
 
 public:
@@ -231,6 +233,27 @@ public:
     virtual void imuConvertParam(m5::imu::imu_convert_param_t& out) const override;
     ///@}
 
+    ///@name Motion event (poll only)
+    ///@{
+    //! @brief Bitmap of motion events this chip provides
+    virtual m5::imu::MotionEventKind motionEventSpec() const override
+    {
+        return m5::imu::MotionEventKind::AnyMotion;
+    }
+    //! @brief Currently enabled motion event bitmap
+    virtual m5::imu::MotionEventKind enabledEvents() const override
+    {
+        return _enabled_mask;
+    }
+    //! @brief Enable a motion event kind. Only AnyMotion is supported; cfg must point to AnyMotionConfig.
+    //! @return true on success, false when kind is unsupported or cfg is null
+    virtual bool enableEvent(m5::imu::MotionEventKind kind, const void* cfg) override;
+    //! @brief Disable a motion event kind and clear its status
+    virtual bool disableEvent(m5::imu::MotionEventKind kind) override;
+    //! @brief Read latched motion event status (clears internal latch on read)
+    virtual bool readEventStatus(m5::imu::MotionEventStatus& out) override;
+    ///@}
+
 protected:
     virtual bool start_periodic_measurement(const bmi270::AccelRange accel_range, const bmi270::GyroRange gyro_range,
                                             const bmi270::AccelODR accel_odr, const bmi270::GyroODR gyro_odr,
@@ -285,6 +308,11 @@ private:
     int16_t _last_temp{};             // Latest valid REG_TEMPERATURE_0 reading (register update is not per-sample)
     uint32_t _pushed{}, _consumed{};  // readImuRaw pop counters (do not disturb latest()/oldest())
     std::unique_ptr<m5::container::CircularBuffer<bmi270::Data>> _data{};
+    // Motion event bookkeeping. Feature engine register access is implemented in a later change;
+    // for now these fields only track enable/disable state and the latched status flag.
+    m5::imu::MotionEventKind _enabled_mask{m5::imu::MotionEventKind::None};
+    m5::imu::AnyMotionConfig _any_motion_cfg{};
+    bool _any_motion_pending{false};
 };
 
 namespace bmi270 {

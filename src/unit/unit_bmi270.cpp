@@ -594,5 +594,36 @@ void UnitBMI270::imuConvertParam(m5::imu::imu_convert_param_t& out) const
     out.temp_offset = 23.0f;
 }
 
+bool UnitBMI270::enableEvent(const m5::imu::MotionEventKind kind, const void* cfg)
+{
+    if (kind != m5::imu::MotionEventKind::AnyMotion) return false;
+    if (cfg == nullptr) return false;
+    _any_motion_cfg = *static_cast<const m5::imu::AnyMotionConfig*>(cfg);
+    _enabled_mask |= m5::imu::MotionEventKind::AnyMotion;
+    _any_motion_pending = false;
+    // Feature engine register programming is handled in a separate change.
+    return true;
+}
+
+bool UnitBMI270::disableEvent(const m5::imu::MotionEventKind kind)
+{
+    if (kind != m5::imu::MotionEventKind::AnyMotion) return false;
+    _enabled_mask &= ~m5::imu::MotionEventKind::AnyMotion;
+    _any_motion_pending = false;
+    // Feature engine register programming is handled in a separate change.
+    return true;
+}
+
+bool UnitBMI270::readEventStatus(m5::imu::MotionEventStatus& out)
+{
+    if (!m5::imu::any(_enabled_mask & m5::imu::MotionEventKind::AnyMotion)) return false;
+    if (_any_motion_pending) {
+        out.fired |= m5::imu::MotionEventKind::AnyMotion;
+        _any_motion_pending = false;
+        return true;
+    }
+    return false;
+}
+
 }  // namespace unit
 }  // namespace m5
