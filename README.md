@@ -263,8 +263,10 @@ magnetometer, or use `tareYaw()` to re-zero the reported heading, when an absolu
 
 ## Examples
 
-See [examples/UnitUnified](examples/UnitUnified) — `PlotToSerial` (raw values) and `AhrsDemo`
-(attitude, with an on-device 3D gizmo and, on WiFi boards, a browser viewer at 192.168.4.1).
+See [examples/UnitUnified](examples/UnitUnified) — `PlotToSerial` (raw values), `AhrsDemo`
+(attitude, with an on-device 3D gizmo and, on WiFi boards, a browser viewer at 192.168.4.1) and
+`MotionEvents` (motion event API demo: BMI270 `any_motion` / MPU-6886 Wake-on-Motion, plus a
+software `SoftwareFreeFall` plugin, cycled via BtnA).
 
 ### For ArduinoIDE settings
 
@@ -319,6 +321,29 @@ and warns if the build target does not match the switch position.
 #endif
 ```
 
+- MotionEvents
+
+```cpp
+#if !defined(USING_UNIT_MINI_IMU) && !defined(USING_UNIT_DOF6) && \
+    !defined(USING_UNIT_DOF9) && !defined(USING_UNIT_DOF10) && !defined(USING_UNIT_MINI_IMU_PRO)
+// For UnitMiniIMU (U095) - HW AnyMotion via MPU-6886 Wake-on-Motion
+// #define USING_UNIT_MINI_IMU
+// For UnitDoF6 (U228) - HW AnyMotion via BMI270 feature engine
+// #define USING_UNIT_DOF6
+// For UnitDoF9 (U229) - BMI270 + BMM350
+// #define USING_UNIT_DOF9
+// For UnitDoF10 (U230) - BMI270 + BMM350 + SPA06
+// #define USING_UNIT_DOF10
+// For UnitMiniIMUPro (U171) - BMI270 + BMM150 + BMP280
+// #define USING_UNIT_MINI_IMU_PRO
+#endif
+```
+
+`MotionEvents` uses **BtnA** to cycle through three slots: `AnyMotion`, `FreeFall` (software plugin
+in the example folder), and their combo. When an event fires, the LCD background color changes and
+the event name appears (also logged to Serial). The layout scales to Atom (128×128), Core (320×240),
+and Tab5 (1280×720) automatically.
+
 ### For ESP-IDF settings
 
 > **NOTE:** These examples target ESP-IDF 5.x (>=5.0). M5Unified / M5GFX do not yet support
@@ -332,7 +357,7 @@ and warns if the build target does not match the switch position.
 `USING_*` macro shared with the Arduino build, so you do not edit the example source.
 
 ```sh
-cd examples/UnitUnified/AhrsDemo
+cd examples/UnitUnified/AhrsDemo   # or PlotToSerial, or MotionEvents
 idf.py set-target esp32s3
 idf.py menuconfig
 # -> "M5Unit-IMU example" -> "Target device" -> choose ONE:
@@ -343,6 +368,8 @@ idf.py menuconfig
 #      UnitMiniIMU + UnitBMM350, 9-axis GROVE (AhrsDemo only) /
 #      Built-in IMU, M5.getBoard() auto-detect (AhrsDemo only)
 #    For the DoF units, "DoF BMI270 I2C address (SW1 switch)" selects 0x68 (default) / 0x69.
+#    MotionEvents omits UnitBMM350 (no accel), the 9-axis GROVE combo and Built-in IMU
+#    (deferred to a later plan).
 idf.py build flash monitor
 ```
 
