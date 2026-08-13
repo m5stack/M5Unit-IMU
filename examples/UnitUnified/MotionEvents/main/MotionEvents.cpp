@@ -7,10 +7,17 @@
   Example using M5UnitUnified for UnitIMU series with motion events
   Demonstrates the MotionEventController pattern with HW events (BMI270 AnyMotion /
   MPU-6886 WoM) and an example software plugin (SoftwareFreeFall).
+
+  Output:
+   - Serial: "[FIRED] <event name>" per event
+   - LCD-equipped boards additionally flash the background color and show the event name
+  Controls:
+   - BtnA click: cycle through the event slot table (AnyMotion / FreeFall(SW) / both combined)
 */
 #include <M5Unified.h>
 #include <M5UnitUnified.h>
 #include <M5UnitUnifiedIMU.h>
+#include <algorithm>
 #include <wiring/m5_unit_unified_wiring.hpp>  // Board-aware connection helpers (include last)
 #include <wiring/m5_unit_imu_wiring.hpp>      // This library: classic Core Port C helper
 #include "software_free_fall.hpp"
@@ -67,6 +74,155 @@ m5::unit::UnitMiniIMUPro unit{};
 
 m5::imu::MotionEventController motion;
 
+// --- HW source that feeds MotionEventController + supplies accel samples for the SW plugin ---
+// Plain units (MiniIMU/DoF6/MiniIMUPro's own accel/gyro chip) expose MotionEventSource directly;
+// composite units (DoF9/DoF10) delegate to their BMI270 sub-unit via imu().
+#if defined(USING_UNIT_MINI_IMU)
+m5::unit::UnitMiniIMU* hw_source_ptr = &unit;
+#elif defined(USING_UNIT_DOF6)
+m5::unit::UnitBMI270* hw_source_ptr = &unit;
+#elif defined(USING_UNIT_DOF9)
+m5::unit::UnitBMI270* hw_source_ptr = &unit.imu();
+#elif defined(USING_UNIT_DOF10)
+m5::unit::UnitBMI270* hw_source_ptr = &unit.imu();
+#elif defined(USING_UNIT_MINI_IMU_PRO)
+m5::unit::UnitBMI270* hw_source_ptr = &unit.imu();
+#endif
+m5::imu::imu_convert_param_t convert_param{};
+
+// --- SW extension (example plugin; see software_free_fall.hpp) ---
+example::SoftwareFreeFall sw_ff;
+
+// --- Event configuration shared by every slot that enables AnyMotion ---
+// Default member initializers already give threshold_mg=500, duration_ms=40, all axes enabled.
+const m5::imu::AnyMotionConfig any_cfg{};
+
+// --- Slot cycle table: BtnA click advances through these ---
+struct EventSpec {
+    m5::imu::MotionEventKind kind;
+    const void* cfg;
+};
+struct Slot {
+    const char* label;
+    uint8_t count;
+    EventSpec entries[4];
+};
+const Slot slots[] = {
+    {"AnyMotion", 1, {{m5::imu::MotionEventKind::AnyMotion, &any_cfg}}},
+    {"FreeFall(SW)", 1, {{example::FreeFallBit, nullptr}}},
+    {"AnyMotion+FreeFall", 2, {{m5::imu::MotionEventKind::AnyMotion, &any_cfg}, {example::FreeFallBit, nullptr}}},
+};
+size_t current_slot{0};
+
+// --- LCD: header strip (slot label, redrawn only on slot change) + event status area (redrawn per fire) ---
+bool has_lcd{};
+M5Canvas header_sprite(&lcd);
+M5Canvas event_sprite(&lcd);
+int32_t header_h{};
+
+// event_sprite palette indices (a palette sprite interprets color arguments as indices)
+enum : uint8_t {
+    PAL_IDLE_BG  = 0,
+    PAL_ANY_BG   = 1,
+    PAL_FF_BG    = 2,
+    PAL_COMBO_BG = 3,
+    PAL_TEXT_LT  = 4,
+    PAL_TEXT_DK  = 5,
+};
+
+//! @brief Disable every event, then enable the entries of the given slot; refresh the header
+void activate(const size_t idx)
+{
+    motion.disableAll();
+    const Slot& s = slots[idx];
+    bool all_ok   = true;
+    for (uint8_t i = 0; i < s.count; ++i) {
+        if (!motion.enable(s.entries[i].kind, s.entries[i].cfg)) {
+            M5_LOGW("enable slot=%s entry=%u failed (chip unsupported)", s.label, i);
+            all_ok = false;
+        }
+    }
+    M5_LOGI("[MotionEvents] active slot = %s (%u event%s, %s)", s.label, s.count, s.count > 1 ? "s" : "",
+            all_ok ? "all enabled" : "partial");
+
+    if (!has_lcd) {
+        return;
+    }
+    header_sprite.fillScreen(TFT_BLACK);
+    header_sprite.setTextColor(TFT_WHITE, TFT_BLACK);
+    const int32_t line_h = header_sprite.fontHeight() + 2;
+    header_sprite.setCursor(4, 2);
+    header_sprite.printf("Slot: %s%s", s.label, all_ok ? "" : " (partial)");
+    header_sprite.setCursor(4, 2 + line_h);
+    header_sprite.print("BtnA: next");
+    header_sprite.pushSprite(0, 0);
+}
+
+//! @brief Pick the text size that fits `text` inside `width`, starting from a width-proportional guess
+uint8_t fit_text_size(M5Canvas& spr, const char* text, const int32_t width)
+{
+    uint8_t size = static_cast<uint8_t>(std::max<int32_t>(1, width / 80));
+    spr.setTextSize(size);
+    while (size > 1 && spr.textWidth(text) > width - 8) {
+        --size;
+        spr.setTextSize(size);
+    }
+    return size;
+}
+
+//! @brief Render the event status area: background color + centered event name (flicker-free: draws
+//! off-screen into event_sprite, blits once via pushSprite)
+void render_event(const m5::imu::MotionEventKind fired)
+{
+    if (!has_lcd) {
+        return;
+    }
+
+    const bool has_any = m5::imu::any(fired & m5::imu::MotionEventKind::AnyMotion);
+    const bool has_ff  = m5::imu::any(fired & example::FreeFallBit);
+
+    const char* name;
+    uint8_t bg_pal;
+    uint8_t text_pal;
+    if (has_any && has_ff) {
+        name     = "AnyMotion + FreeFall";
+        bg_pal   = PAL_COMBO_BG;
+        text_pal = PAL_TEXT_LT;
+    } else if (has_any) {
+        name     = "AnyMotion";
+        bg_pal   = PAL_ANY_BG;
+        text_pal = PAL_TEXT_LT;
+    } else if (has_ff) {
+        name     = "FreeFall";
+        bg_pal   = PAL_FF_BG;
+        text_pal = PAL_TEXT_DK;
+    } else {
+        name     = slots[current_slot].label;
+        bg_pal   = PAL_IDLE_BG;
+        text_pal = PAL_TEXT_LT;
+    }
+
+    event_sprite.fillSprite(bg_pal);
+    event_sprite.setTextColor(text_pal, bg_pal);
+    fit_text_size(event_sprite, name, event_sprite.width());
+    const int32_t text_w = event_sprite.textWidth(name);
+    const int32_t text_h = event_sprite.fontHeight();
+    event_sprite.setCursor((event_sprite.width() - text_w) / 2, (event_sprite.height() - text_h) / 2);
+    event_sprite.print(name);
+    event_sprite.pushSprite(0, header_h);
+}
+
+//! @brief Log every fired bit this update() cycle carries (may be more than one at once)
+void log_fired(const m5::imu::MotionEventKind fired)
+{
+    if (m5::imu::any(fired & m5::imu::MotionEventKind::AnyMotion)) {
+        M5_LOGI("[FIRED] AnyMotion");
+    }
+    if (m5::imu::any(fired & example::FreeFallBit)) {
+        M5_LOGI("[FIRED] FreeFall(SW)");
+    }
+}
+
 }  // namespace
 
 void setup()
@@ -77,22 +233,108 @@ void setup()
     if (lcd.height() > lcd.width()) {
         lcd.setRotation(1);
     }
+    has_lcd = lcd.width() >= 80;  // treat the 5x5 ATOM Matrix LED "display" as no-LCD
 
-    // Sensor wiring; MotionEventController hookup lives in a follow-up change.
-    lcd.fillScreen(TFT_BLACK);
-    lcd.setCursor(0, 0);
-    lcd.setTextSize(2);
-    lcd.println("MotionEvents");
-    lcd.println("(scaffolding)");
+    if (has_lcd) {
+        lcd.fillScreen(TFT_BLACK);
 
-    M5_LOGI("MotionEvents scaffolding ready");
+        // Header strip: white-on-black text only -> a 1-bit palette sprite is enough.
+        header_sprite.setColorDepth(1);
+        header_sprite.setPsram(false);
+        // Text size scales mildly with panel width so the header stays legible on large panels
+        // (e.g. Tab5 1280x720) without needing much room on small ones (e.g. AtomS3 128x128).
+        const uint8_t header_ts     = static_cast<uint8_t>(std::max<int32_t>(1, lcd.width() / 200));
+        const int32_t header_line_h = 8 * header_ts + 4;
+        header_sprite.createSprite(lcd.width(), header_line_h * 2 + 4);
+        header_sprite.setTextSize(header_ts);
+        header_h = header_sprite.height();
+
+        // Event status area: minimum required area (below the header), 4-bit palette (6 colors used).
+        const int32_t event_h = lcd.height() - header_h;
+        event_sprite.setColorDepth(4);
+        event_sprite.setPsram(false);
+        // Internal RAM may not fit a large panel (e.g. Tab5 1280x720) at 4bit; fall back to PSRAM.
+        if (static_cast<size_t>(lcd.width()) * static_cast<size_t>(event_h) / 2 > 100000) {
+            event_sprite.setPsram(true);
+        }
+        if (!event_sprite.createSprite(lcd.width(), event_h)) {
+            event_sprite.setPsram(true);
+            event_sprite.createSprite(lcd.width(), event_h);
+        }
+        event_sprite.createPalette();
+        event_sprite.setPaletteColor(PAL_IDLE_BG, TFT_BLACK);
+        event_sprite.setPaletteColor(PAL_ANY_BG, TFT_RED);
+        event_sprite.setPaletteColor(PAL_FF_BG, TFT_YELLOW);
+        event_sprite.setPaletteColor(PAL_COMBO_BG, TFT_MAGENTA);
+        event_sprite.setPaletteColor(PAL_TEXT_LT, TFT_WHITE);
+        event_sprite.setPaletteColor(PAL_TEXT_DK, TFT_BLACK);
+    }
+
+    // --- I2C bus connection (skill m5-i2c-three-way-branch) ---
+    // UnitMiniIMU / UnitDoF6 / UnitDoF9 / UnitDoF10 / UnitMiniIMUPro: NessoN1 -> SoftwareI2C (M5HAL),
+    // NanoC6 / NanoH2 -> M5.Ex_I2C, others -> Wire
+    bool ok{};
+    // On classic M5Stack Core (board_M5Stack) GROVE Port A *is* the internal I2C bus, and Gray/Fire
+    // carry a built-in MPU6886 or BMI270 at 0x68 -- the same address as this library's units. Route
+    // the external unit to GROVE Port C on a bus of its own so it never collides with the built-in IMU
+    // (same handling as PlotToSerial/AhrsDemo).
+    if (M5.getBoard() == m5::board_t::board_M5Stack) {
+        ok = m5::unit::imu::wiring::i2cPortC(Units, unit);
+    } else {
+        ok = m5::unit::wiring::addI2C(Units, unit, 400 * 1000U);
+    }
+
+    if (!ok || !Units.begin()) {
+        M5_LOGE("Failed to begin");
+        m5::unit::wiring::failStop();
+    }
+    M5_LOGI("M5UnitUnified initialized");
+    M5_LOGI("%s", Units.debugInfo().c_str());
+
+    hw_source_ptr->imuConvertParam(convert_param);
+
+    // --- Register HW + SW sources with the controller, then activate the first slot ---
+    motion.add(*hw_source_ptr);
+    motion.add(sw_ff);
+    activate(current_slot);
+
+    render_event(m5::imu::MotionEventKind::None);  // idle
+
+    M5_LOGI("MotionEvents ready");
 }
 
 void loop()
 {
+    static uint32_t prev_ms{0};
+    const uint32_t now = m5::utility::millis();
+    const float dt     = (prev_ms == 0) ? 0.020f : (now - prev_ms) / 1000.0f;
+    prev_ms            = now;
+
     M5.update();
-    // Controller update / BtnA cycle logic lives in a follow-up change.
-    delay(20);
+    Units.update();
+
+    if (M5.BtnA.wasClicked()) {
+        current_slot = (current_slot + 1) % (sizeof(slots) / sizeof(slots[0]));
+        activate(current_slot);
+        render_event(m5::imu::MotionEventKind::None);  // idle after switching
+    }
+
+    // Feed the SW plugin (SoftwareFreeFall) the latest physical-unit accel sample every tick
+    const auto d = hw_source_ptr->latest();
+    m5::imu::imu_physical_data_t sample{};
+    sample.accel[0] = d.accel_x() * convert_param.accel_res;
+    sample.accel[1] = d.accel_y() * convert_param.accel_res;
+    sample.accel[2] = d.accel_z() * convert_param.accel_res;
+    sw_ff.update(dt, sample);
+
+    // Poll every registered source and aggregate newly fired events
+    const auto fired = motion.update(dt);
+    if (m5::imu::any(fired)) {
+        log_fired(fired);
+        render_event(fired);
+    }
+
+    m5::utility::delay(20);
 }
 
 #if !defined(ARDUINO)
