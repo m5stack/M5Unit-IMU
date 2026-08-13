@@ -21,12 +21,15 @@
 #include <wiring/m5_unit_unified_wiring.hpp>  // Board-aware connection helpers (include last)
 #include <wiring/m5_unit_imu_wiring.hpp>      // This library: classic Core Port C helper
 #include "software_free_fall.hpp"
+#if defined(USING_BUILTIN_IMU)
+#include <imu/imu_detect.hpp>
+#endif
 
 // *************************************************************
 // Choose one define symbol to match the unit you are using
 // *************************************************************
 #if !defined(USING_UNIT_MINI_IMU) && !defined(USING_UNIT_DOF6) && !defined(USING_UNIT_DOF9) && \
-    !defined(USING_UNIT_DOF10) && !defined(USING_UNIT_MINI_IMU_PRO)
+    !defined(USING_UNIT_DOF10) && !defined(USING_UNIT_MINI_IMU_PRO) && !defined(USING_BUILTIN_IMU)
 // For UnitMiniIMU (U095, MPU6886) -- HW AnyMotion via WoM
 // #define USING_UNIT_MINI_IMU
 // For UnitDoF6 (U228, BMI270) -- HW AnyMotion via feature engine
@@ -37,7 +40,8 @@
 // #define USING_UNIT_DOF10
 // For UnitMiniIMUPro (U171, BMI270 + BMM150 + BMP280)
 // #define USING_UNIT_MINI_IMU_PRO
-// Built-in IMU support will be added in a later plan.
+// For built-in IMU (probed at runtime: BMI270 or MPU-6886)
+// #define USING_BUILTIN_IMU
 #endif
 
 // Unit DoF BMI270 I2C address, selected by the board's SW1 switch (0x68 default / 0x69). Set this to
@@ -68,6 +72,11 @@ m5::unit::UnitDoF10 unit{DOF_BMI270_ADDRESS};
 // (driver from M5Unit-ENV). The BMM150 is not on the main bus: it is an AUX target of the BMI270,
 // so imu() carries the magnetometer too.
 m5::unit::UnitMiniIMUPro unit{};
+#elif defined(USING_BUILTIN_IMU)
+// Built-in IMU on M5.In_I2C: probed at setup() to pick the driver (BMI270 or MPU-6886). Both
+// storage instances are declared up front; only the one that matches the probe is added to Units.
+m5::unit::UnitBMI270 hw_bmi_storage{};
+m5::unit::UnitMPU6886 hw_mpu_storage{};
 #else
 #error Please choose unit!
 #endif
@@ -76,8 +85,15 @@ m5::imu::MotionEventController motion;
 
 // --- HW source that feeds MotionEventController + supplies accel samples for the SW plugin ---
 // Plain units (MiniIMU/DoF6/MiniIMUPro's own accel/gyro chip) expose MotionEventSource directly;
-// composite units (DoF9/DoF10) delegate to their BMI270 sub-unit via imu().
-#if defined(USING_UNIT_MINI_IMU)
+// composite units (DoF9/DoF10) delegate to their BMI270 sub-unit via imu(). The built-in case is
+// only known at runtime (BMI270 or MPU-6886), so hw_source_ptr there is the base MotionEventSource
+// pointer, and bmi_ptr/mpu_ptr additionally track the concrete driver for the SW plugin sample
+// feed and imuConvertParam(), neither of which is on the MotionEventSource interface.
+#if defined(USING_BUILTIN_IMU)
+m5::imu::MotionEventSource* hw_source_ptr = nullptr;
+m5::unit::UnitBMI270* bmi_ptr             = nullptr;
+m5::unit::UnitMPU6886* mpu_ptr            = nullptr;
+#elif defined(USING_UNIT_MINI_IMU)
 m5::unit::UnitMiniIMU* hw_source_ptr = &unit;
 #elif defined(USING_UNIT_DOF6)
 m5::unit::UnitBMI270* hw_source_ptr = &unit;
@@ -223,6 +239,26 @@ void log_fired(const m5::imu::MotionEventKind fired)
     }
 }
 
+#if defined(USING_BUILTIN_IMU)
+//! @brief Read the latest accel sample for the SW plugin from whichever driver the probe selected
+m5::imu::imu_physical_data_t read_accel_sample()
+{
+    m5::imu::imu_physical_data_t sample{};
+    if (bmi_ptr) {
+        const auto d    = bmi_ptr->latest();
+        sample.accel[0] = d.accel_x() * convert_param.accel_res;
+        sample.accel[1] = d.accel_y() * convert_param.accel_res;
+        sample.accel[2] = d.accel_z() * convert_param.accel_res;
+    } else if (mpu_ptr) {
+        const auto d    = mpu_ptr->latest();
+        sample.accel[0] = d.accel_x() * convert_param.accel_res;
+        sample.accel[1] = d.accel_y() * convert_param.accel_res;
+        sample.accel[2] = d.accel_z() * convert_param.accel_res;
+    }
+    return sample;
+}
+#endif
+
 }  // namespace
 
 void setup()
@@ -270,10 +306,34 @@ void setup()
         event_sprite.setPaletteColor(PAL_TEXT_DK, TFT_BLACK);
     }
 
+    bool ok{};
+#if defined(USING_BUILTIN_IMU)
+    // Built-in IMU lives on M5.In_I2C. M5.getBoard() cannot tell IMU generations apart (e.g. Core2
+    // v1.1 = MPU6886, v1.3 = BMI270 -- both report the same board id), so probe the bus and register
+    // whichever driver matches (mirrors AhrsDemo's begin_builtin()).
+    const auto kind = m5::unit::imu::detectBuiltinImu(
+        [](uint8_t addr, uint8_t reg, uint8_t& out) { return M5.In_I2C.readRegister(addr, reg, &out, 1, 400000); });
+    switch (kind) {
+        case m5::unit::imu::ImuKind::BMI270:
+            bmi_ptr       = &hw_bmi_storage;
+            hw_source_ptr = &hw_bmi_storage;
+            ok            = Units.add(hw_bmi_storage, M5.In_I2C);
+            break;
+        case m5::unit::imu::ImuKind::MPU6886:
+        case m5::unit::imu::ImuKind::MPU6050:
+        case m5::unit::imu::ImuKind::MPU9250:
+            mpu_ptr       = &hw_mpu_storage;
+            hw_source_ptr = &hw_mpu_storage;
+            ok            = Units.add(hw_mpu_storage, M5.In_I2C);
+            break;
+        default:
+            M5_LOGE("No supported built-in IMU detected (BMI270 or MPU-6886)");
+            m5::unit::wiring::failStop();
+    }
+#else
     // --- I2C bus connection (skill m5-i2c-three-way-branch) ---
     // UnitMiniIMU / UnitDoF6 / UnitDoF9 / UnitDoF10 / UnitMiniIMUPro: NessoN1 -> SoftwareI2C (M5HAL),
     // NanoC6 / NanoH2 -> M5.Ex_I2C, others -> Wire
-    bool ok{};
     // On classic M5Stack Core (board_M5Stack) GROVE Port A *is* the internal I2C bus, and Gray/Fire
     // carry a built-in MPU6886 or BMI270 at 0x68 -- the same address as this library's units. Route
     // the external unit to GROVE Port C on a bus of its own so it never collides with the built-in IMU
@@ -283,6 +343,7 @@ void setup()
     } else {
         ok = m5::unit::wiring::addI2C(Units, unit, 400 * 1000U);
     }
+#endif
 
     if (!ok || !Units.begin()) {
         M5_LOGE("Failed to begin");
@@ -291,7 +352,15 @@ void setup()
     M5_LOGI("M5UnitUnified initialized");
     M5_LOGI("%s", Units.debugInfo().c_str());
 
+#if defined(USING_BUILTIN_IMU)
+    if (bmi_ptr) {
+        bmi_ptr->imuConvertParam(convert_param);
+    } else if (mpu_ptr) {
+        mpu_ptr->imuConvertParam(convert_param);
+    }
+#else
     hw_source_ptr->imuConvertParam(convert_param);
+#endif
 
     // --- Register HW + SW sources with the controller, then activate the first slot ---
     motion.add(*hw_source_ptr);
@@ -320,11 +389,15 @@ void loop()
     }
 
     // Feed the SW plugin (SoftwareFreeFall) the latest physical-unit accel sample every tick
+#if defined(USING_BUILTIN_IMU)
+    const auto sample = read_accel_sample();
+#else
     const auto d = hw_source_ptr->latest();
     m5::imu::imu_physical_data_t sample{};
     sample.accel[0] = d.accel_x() * convert_param.accel_res;
     sample.accel[1] = d.accel_y() * convert_param.accel_res;
     sample.accel[2] = d.accel_z() * convert_param.accel_res;
+#endif
     sw_ff.update(dt, sample);
 
     // Poll every registered source and aggregate newly fired events
