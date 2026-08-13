@@ -1,13 +1,15 @@
 #include <gtest/gtest.h>
+#include <m5_utility/stl/extension.hpp>
 #include "imu/motion_events.hpp"
 
 using m5::imu::any;
 using m5::imu::MotionEventKind;
+using m5::stl::to_underlying;
 
 TEST(MotionEventKindOps, or_combines_bits)
 {
     const auto v = MotionEventKind::AnyMotion | MotionEventKind::NoMotion;
-    EXPECT_EQ(static_cast<uint32_t>(v), 0x0003);
+    EXPECT_EQ(to_underlying(v), 0x0003u);
 }
 
 TEST(MotionEventKindOps, and_masks_bits)
@@ -21,7 +23,7 @@ TEST(MotionEventKindOps, or_assign_accumulates)
     auto acc = MotionEventKind::None;
     acc |= MotionEventKind::AnyMotion;
     acc |= MotionEventKind::StepCounter;
-    EXPECT_EQ(static_cast<uint32_t>(acc), 0x0001 | 0x0008);
+    EXPECT_EQ(to_underlying(acc), 0x0001u | 0x0008u);
 }
 
 TEST(MotionEventKindOps, any_true_when_bit_set)
