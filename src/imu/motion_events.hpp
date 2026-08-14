@@ -89,6 +89,53 @@ struct AnyMotionConfig {
 };
 
 /*!
+  @struct NoMotionConfig
+  @brief BMI270 no_motion feature configuration (§4.8.3)
+ */
+struct NoMotionConfig {
+    uint16_t threshold_mg{70};      //!< @brief Slope threshold (default 70mg per datasheet)
+    uint32_t duration_ms{5000};     //!< @brief Consecutive still time to fire (13-bit @ 50Hz)
+    bool axis_x{true};              //!< @brief Include X axis in detection
+    bool axis_y{true};              //!< @brief Include Y axis
+    bool axis_z{true};              //!< @brief Include Z axis
+    NoMotionConfig() = default;
+    NoMotionConfig(uint16_t thr_mg, uint32_t dur_ms, bool x, bool y, bool z)
+        : threshold_mg{thr_mg}, duration_ms{dur_ms}, axis_x{x}, axis_y{y}, axis_z{z}
+    {
+    }
+};
+
+/*!
+  @struct SignificantMotionConfig
+  @brief BMI270 significant_motion feature configuration (§4.8.4, Android SIGNIFICANT_MOTION)
+ */
+struct SignificantMotionConfig {
+    uint32_t duration_ms{5000};   //!< @brief block_size in ms (16-bit @ 50Hz, default 5 sec)
+    SignificantMotionConfig() = default;
+    explicit SignificantMotionConfig(uint32_t dur_ms) : duration_ms{dur_ms}
+    {
+    }
+};
+
+/*!
+  @struct StepCounterConfig
+  @brief BMI270 step counter/detector configuration (§4.8.8)
+ */
+struct StepCounterConfig {
+    //! @brief Firing mode
+    enum class Mode : uint8_t {
+        Counter,   //!< @brief Fire when cumulative step count reaches watermark_steps
+        Detector,  //!< @brief Fire on every single step (low-latency)
+    };
+    Mode mode{Mode::Counter};
+    uint16_t watermark_steps{1};   //!< @brief Watermark for Counter mode (ignored in Detector)
+    StepCounterConfig() = default;
+    StepCounterConfig(Mode m, uint16_t wm) : mode{m}, watermark_steps{wm}
+    {
+    }
+};
+
+/*!
   @class MotionEventSource
   @brief HW-backed motion event provider (implemented by unit drivers like UnitBMI270 / UnitMPU6886)
   @details Mirrors AHRS side IMUDataSource: capability query + enable/disable/status read the 4 API to provide
