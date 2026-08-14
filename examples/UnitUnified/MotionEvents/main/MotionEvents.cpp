@@ -9,10 +9,12 @@
   MPU-6886 WoM) and an example software plugin (SoftwareFreeFall).
 
   Output:
-   - Serial: "[FIRED] <event name>" per event
+   - Serial: "[FIRED] <event name>" per event, and a "[DBG] ax=... enb=... slot=..." dump every second
    - LCD-equipped boards additionally flash the background color and show the event name
+   - LCD panels wider than 200px also draw a debug strip at the bottom (accel xyz + enabled/last-fired masks)
   Controls:
    - BtnA click: cycle through the event slot table (AnyMotion / FreeFall(SW) / both combined)
+   - BtnA hold: re-arm the current slot (re-writes the chip config; useful if events get stuck)
 */
 #include <M5Unified.h>
 #include <M5UnitUnified.h>
@@ -110,8 +112,14 @@ m5::imu::imu_convert_param_t convert_param{};
 example::SoftwareFreeFall sw_ff;
 
 // --- Event configuration shared by every slot that enables AnyMotion ---
-// Default member initializers already give threshold_mg=500, duration_ms=40, all axes enabled.
-const m5::imu::AnyMotionConfig any_cfg{};
+// Threshold lowered from the 500 mg default so light shaking triggers on a bench; tune upward
+// (e.g. 500-1000 mg) if the environment is noisy enough to false-trigger. AnyMotionConfig is not
+// an aggregate under C++11 (default member initializers), so build via IIFE.
+const m5::imu::AnyMotionConfig any_cfg = [] {
+    m5::imu::AnyMotionConfig c;
+    c.threshold_mg = 200;
+    return c;
+}();
 
 // --- Slot cycle table: BtnA click advances through these ---
 struct EventSpec {
@@ -130,11 +138,20 @@ const Slot slots[] = {
 };
 size_t current_slot{0};
 
-// --- LCD: header strip (slot label, redrawn only on slot change) + event status area (redrawn per fire) ---
+// --- LCD: header strip (slot label, redrawn only on slot change) + event status area (redrawn per fire)
+// + optional debug strip at the bottom (accel xyz + masks) on panels wider than 200px ---
 bool has_lcd{};
 M5Canvas header_sprite(&lcd);
 M5Canvas event_sprite(&lcd);
+M5Canvas debug_sprite(&lcd);
 int32_t header_h{};
+int32_t debug_h{};
+
+// --- Debug cache (updated every loop, sampled by the LCD strip and periodic Serial dump) ---
+float last_ax{0.0f};
+float last_ay{0.0f};
+float last_az{0.0f};
+m5::imu::MotionEventKind last_fired{m5::imu::MotionEventKind::None};
 
 // event_sprite palette indices (a palette sprite interprets color arguments as indices)
 enum : uint8_t {
@@ -285,8 +302,21 @@ void setup()
         header_sprite.setTextSize(header_ts);
         header_h = header_sprite.height();
 
-        // Event status area: minimum required area (below the header), 4-bit palette (6 colors used).
-        const int32_t event_h = lcd.height() - header_h;
+        // Debug strip (bottom): accel xyz + enabled/last-fired masks. 1-bit palette is enough
+        // (white-on-black text). Skip it on narrow panels; the periodic Serial dump still fires.
+        if (lcd.width() >= 200) {
+            const uint8_t debug_ts = static_cast<uint8_t>(std::max<int32_t>(1, lcd.width() / 300));
+            debug_sprite.setColorDepth(1);
+            debug_sprite.setPsram(false);
+            debug_sprite.createSprite(lcd.width(), 8 * debug_ts * 2 + 6);
+            debug_sprite.setTextSize(debug_ts);
+            debug_sprite.setTextColor(TFT_WHITE, TFT_BLACK);
+            debug_h = debug_sprite.height();
+        }
+
+        // Event status area: minimum required area (below the header, above the debug strip), 4-bit
+        // palette (6 colors used).
+        const int32_t event_h = lcd.height() - header_h - debug_h;
         event_sprite.setColorDepth(4);
         event_sprite.setPsram(false);
         // Internal RAM may not fit a large panel (e.g. Tab5 1280x720) at 4bit; fall back to PSRAM.
@@ -387,6 +417,14 @@ void loop()
         activate(current_slot);
         render_event(m5::imu::MotionEventKind::None);  // idle after switching
     }
+    if (M5.BtnA.wasHold()) {
+        // Long press: re-arm the current slot (re-write chip config + reset SW plugin state).
+        // Useful if events get stuck (e.g. a chip register got out of sync) or the config needs
+        // to be re-applied after a fault.
+        activate(current_slot);
+        render_event(m5::imu::MotionEventKind::None);
+        M5_LOGI("[REARM] slot %s", slots[current_slot].label);
+    }
 
     // Feed the SW plugin (SoftwareFreeFall) the latest physical-unit accel sample every tick
 #if defined(USING_BUILTIN_IMU)
@@ -399,12 +437,41 @@ void loop()
     sample.accel[2] = d.accel_z() * convert_param.accel_res;
 #endif
     sw_ff.update(dt, sample);
+    last_ax = sample.accel[0];
+    last_ay = sample.accel[1];
+    last_az = sample.accel[2];
 
     // Poll every registered source and aggregate newly fired events
     const auto fired = motion.update(dt);
     if (m5::imu::any(fired)) {
+        last_fired = fired;
         log_fired(fired);
         render_event(fired);
+    }
+
+    // Debug strip: refresh at ~5 Hz so per-frame flicker is invisible without wasting cycles
+    static uint32_t last_debug_ms{0};
+    if (has_lcd && debug_h > 0 && (now - last_debug_ms) >= 200) {
+        last_debug_ms = now;
+        debug_sprite.fillSprite(TFT_BLACK);
+        const int32_t line_h = 8 * debug_sprite.getTextSizeY() + 2;
+        debug_sprite.setCursor(4, 2);
+        debug_sprite.printf("ax:%+.2f ay:%+.2f az:%+.2f", last_ax, last_ay, last_az);
+        debug_sprite.setCursor(4, 2 + line_h);
+        const unsigned enb   = static_cast<unsigned>(motion.enabledEvents());
+        const unsigned fmask = static_cast<unsigned>(last_fired);
+        debug_sprite.printf("enb:0x%02X last:0x%02X", enb, fmask);
+        debug_sprite.pushSprite(0, header_h + event_sprite.height());
+    }
+
+    // Serial dump: one line per second so a lost fire is still visible in the log
+    static uint32_t last_serial_ms{0};
+    if ((now - last_serial_ms) >= 1000) {
+        last_serial_ms       = now;
+        const unsigned enb   = static_cast<unsigned>(motion.enabledEvents());
+        const unsigned fmask = static_cast<unsigned>(last_fired);
+        M5_LOGI("[DBG] ax=%+.2f ay=%+.2f az=%+.2f enb=0x%02X last=0x%02X slot=%s", last_ax, last_ay, last_az, enb,
+                fmask, slots[current_slot].label);
     }
 
     m5::utility::delay(20);
