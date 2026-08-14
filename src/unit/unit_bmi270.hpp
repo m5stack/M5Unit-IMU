@@ -424,10 +424,10 @@ constexpr uint8_t REG_FEATURES_ANY_MOTION_2{0x3E};  // ANYMO_2 alone (threshold/
 // FEAT_PAGE_ANY_MOTION+1 (page 2); step_counter's tunable parameters (SC_1..SC_8) start a
 // further page over (page 3). Values are absolute FEATURES-window register addresses, matching
 // REG_FEATURES_ANY_MOTION above, for direct use with read_feature_bytes()/write_feature_bytes().
-constexpr uint8_t FEAT_PAGE_NO_MOTION{0x02};                     // Page holding NOMO_1/NOMO_2
-constexpr uint16_t BMI270_FEATURE_NO_MOTION_OFS_WORDS{0x30};     // NOMO_1, 2 bytes, followed by NOMO_2
-constexpr uint16_t BMI270_FEATURE_NO_MOTION_2_OFS_WORDS{0x32};   // NOMO_2 alone (threshold/out_conf/enable)
-constexpr uint16_t BMI270_FEATURE_SIG_MOTION_OFS_WORDS{0x34};    // SIGMO_1 (block_size, full word)
+constexpr uint8_t FEAT_PAGE_NO_MOTION{0x02};                    // Page holding NOMO_1/NOMO_2
+constexpr uint16_t BMI270_FEATURE_NO_MOTION_OFS_WORDS{0x30};    // NOMO_1, 2 bytes, followed by NOMO_2
+constexpr uint16_t BMI270_FEATURE_NO_MOTION_2_OFS_WORDS{0x32};  // NOMO_2 alone (threshold/out_conf/enable)
+constexpr uint16_t BMI270_FEATURE_SIG_MOTION_OFS_WORDS{0x34};   // SIGMO_1 (block_size, full word)
 // SIGMO_2 sits 5 words after SIGMO_1, not immediately after it like NOMO_1/NOMO_2: 0x36/0x38/0x3A/
 // 0x3C in between are reserved words (datasheet section 4.8.4 register table, page 2)
 constexpr uint16_t BMI270_FEATURE_SIG_MOTION_2_OFS_WORDS{0x3E};  // SIGMO_2 (enable + out_conf)

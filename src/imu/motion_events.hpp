@@ -93,11 +93,11 @@ struct AnyMotionConfig {
   @brief BMI270 no_motion feature configuration (§4.8.3)
  */
 struct NoMotionConfig {
-    uint16_t threshold_mg{70};      //!< @brief Slope threshold (default 70mg per datasheet)
-    uint32_t duration_ms{5000};     //!< @brief Consecutive still time to fire (13-bit @ 50Hz)
-    bool axis_x{true};              //!< @brief Include X axis in detection
-    bool axis_y{true};              //!< @brief Include Y axis
-    bool axis_z{true};              //!< @brief Include Z axis
+    uint16_t threshold_mg{70};   //!< @brief Slope threshold (default 70mg per datasheet)
+    uint32_t duration_ms{5000};  //!< @brief Consecutive still time to fire (13-bit @ 50Hz)
+    bool axis_x{true};           //!< @brief Include X axis in detection
+    bool axis_y{true};           //!< @brief Include Y axis
+    bool axis_z{true};           //!< @brief Include Z axis
     NoMotionConfig() = default;
     NoMotionConfig(uint16_t thr_mg, uint32_t dur_ms, bool x, bool y, bool z)
         : threshold_mg{thr_mg}, duration_ms{dur_ms}, axis_x{x}, axis_y{y}, axis_z{z}
@@ -110,7 +110,7 @@ struct NoMotionConfig {
   @brief BMI270 significant_motion feature configuration (§4.8.4, Android SIGNIFICANT_MOTION)
  */
 struct SignificantMotionConfig {
-    uint32_t duration_ms{5000};   //!< @brief block_size in ms (16-bit @ 50Hz, default 5 sec)
+    uint32_t duration_ms{5000};  //!< @brief block_size in ms (16-bit @ 50Hz, default 5 sec)
     SignificantMotionConfig() = default;
     explicit SignificantMotionConfig(uint32_t dur_ms) : duration_ms{dur_ms}
     {
@@ -128,9 +128,9 @@ struct StepCounterConfig {
         Detector,  //!< @brief Fire on every single step (low-latency)
     };
     Mode mode{Mode::Counter};
-    uint16_t watermark_steps{1};   //!< @brief Watermark in raw steps for Counter mode (ignored in Detector).
-                                   //!<        Chip-specific hardware granularity may round this value;
-                                   //!<        query MotionEventSource::stepCounterResolutionSteps() to check.
+    uint16_t watermark_steps{1};  //!< @brief Watermark in raw steps for Counter mode (ignored in Detector).
+                                  //!<        Chip-specific hardware granularity may round this value;
+                                  //!<        query MotionEventSource::stepCounterResolutionSteps() to check.
     StepCounterConfig() = default;
     StepCounterConfig(Mode m, uint16_t wm) : mode{m}, watermark_steps{wm}
     {
@@ -177,7 +177,10 @@ public:
       @return 1 if the chip resolves 1-step watermarks (default); larger values for chips
               that round to a coarser boundary (e.g. BMI270 returns 20).
      */
-    virtual uint16_t stepCounterResolutionSteps() const { return 1; }
+    virtual uint16_t stepCounterResolutionSteps() const
+    {
+        return 1;
+    }
 };
 
 /*!

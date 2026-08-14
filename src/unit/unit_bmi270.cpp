@@ -784,17 +784,17 @@ bool UnitBMI270::readEventStatus(m5::imu::MotionEventStatus& out)
     if (m5::imu::any(_enabled_mask & m5::imu::MotionEventKind::AnyMotion) && _any_motion_pending) {
         out.fired |= m5::imu::MotionEventKind::AnyMotion;
         _any_motion_pending = false;
-        fired = true;
+        fired               = true;
     }
     if (m5::imu::any(_enabled_mask & m5::imu::MotionEventKind::NoMotion) && _no_motion_pending) {
         out.fired |= m5::imu::MotionEventKind::NoMotion;
         _no_motion_pending = false;
-        fired = true;
+        fired              = true;
     }
     if (m5::imu::any(_enabled_mask & m5::imu::MotionEventKind::SignificantMotion) && _sig_motion_pending) {
         out.fired |= m5::imu::MotionEventKind::SignificantMotion;
         _sig_motion_pending = false;
-        fired = true;
+        fired               = true;
     }
     if (m5::imu::any(_enabled_mask & m5::imu::MotionEventKind::StepCounter) && _step_counter_pending) {
         // Unlike the other events, StepCounter's payload (the cumulative step count) is not part
@@ -802,9 +802,9 @@ bool UnitBMI270::readEventStatus(m5::imu::MotionEventStatus& out)
         // latest value at fire time.
         read_step_count(_step_count_latest);
         out.fired |= m5::imu::MotionEventKind::StepCounter;
-        out.step_count = _step_count_latest;
+        out.step_count        = _step_count_latest;
         _step_counter_pending = false;
-        fired = true;
+        fired                 = true;
     }
     return fired;
 }
@@ -905,7 +905,7 @@ bool UnitBMI270::write_no_motion_features(const m5::imu::NoMotionConfig& cfg)
     // 0.48 mg/LSB (BMI270 datasheet 4.8.3, same scale as ANYMO_2.threshold); rounds to nearest LSB
     const uint32_t thr_lsb = (static_cast<uint32_t>(cfg.threshold_mg) * 1000U + 240U) / 480U;
     const uint16_t word1   = static_cast<uint16_t>((thr_lsb & NOMO2_THRESHOLD_MASK) |
-                                                  (existing_word1 & NOMO2_OUT_CONF_MASK) | NOMO2_ENABLE_BIT);
+                                                   (existing_word1 & NOMO2_OUT_CONF_MASK) | NOMO2_ENABLE_BIT);
 
     const uint8_t buf[4]{
         static_cast<uint8_t>(word0 & 0xFF),
@@ -1055,8 +1055,8 @@ bool UnitBMI270::write_step_counter_features(const m5::imu::StepCounterConfig& c
         // steps), but never round a nonzero request down to a field of 0: the datasheet documents
         // 0 as "output disabled", which would silently turn Counter mode into a no-op for any
         // watermark under 10 steps (StepCounterConfig's own default is 1).
-        uint32_t field = (static_cast<uint32_t>(cfg.watermark_steps) + SC26_WATERMARK_STEP_UNIT / 2) /
-                         SC26_WATERMARK_STEP_UNIT;
+        uint32_t field =
+            (static_cast<uint32_t>(cfg.watermark_steps) + SC26_WATERMARK_STEP_UNIT / 2) / SC26_WATERMARK_STEP_UNIT;
         if (cfg.watermark_steps > 0 && field == 0) {
             field = 1;
         }

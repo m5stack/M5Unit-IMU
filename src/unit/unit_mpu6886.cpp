@@ -112,7 +112,7 @@ bool UnitMPU6886::readEventStatus(m5::imu::MotionEventStatus& out)
     if (!m5::imu::any(_enabled_mask & m5::imu::MotionEventKind::AnyMotion)) return false;
     // Drain WoM bits latched by read_measurement() (INT_STATUS is read-clear, so the periodic
     // measurement task would otherwise consume them before we get here).
-    uint8_t combined = _pending_wom_status;
+    uint8_t combined    = _pending_wom_status;
     _pending_wom_status = 0;
     // Also try a direct read in case no periodic read has happened yet (e.g. WoM enabled after
     // stopPeriodicMeasurement, or on the very first call). This is harmless when combined with

@@ -180,7 +180,8 @@ const Slot slots[] = {
     {"StepDetector", 1, {{m5::imu::MotionEventKind::StepCounter, &step_detector_cfg}}},
     // Detector mode fires on every single step, giving a demo-friendly overlap with the SW plugin;
     // Counter mode's 20-step watermark would fire too rarely to see the combo in a short bench test.
-    {"StepCounter+FreeFall", 2,
+    {"StepCounter+FreeFall",
+     2,
      {{m5::imu::MotionEventKind::StepCounter, &step_detector_cfg}, {example::FreeFallBit, nullptr}}},
 };
 // slots that both chips handle correctly (AnyMotion, FreeFall SW). MPU-6886 has no HW support for
