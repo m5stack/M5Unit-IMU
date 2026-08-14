@@ -239,7 +239,7 @@ public:
     virtual m5::imu::MotionEventKind motionEventSpec() const override
     {
         return m5::imu::MotionEventKind::AnyMotion | m5::imu::MotionEventKind::NoMotion |
-               m5::imu::MotionEventKind::SignificantMotion;
+               m5::imu::MotionEventKind::SignificantMotion | m5::imu::MotionEventKind::StepCounter;
     }
     //! @brief Currently enabled motion event bitmap
     virtual m5::imu::MotionEventKind enabledEvents() const override
@@ -255,6 +255,16 @@ public:
     virtual bool disableEvent(m5::imu::MotionEventKind kind) override;
     //! @brief Read latched motion event status (clears internal latch on read)
     virtual bool readEventStatus(m5::imu::MotionEventStatus& out) override;
+    ///@}
+
+    ///@name Step counter
+    ///@{
+    /*!
+      @brief Reset the BMI270 step counter to zero
+      @note Effective only when step_counter is enabled; safe to call from any state
+      @return true on success
+     */
+    bool resetStepCount();
     ///@}
 
 protected:
@@ -305,6 +315,15 @@ protected:
     // Clears the significant_motion feature's enable bit and its INT_MAP_FEAT routing, without
     // disturbing the block_size field written by write_sig_motion_features()
     bool clear_sig_motion_features();
+    // Programs SC_26 (page FEAT_PAGE_STEP_COUNTER) from cfg: selects en_counter or en_detector per
+    // cfg.mode (mutually exclusive), sets watermark_level for Counter mode, and maps step_counter_out
+    // onto INT1 so INT_STATUS_0 latches it. See unit_bmi270.cpp for the register layout.
+    bool write_step_counter_features(const m5::imu::StepCounterConfig& cfg);
+    // Clears both en_counter and en_detector and the INT_MAP_FEAT routing, without disturbing
+    // watermark_level/en_activity/reset_counter written elsewhere
+    bool clear_step_counter_features();
+    // Reads the 16-bit step count (REG_STEP_COUNT_0/1, little-endian)
+    bool read_step_count(uint32_t& out);
     // Reads len bytes starting at ofs_bytes (an address within the currently FEAT_PAGE-selected
     // FEATURES[16] window, REG_FEATURES..REG_FEATURES+0x0F)
     bool read_feature_bytes(const uint16_t ofs_bytes, uint8_t* buf, const size_t len);
@@ -347,6 +366,9 @@ private:
     bool _no_motion_pending{false};
     m5::imu::SignificantMotionConfig _sig_motion_cfg{};
     bool _sig_motion_pending{false};
+    m5::imu::StepCounterConfig _step_counter_cfg{};
+    uint32_t _step_count_latest{0};
+    bool _step_counter_pending{false};
 };
 
 namespace bmi270 {
@@ -402,6 +424,16 @@ constexpr uint16_t BMI270_FEATURE_SIG_MOTION_OFS_WORDS{0x34};    // SIGMO_1 (blo
 // 0x3C in between are reserved words (datasheet section 4.8.4 register table, page 2)
 constexpr uint16_t BMI270_FEATURE_SIG_MOTION_2_OFS_WORDS{0x3E};  // SIGMO_2 (enable + out_conf)
 constexpr uint16_t BMI270_FEATURE_STEP_COUNT_OFS_WORDS{0x30};    // SC_1
+// step_counter's enable/mode/watermark control (SC_26) lives on a further page over from its own
+// tuning parameters above: FEAT_PAGE 6, not the SC_1..SC_25 page (3). Value verified against
+// datasheet section 4.8.8 / the FEATURES Pages register table (page 6, address 0x32) and
+// cross-checked against Bosch's BMI270_SensorAPI bmi2_defs.h (BMI2_STEP_COUNT_WM_LEVEL_MASK,
+// BMI2_STEP_COUNT_RST_CNT_MASK/_POS, BMI2_STEP_DET_FEAT_EN_POS, BMI2_STEP_COUNT_FEAT_EN_POS,
+// BMI2_STEP_ACT_FEAT_EN_POS -- the latter three are documented relative to the register's high
+// byte, i.e. +8 to get the full-word bit position). SC_1..SC_25 (FEAT_PAGE 3) are tuning
+// parameters left at their config-blob defaults; this driver only ever touches SC_26.
+constexpr uint8_t FEAT_PAGE_STEP_COUNTER{0x06};
+constexpr uint16_t BMI270_FEATURE_STEP_COUNT_SC26_OFS{0x32};
 constexpr uint8_t INT_STATUS_0_ANY_MOTION_OUT_BIT{1 << 6};
 // INT_STATUS_0 also reports these feature engine outputs (datasheet section 5.2.28)
 constexpr uint8_t INT_STATUS_0_NO_MOTION_OUT_BIT{1 << 5};

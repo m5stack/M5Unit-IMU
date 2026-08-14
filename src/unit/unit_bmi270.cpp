@@ -79,6 +79,22 @@ constexpr uint16_t SIGMO1_BLOCK_SIZE_MASK{0xFFFF};
 constexpr uint16_t SIGMO2_ENABLE_BIT{1u << 0};
 constexpr uint16_t SIGMO2_OUT_CONF_MASK{0x0Fu << 1};
 
+// SC_26 (word, BMI270_FEATURE_STEP_COUNT_SC26_OFS, page FEAT_PAGE_STEP_COUNTER): watermark_level
+// [9:0], reset_counter[10], en_detector[11], en_counter[12], en_activity[13] (BMI270 datasheet
+// section 4.8.8, "FEATURES Pages" register table page 6, address 0x32). en_activity is preserved
+// wherever this driver touches the word -- activity detection is out of scope here.
+constexpr uint16_t SC26_WATERMARK_MASK{0x03FF};
+constexpr uint16_t SC26_RESET_COUNTER_BIT{1u << 10};
+constexpr uint16_t SC26_EN_DETECTOR_BIT{1u << 11};
+constexpr uint16_t SC26_EN_COUNTER_BIT{1u << 12};
+constexpr uint16_t SC26_EN_ACTIVITY_BIT{1u << 13};
+// watermark_level's LSB is worth this many actual steps -- "Holds implicitly a 20x factor, so the
+// range is 0 to 20460, with resolution of 20 steps. If 0, the output is disabled" (same datasheet
+// reference). Bosch's reference driver (BMI270_SensorAPI bmi270.c set_step_config()) writes the
+// watermark_level field through unscaled, confirming the 20x factor is not applied by hardware nor
+// firmware -- callers of the register must do it themselves.
+constexpr uint32_t SC26_WATERMARK_STEP_UNIT{20};
+
 // Feature engine internal sample rate is fixed 50Hz (1 sample = 20ms) regardless of accel ODR.
 // Convert a user-facing duration_ms to a sample count. Rejects durations shorter than one sample
 // and counts that do not fit max_samples (13 bit field for no_motion, 16 bit for
@@ -690,6 +706,15 @@ bool UnitBMI270::enableEvent(const m5::imu::MotionEventKind kind, const void* cf
         _enabled_mask |= m5::imu::MotionEventKind::SignificantMotion;
         _sig_motion_pending = false;
         return true;
+    } else if (kind == m5::imu::MotionEventKind::StepCounter) {
+        const auto& c = *static_cast<const m5::imu::StepCounterConfig*>(cfg);
+        if (!write_step_counter_features(c)) {
+            return false;
+        }
+        _step_counter_cfg = c;
+        _enabled_mask |= m5::imu::MotionEventKind::StepCounter;
+        _step_counter_pending = false;
+        return true;
     }
     return false;
 }
@@ -717,15 +742,22 @@ bool UnitBMI270::disableEvent(const m5::imu::MotionEventKind kind)
         _enabled_mask &= ~m5::imu::MotionEventKind::SignificantMotion;
         _sig_motion_pending = false;
         return true;
+    } else if (kind == m5::imu::MotionEventKind::StepCounter) {
+        if (!clear_step_counter_features()) {
+            return false;
+        }
+        _enabled_mask &= ~m5::imu::MotionEventKind::StepCounter;
+        _step_counter_pending = false;
+        return true;
     }
     return false;
 }
 
 bool UnitBMI270::readEventStatus(m5::imu::MotionEventStatus& out)
 {
-    const m5::imu::MotionEventKind feature_mask = m5::imu::MotionEventKind::AnyMotion |
-                                                   m5::imu::MotionEventKind::NoMotion |
-                                                   m5::imu::MotionEventKind::SignificantMotion;
+    const m5::imu::MotionEventKind feature_mask =
+        m5::imu::MotionEventKind::AnyMotion | m5::imu::MotionEventKind::NoMotion |
+        m5::imu::MotionEventKind::SignificantMotion | m5::imu::MotionEventKind::StepCounter;
     if (!m5::imu::any(_enabled_mask & feature_mask)) return false;
 
     // INT_STATUS_0 is read-to-clear on the chip and reports every feature engine output in a
@@ -743,6 +775,9 @@ bool UnitBMI270::readEventStatus(m5::imu::MotionEventStatus& out)
         if (status & INT_STATUS_0_SIG_MOTION_OUT_BIT) {
             _sig_motion_pending = true;
         }
+        if (status & INT_STATUS_0_STEP_COUNTER_OUT_BIT) {
+            _step_counter_pending = true;
+        }
     }
 
     bool fired = false;
@@ -759,6 +794,16 @@ bool UnitBMI270::readEventStatus(m5::imu::MotionEventStatus& out)
     if (m5::imu::any(_enabled_mask & m5::imu::MotionEventKind::SignificantMotion) && _sig_motion_pending) {
         out.fired |= m5::imu::MotionEventKind::SignificantMotion;
         _sig_motion_pending = false;
+        fired = true;
+    }
+    if (m5::imu::any(_enabled_mask & m5::imu::MotionEventKind::StepCounter) && _step_counter_pending) {
+        // Unlike the other events, StepCounter's payload (the cumulative step count) is not part
+        // of INT_STATUS_0 -- refresh the cache from REG_STEP_COUNT_0 so out.step_count carries the
+        // latest value at fire time.
+        read_step_count(_step_count_latest);
+        out.fired |= m5::imu::MotionEventKind::StepCounter;
+        out.step_count = _step_count_latest;
+        _step_counter_pending = false;
         fired = true;
     }
     return fired;
@@ -986,6 +1031,136 @@ bool UnitBMI270::clear_sig_motion_features()
     }
     map &= static_cast<uint8_t>(~INT_MAP_FEAT_SIG_MOTION_OUT_BIT);
     return writeRegister8(REG_INT_MAP_FEAT, map);
+}
+
+bool UnitBMI270::write_step_counter_features(const m5::imu::StepCounterConfig& cfg)
+{
+    if (!writeRegister8(REG_FEAT_PAGE, FEAT_PAGE_STEP_COUNTER)) {
+        return false;
+    }
+
+    uint8_t buf[2]{};
+    if (!read_feature_bytes(BMI270_FEATURE_STEP_COUNT_SC26_OFS, buf, sizeof(buf))) {
+        return false;
+    }
+    uint16_t word = static_cast<uint16_t>(buf[0]) | (static_cast<uint16_t>(buf[1]) << 8);
+
+    // en_counter/en_detector (mutually exclusive per cfg.mode) and watermark_level are rewritten
+    // below; en_activity and reset_counter are preserved -- activity detection is out of this
+    // driver's scope, and a reset is only ever pulsed by resetStepCount(), never bundled in here.
+    word = static_cast<uint16_t>(word & ~(SC26_EN_COUNTER_BIT | SC26_EN_DETECTOR_BIT | SC26_WATERMARK_MASK));
+
+    if (cfg.mode == m5::imu::StepCounterConfig::Mode::Counter) {
+        // Round cfg.watermark_steps to the nearest watermark_level field value (LSB = 20 actual
+        // steps), but never round a nonzero request down to a field of 0: the datasheet documents
+        // 0 as "output disabled", which would silently turn Counter mode into a no-op for any
+        // watermark under 10 steps (StepCounterConfig's own default is 1).
+        uint32_t field = (static_cast<uint32_t>(cfg.watermark_steps) + SC26_WATERMARK_STEP_UNIT / 2) /
+                         SC26_WATERMARK_STEP_UNIT;
+        if (cfg.watermark_steps > 0 && field == 0) {
+            field = 1;
+        }
+        if (field > SC26_WATERMARK_MASK) {
+            field = SC26_WATERMARK_MASK;
+        }
+        word |= SC26_EN_COUNTER_BIT;
+        word |= static_cast<uint16_t>(field);
+    } else {
+        word |= SC26_EN_DETECTOR_BIT;
+    }
+
+    buf[0] = static_cast<uint8_t>(word & 0xFF);
+    buf[1] = static_cast<uint8_t>(word >> 8);
+    if (!write_feature_bytes(BMI270_FEATURE_STEP_COUNT_SC26_OFS, buf, sizeof(buf))) {
+        return false;
+    }
+
+    // Map step_counter_out onto INT1 as well, same reasoning as write_any_motion_features():
+    // INT_STATUS_0 reports a feature's output only once it is mapped (BMI270 datasheet section
+    // 4.8.1). SC_27.out_conf_step_detector is left untouched: its reset default (0x2, "output
+    // assigned to bit-1") already routes step_counter_out onto INT_STATUS_0 bit 1.
+    uint8_t map{};
+    if (!readRegister8(REG_INT_MAP_FEAT, map, 0)) {
+        return false;
+    }
+    map |= INT_MAP_FEAT_STEP_COUNTER_OUT_BIT;
+    return writeRegister8(REG_INT_MAP_FEAT, map);
+}
+
+bool UnitBMI270::clear_step_counter_features()
+{
+    if (!writeRegister8(REG_FEAT_PAGE, FEAT_PAGE_STEP_COUNTER)) {
+        return false;
+    }
+
+    // Only en_counter/en_detector need clearing to stop the feature; watermark_level, en_activity,
+    // and reset_counter are left as they were so a later enableEvent() call is not required to
+    // fully reprogram them (write_step_counter_features() does that anyway for watermark_level).
+    uint8_t buf[2]{};
+    if (!read_feature_bytes(BMI270_FEATURE_STEP_COUNT_SC26_OFS, buf, sizeof(buf))) {
+        return false;
+    }
+    uint16_t word = static_cast<uint16_t>(buf[0]) | (static_cast<uint16_t>(buf[1]) << 8);
+    word          = static_cast<uint16_t>(word & ~(SC26_EN_COUNTER_BIT | SC26_EN_DETECTOR_BIT));
+    buf[0]        = static_cast<uint8_t>(word & 0xFF);
+    buf[1]        = static_cast<uint8_t>(word >> 8);
+    if (!write_feature_bytes(BMI270_FEATURE_STEP_COUNT_SC26_OFS, buf, sizeof(buf))) {
+        return false;
+    }
+
+    uint8_t map{};
+    if (!readRegister8(REG_INT_MAP_FEAT, map, 0)) {
+        return false;
+    }
+    map &= static_cast<uint8_t>(~INT_MAP_FEAT_STEP_COUNTER_OUT_BIT);
+    return writeRegister8(REG_INT_MAP_FEAT, map);
+}
+
+bool UnitBMI270::read_step_count(uint32_t& out)
+{
+    uint8_t buf[2]{};
+    if (!readRegister(REG_STEP_COUNT_0, buf, sizeof(buf), 0)) {
+        return false;
+    }
+    out = static_cast<uint32_t>(buf[0]) | (static_cast<uint32_t>(buf[1]) << 8);  // 16-bit little-endian
+    return true;
+}
+
+bool UnitBMI270::resetStepCount()
+{
+    if (!writeRegister8(REG_FEAT_PAGE, FEAT_PAGE_STEP_COUNTER)) {
+        return false;
+    }
+
+    uint8_t buf[2]{};
+    if (!read_feature_bytes(BMI270_FEATURE_STEP_COUNT_SC26_OFS, buf, sizeof(buf))) {
+        return false;
+    }
+    const uint16_t word = static_cast<uint16_t>(buf[0]) | (static_cast<uint16_t>(buf[1]) << 8);
+
+    // Pulse reset_counter (set, then clear): the datasheet does not document it as self-clearing,
+    // and Bosch's reference driver (BMI270_SensorAPI bmi270.c set_step_config()) just writes
+    // through whatever value the caller supplies with no auto-clear of its own, so this driver
+    // clears the bit back itself to leave the feature re-armed for a future reset. Per datasheet
+    // section 4.8.8, the reset only takes effect while at least one of en_counter/en_detector/
+    // en_activity is enabled.
+    const uint16_t set_word = static_cast<uint16_t>(word | SC26_RESET_COUNTER_BIT);
+    buf[0]                  = static_cast<uint8_t>(set_word & 0xFF);
+    buf[1]                  = static_cast<uint8_t>(set_word >> 8);
+    if (!write_feature_bytes(BMI270_FEATURE_STEP_COUNT_SC26_OFS, buf, sizeof(buf))) {
+        return false;
+    }
+    m5::utility::delay(2);
+
+    const uint16_t clear_word = static_cast<uint16_t>(word & ~SC26_RESET_COUNTER_BIT);
+    buf[0]                    = static_cast<uint8_t>(clear_word & 0xFF);
+    buf[1]                    = static_cast<uint8_t>(clear_word >> 8);
+    if (!write_feature_bytes(BMI270_FEATURE_STEP_COUNT_SC26_OFS, buf, sizeof(buf))) {
+        return false;
+    }
+
+    _step_count_latest = 0;
+    return true;
 }
 
 bool UnitBMI270::read_feature_bytes(const uint16_t ofs_bytes, uint8_t* buf, const size_t len)
