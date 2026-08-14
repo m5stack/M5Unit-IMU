@@ -149,3 +149,123 @@ TEST_F(TestMotionEventsBMI270, high_threshold_stationary_no_fire)
         << "Stationary board triggered a 2G threshold: implementation or chip issue";
     motion.disable(MotionEventKind::AnyMotion);
 }
+
+// --- NoMotion ---
+
+// Register-roundtrip: enable/disable is reflected 1:1 in enabledEvents()
+TEST_F(TestMotionEventsBMI270, no_motion_enable_disable_reflects)
+{
+    SCOPED_TRACE(ustr);
+
+    NoMotionConfig cfg;  // defaults: 70mg / 5000ms / all axes
+    EXPECT_TRUE(motion.enable(MotionEventKind::NoMotion, &cfg));
+    EXPECT_EQ(motion.enabledEvents() & MotionEventKind::NoMotion, MotionEventKind::NoMotion);
+    EXPECT_TRUE(motion.disable(MotionEventKind::NoMotion));
+    EXPECT_EQ(motion.enabledEvents() & MotionEventKind::NoMotion, MotionEventKind::None);
+}
+
+// Positive fire test: a short still-duration should fire while the board sits still on the bench
+TEST_F(TestMotionEventsBMI270, no_motion_short_duration_fires_when_still)
+{
+    SCOPED_TRACE(ustr);
+
+    NoMotionConfig cfg{70, 100, true, true, true};  // 100ms still -> fire
+    EXPECT_TRUE(motion.enable(MotionEventKind::NoMotion, &cfg));
+
+    bool fired_within_500ms = false;
+    for (int i = 0; i < 50; ++i) {
+        unit->update();
+        if (any(motion.update(0.010f) & MotionEventKind::NoMotion)) {
+            fired_within_500ms = true;
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    EXPECT_TRUE(fired_within_500ms)
+        << "NoMotion did not fire within 500ms while still; chip noise floor may exceed the threshold";
+    motion.disable(MotionEventKind::NoMotion);
+}
+
+// Negative test: a duration far longer than the poll window must not fire
+TEST_F(TestMotionEventsBMI270, no_motion_long_duration_no_fire_within_1sec)
+{
+    SCOPED_TRACE(ustr);
+
+    NoMotionConfig cfg{70, 100000, true, true, true};  // 100 sec still (unreachable within this test)
+    EXPECT_TRUE(motion.enable(MotionEventKind::NoMotion, &cfg));
+
+    for (int i = 0; i < 100; ++i) {
+        unit->update();
+        motion.update(0.010f);
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    MotionEventStatus st{};
+    motion.latest(st);
+    EXPECT_FALSE(any(st.fired & MotionEventKind::NoMotion));
+    motion.disable(MotionEventKind::NoMotion);
+}
+
+// --- SignificantMotion ---
+
+// Register-roundtrip: enable/disable is reflected 1:1 in enabledEvents()
+TEST_F(TestMotionEventsBMI270, sig_motion_enable_disable_reflects)
+{
+    SCOPED_TRACE(ustr);
+
+    SignificantMotionConfig cfg;  // default 5000ms
+    EXPECT_TRUE(motion.enable(MotionEventKind::SignificantMotion, &cfg));
+    EXPECT_EQ(motion.enabledEvents() & MotionEventKind::SignificantMotion, MotionEventKind::SignificantMotion);
+    EXPECT_TRUE(motion.disable(MotionEventKind::SignificantMotion));
+}
+
+// A block_size below the chip's 50Hz sample period (20ms) cannot be represented and must be rejected
+TEST_F(TestMotionEventsBMI270, sig_motion_duration_out_of_range_rejected)
+{
+    SCOPED_TRACE(ustr);
+
+    SignificantMotionConfig cfg{10};  // < 20ms minimum -> conversion fails
+    EXPECT_FALSE(motion.enable(MotionEventKind::SignificantMotion, &cfg));
+    EXPECT_EQ(motion.enabledEvents() & MotionEventKind::SignificantMotion, MotionEventKind::None);
+}
+
+// --- StepCounter ---
+
+// Register-roundtrip: enable/disable is reflected 1:1 in enabledEvents() (Counter mode)
+TEST_F(TestMotionEventsBMI270, step_counter_mode_enable_disable_reflects)
+{
+    SCOPED_TRACE(ustr);
+
+    StepCounterConfig cfg{StepCounterConfig::Mode::Counter, 5};
+    EXPECT_TRUE(motion.enable(MotionEventKind::StepCounter, &cfg));
+    EXPECT_EQ(motion.enabledEvents() & MotionEventKind::StepCounter, MotionEventKind::StepCounter);
+    EXPECT_TRUE(motion.disable(MotionEventKind::StepCounter));
+}
+
+// Register-roundtrip: enable/disable is reflected 1:1 in enabledEvents() (Detector mode)
+TEST_F(TestMotionEventsBMI270, step_detector_mode_enable_disable_reflects)
+{
+    SCOPED_TRACE(ustr);
+
+    StepCounterConfig cfg{StepCounterConfig::Mode::Detector, 0};
+    EXPECT_TRUE(motion.enable(MotionEventKind::StepCounter, &cfg));
+    EXPECT_EQ(motion.enabledEvents() & MotionEventKind::StepCounter, MotionEventKind::StepCounter);
+    EXPECT_TRUE(motion.disable(MotionEventKind::StepCounter));
+}
+
+// A fresh enable must start the chip's cumulative step count at 0
+TEST_F(TestMotionEventsBMI270, step_counter_initial_count_is_zero)
+{
+    SCOPED_TRACE(ustr);
+
+    StepCounterConfig cfg{StepCounterConfig::Mode::Counter, 1};
+    EXPECT_TRUE(motion.enable(MotionEventKind::StepCounter, &cfg));
+
+    // Trigger a read cycle so the driver has a chance to sample the count register.
+    unit->update();
+    motion.update(0.010f);
+
+    MotionEventStatus st{};
+    motion.latest(st);
+    EXPECT_EQ(st.step_count, 0u) << "Fresh enable did not start step_count at 0";
+    motion.disable(MotionEventKind::StepCounter);
+}
