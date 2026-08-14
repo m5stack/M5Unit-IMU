@@ -53,6 +53,28 @@ constexpr uint16_t ANYMO2_THRESHOLD_MASK{0x07FF};
 constexpr uint16_t ANYMO2_OUT_CONF_BIT6{0x07u << 11};
 constexpr uint16_t ANYMO2_ENABLE_BIT{1u << 15};
 
+// Feature engine internal sample rate is fixed 50Hz (1 sample = 20ms) regardless of accel ODR.
+// Convert a user-facing duration_ms to a sample count. Rejects durations shorter than one sample
+// and counts that do not fit max_samples (13 bit field for no_motion, 16 bit for
+// significant_motion). Returns false without touching out_samples on rejection.
+bool duration_ms_to_samples_50hz(uint32_t duration_ms, uint16_t max_samples, uint16_t& out_samples)
+{
+    if (duration_ms < 20u) {
+        return false;
+    }
+    const uint32_t samples = (duration_ms + 10u) / 20u;  // round to nearest
+    if (samples == 0u || samples > max_samples) {
+        return false;
+    }
+    out_samples = static_cast<uint16_t>(samples);
+    return true;
+}
+
+inline uint32_t samples_50hz_to_duration_ms(uint16_t samples)
+{
+    return static_cast<uint32_t>(samples) * 20u;
+}
+
 // REG_INT_STATUS_1 (0x1D) bits
 constexpr uint8_t INT_STATUS_1_GYR_DRDY{0x40};  // bit6
 constexpr uint8_t INT_STATUS_1_ACC_DRDY{0x80};  // bit7

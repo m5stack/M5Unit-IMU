@@ -371,9 +371,26 @@ constexpr uint8_t REG_FEATURES{0x30};               // FEATURES[16] window base 
 constexpr uint8_t FEAT_PAGE_ANY_MOTION{0x01};       // Page holding ANYMO_1/ANYMO_2
 constexpr uint8_t REG_FEATURES_ANY_MOTION{0x3C};    // ANYMO_1, 2 bytes, followed by ANYMO_2
 constexpr uint8_t REG_FEATURES_ANY_MOTION_2{0x3E};  // ANYMO_2 alone (threshold/out_conf/enable)
+// no_motion (NOMO_1/NOMO_2) and significant_motion (SIGMO_1/SIGMO_2) share the page selected by
+// FEAT_PAGE_ANY_MOTION+1 (page 2); step_counter's tunable parameters (SC_1..SC_8) start a
+// further page over (page 3). Values are absolute FEATURES-window register addresses, matching
+// REG_FEATURES_ANY_MOTION above, for direct use with read_feature_bytes()/write_feature_bytes().
+constexpr uint16_t BMI270_FEATURE_NO_MOTION_OFS_WORDS{0x30};   // NOMO_1
+constexpr uint16_t BMI270_FEATURE_SIG_MOTION_OFS_WORDS{0x34};  // SIGMO_1
+constexpr uint16_t BMI270_FEATURE_STEP_COUNT_OFS_WORDS{0x30};  // SC_1
 constexpr uint8_t INT_STATUS_0_ANY_MOTION_OUT_BIT{1 << 6};
+// INT_STATUS_0 also reports these feature engine outputs (datasheet section 5.2.28)
+constexpr uint8_t INT_STATUS_0_NO_MOTION_OUT_BIT{1 << 5};
+constexpr uint8_t INT_STATUS_0_STEP_COUNTER_OUT_BIT{1 << 1};
+constexpr uint8_t INT_STATUS_0_SIG_MOTION_OUT_BIT{1 << 0};
+// Step counter value (datasheet section 5.2.30/5.2.31): 2 bytes little-endian, 16-bit count
+constexpr uint8_t REG_STEP_COUNT_0{0x1E};
 constexpr uint8_t REG_INT_MAP_FEAT{0x56};                   // INT1_MAP_FEAT
 constexpr uint8_t INT_MAP_FEAT_ANY_MOTION_OUT_BIT{1 << 6};  // any_motion_out -> INT1
+// Additional INT1_MAP_FEAT bits (datasheet section 5.2.61)
+constexpr uint8_t INT_MAP_FEAT_NO_MOTION_OUT_BIT{1 << 5};
+constexpr uint8_t INT_MAP_FEAT_STEP_COUNTER_OUT_BIT{1 << 1};
+constexpr uint8_t INT_MAP_FEAT_SIG_MOTION_OUT_BIT{1 << 0};
 
 constexpr uint8_t REG_INIT_CTRL{0x59};
 constexpr uint8_t REG_INIT_ADDR_0{0x5B};  // followed by INIT_ADDR_1 (0x5C)
