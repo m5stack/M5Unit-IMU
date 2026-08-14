@@ -5,22 +5,24 @@
  */
 /*
   Example using M5UnitUnified for UnitIMU series with motion events
-  Demonstrates the MotionEventController pattern with HW events (BMI270 AnyMotion /
-  MPU-6886 WoM) and an example software plugin (SoftwareFreeFall).
+  Demonstrates the MotionEventController pattern with HW events (BMI270 AnyMotion / NoMotion /
+  SignificantMotion / StepCounter, or MPU-6886 WoM) and an example software plugin (SoftwareFreeFall).
 
   Output:
    - Serial: "[FIRED] <event name>" per event, and a "[DBG] ax=... enb=... slot=..." dump every second
-   - LCD-equipped boards additionally flash the background color and show the event name
+   - LCD-equipped boards additionally flash the background color and show the event name (or step count)
    - LCD panels wider than 200px also draw a debug strip at the bottom (accel xyz + enabled/last-fired masks)
   Controls:
-   - BtnA click: cycle through the event slot table (AnyMotion / FreeFall(SW) / both combined)
-   - BtnA hold: re-arm the current slot (re-writes the chip config; useful if events get stuck)
+   - BtnA click: cycle through the event slot table (see slots[] below for the full list)
+   - BtnA hold: re-arm the current slot (re-writes the chip config; useful if events get stuck), and
+     resets the chip's step counter to zero if the current slot uses StepCounter
 */
 #include <M5Unified.h>
 #include <M5UnitUnified.h>
 #include <M5UnitUnifiedIMU.h>
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <wiring/m5_unit_unified_wiring.hpp>  // Board-aware connection helpers (include last)
 #include <wiring/m5_unit_imu_wiring.hpp>      // This library: classic Core Port C helper
 #include "software_free_fall.hpp"
@@ -126,6 +128,33 @@ const m5::imu::AnyMotionConfig any_cfg = [] {
     return c;
 }();
 
+// --- BMI270-only event configs (NoMotion / SignificantMotion / StepCounter). MPU-6886 has no HW
+// support for these; slots that use them are masked off there via SLOT_COUNT_SAFE. Not aggregates
+// under C++11 (default member initializers), so built via IIFE like any_cfg above.
+const m5::imu::NoMotionConfig no_motion_cfg = [] {
+    m5::imu::NoMotionConfig c;
+    c.threshold_mg = 70;    // datasheet default
+    c.duration_ms  = 1000;  // 1 sec still; the 5 sec datasheet default is too long for a bench demo
+    return c;
+}();
+const m5::imu::SignificantMotionConfig sig_motion_cfg = [] {
+    m5::imu::SignificantMotionConfig c;
+    c.duration_ms = 5000;  // Android SIGNIFICANT_MOTION standard block size
+    return c;
+}();
+const m5::imu::StepCounterConfig step_counter_cfg = [] {
+    m5::imu::StepCounterConfig c;
+    c.mode            = m5::imu::StepCounterConfig::Mode::Counter;
+    c.watermark_steps = 20;  // BMI270 hardware granularity is 20 steps; align intent with actual fire count
+    return c;
+}();
+const m5::imu::StepCounterConfig step_detector_cfg = [] {
+    m5::imu::StepCounterConfig c;
+    c.mode            = m5::imu::StepCounterConfig::Mode::Detector;
+    c.watermark_steps = 0;  // Detector mode ignores watermark_steps
+    return c;
+}();
+
 // --- Slot cycle table: BtnA click advances through these ---
 struct EventSpec {
     m5::imu::MotionEventKind kind;
@@ -145,8 +174,17 @@ const Slot slots[] = {
     // gravity guard and cause a spurious FreeFall right after the shake. slot_count masks it off
     // at runtime for that chip.
     {"AnyMotion+FreeFall", 2, {{m5::imu::MotionEventKind::AnyMotion, &any_cfg}, {example::FreeFallBit, nullptr}}},
+    {"NoMotion", 1, {{m5::imu::MotionEventKind::NoMotion, &no_motion_cfg}}},
+    {"SignificantMotion", 1, {{m5::imu::MotionEventKind::SignificantMotion, &sig_motion_cfg}}},
+    {"StepCounter@20", 1, {{m5::imu::MotionEventKind::StepCounter, &step_counter_cfg}}},
+    {"StepDetector", 1, {{m5::imu::MotionEventKind::StepCounter, &step_detector_cfg}}},
+    // Detector mode fires on every single step, giving a demo-friendly overlap with the SW plugin;
+    // Counter mode's 20-step watermark would fire too rarely to see the combo in a short bench test.
+    {"StepCounter+FreeFall", 2,
+     {{m5::imu::MotionEventKind::StepCounter, &step_detector_cfg}, {example::FreeFallBit, nullptr}}},
 };
-// slots that both chips handle correctly (AnyMotion, FreeFall SW)
+// slots that both chips handle correctly (AnyMotion, FreeFall SW). MPU-6886 has no HW support for
+// NoMotion / SignificantMotion / StepCounter at all, so every slot beyond this stays BMI270-only.
 constexpr size_t SLOT_COUNT_SAFE{2};
 // full slot table, including the AnyMotion + FreeFall combo (only enabled where it works)
 constexpr size_t SLOT_COUNT_FULL{sizeof(slots) / sizeof(slots[0])};
@@ -173,16 +211,47 @@ m5::imu::MotionEventKind last_fired{m5::imu::MotionEventKind::None};
 
 // event_sprite palette indices (a palette sprite interprets color arguments as indices)
 enum : uint8_t {
-    PAL_IDLE_BG  = 0,
-    PAL_ANY_BG   = 1,
-    PAL_FF_BG    = 2,
-    PAL_COMBO_BG = 3,
-    PAL_TEXT_LT  = 4,
-    PAL_TEXT_DK  = 5,
+    PAL_IDLE_BG      = 0,
+    PAL_ANY_BG       = 1,
+    PAL_FF_BG        = 2,
+    PAL_COMBO_BG     = 3,
+    PAL_TEXT_LT      = 4,
+    PAL_TEXT_DK      = 5,
+    PAL_STEP_BG      = 6,
+    PAL_NOMOTION_BG  = 7,
+    PAL_SIGMOTION_BG = 8,
 };
 
+//! @brief True if any entry of the given slot enables StepCounter
+bool slot_uses_step_counter(const size_t idx)
+{
+    const Slot& s = slots[idx];
+    for (uint8_t i = 0; i < s.count; ++i) {
+        if (m5::imu::any(s.entries[i].kind & m5::imu::MotionEventKind::StepCounter)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+//! @brief Reset the BMI270 hardware step counter to zero (no-op on MPU-6886, which has no step counter)
+void reset_step_count()
+{
+#if defined(USING_BUILTIN_IMU)
+    if (bmi_ptr) {
+        bmi_ptr->resetStepCount();
+    }
+#elif defined(USING_UNIT_MINI_IMU)
+    // MPU-6886 has no HW step counter; StepCounter slots are unreachable here (slot_count == SLOT_COUNT_SAFE)
+#else
+    hw_source_ptr->resetStepCount();
+#endif
+}
+
 //! @brief Disable every event, then enable the entries of the given slot; refresh the header
-void activate(const size_t idx)
+//! @param idx Slot index to activate
+//! @param reset_step If true and the slot uses StepCounter, zero the chip's step counter first
+void activate(const size_t idx, const bool reset_step)
 {
     motion.disableAll();
     const Slot& s = slots[idx];
@@ -192,6 +261,9 @@ void activate(const size_t idx)
             M5_LOGW("enable slot=%s entry=%u failed (chip unsupported)", s.label, i);
             all_ok = false;
         }
+    }
+    if (reset_step && slot_uses_step_counter(idx)) {
+        reset_step_count();
     }
     M5_LOGI("[MotionEvents] active slot = %s (%u event%s, %s)", s.label, s.count, s.count > 1 ? "s" : "",
             all_ok ? "all enabled" : "partial");
@@ -223,15 +295,20 @@ uint8_t fit_text_size(M5Canvas& spr, const char* text, const int32_t width)
 
 //! @brief Render the event status area: background color + centered event name (flicker-free: draws
 //! off-screen into event_sprite, blits once via pushSprite)
-void render_event(const m5::imu::MotionEventKind fired)
+void render_event(const m5::imu::MotionEventStatus& status)
 {
     if (!has_lcd) {
         return;
     }
 
-    const bool has_any = m5::imu::any(fired & m5::imu::MotionEventKind::AnyMotion);
-    const bool has_ff  = m5::imu::any(fired & example::FreeFallBit);
+    const auto fired    = status.fired;
+    const bool has_any  = m5::imu::any(fired & m5::imu::MotionEventKind::AnyMotion);
+    const bool has_ff   = m5::imu::any(fired & example::FreeFallBit);
+    const bool has_step = m5::imu::any(fired & m5::imu::MotionEventKind::StepCounter);
+    const bool has_no   = m5::imu::any(fired & m5::imu::MotionEventKind::NoMotion);
+    const bool has_sig  = m5::imu::any(fired & m5::imu::MotionEventKind::SignificantMotion);
 
+    char step_label[32];
     const char* name;
     uint8_t bg_pal;
     uint8_t text_pal;
@@ -247,6 +324,19 @@ void render_event(const m5::imu::MotionEventKind fired)
         name     = "FreeFall";
         bg_pal   = PAL_FF_BG;
         text_pal = PAL_TEXT_DK;
+    } else if (has_step) {
+        std::snprintf(step_label, sizeof(step_label), "Steps: %u", static_cast<unsigned>(status.step_count));
+        name     = step_label;
+        bg_pal   = PAL_STEP_BG;
+        text_pal = PAL_TEXT_LT;
+    } else if (has_sig) {
+        name     = "SigMotion";
+        bg_pal   = PAL_SIGMOTION_BG;
+        text_pal = PAL_TEXT_LT;
+    } else if (has_no) {
+        name     = "NoMotion";
+        bg_pal   = PAL_NOMOTION_BG;
+        text_pal = PAL_TEXT_LT;
     } else {
         name     = slots[current_slot].label;
         bg_pal   = PAL_IDLE_BG;
@@ -264,13 +354,23 @@ void render_event(const m5::imu::MotionEventKind fired)
 }
 
 //! @brief Log every fired bit this update() cycle carries (may be more than one at once)
-void log_fired(const m5::imu::MotionEventKind fired)
+void log_fired(const m5::imu::MotionEventStatus& status)
 {
+    const auto fired = status.fired;
     if (m5::imu::any(fired & m5::imu::MotionEventKind::AnyMotion)) {
         M5_LOGI("[FIRED] AnyMotion");
     }
     if (m5::imu::any(fired & example::FreeFallBit)) {
         M5_LOGI("[FIRED] FreeFall(SW)");
+    }
+    if (m5::imu::any(fired & m5::imu::MotionEventKind::NoMotion)) {
+        M5_LOGI("[FIRED] NoMotion");
+    }
+    if (m5::imu::any(fired & m5::imu::MotionEventKind::SignificantMotion)) {
+        M5_LOGI("[FIRED] SignificantMotion");
+    }
+    if (m5::imu::any(fired & m5::imu::MotionEventKind::StepCounter)) {
+        M5_LOGI("[FIRED] StepCounter %u", static_cast<unsigned>(status.step_count));
     }
 }
 
@@ -333,7 +433,7 @@ void setup()
         }
 
         // Event status area: minimum required area (below the header, above the debug strip), 4-bit
-        // palette (6 colors used).
+        // palette (9 colors used).
         const int32_t event_h = lcd.height() - header_h - debug_h;
         event_sprite.setColorDepth(4);
         event_sprite.setPsram(false);
@@ -352,6 +452,9 @@ void setup()
         event_sprite.setPaletteColor(PAL_COMBO_BG, TFT_MAGENTA);
         event_sprite.setPaletteColor(PAL_TEXT_LT, TFT_WHITE);
         event_sprite.setPaletteColor(PAL_TEXT_DK, TFT_BLACK);
+        event_sprite.setPaletteColor(PAL_STEP_BG, TFT_DARKGREEN);
+        event_sprite.setPaletteColor(PAL_NOMOTION_BG, TFT_NAVY);
+        event_sprite.setPaletteColor(PAL_SIGMOTION_BG, TFT_ORANGE);
     }
 
     bool ok{};
@@ -428,9 +531,9 @@ void setup()
     } else {
         M5_LOGI("Slot table: %u slots", static_cast<unsigned>(slot_count));
     }
-    activate(current_slot);
+    activate(current_slot, false);
 
-    render_event(m5::imu::MotionEventKind::None);  // idle
+    render_event(m5::imu::MotionEventStatus{});  // idle
 
     M5_LOGI("MotionEvents ready");
 }
@@ -447,15 +550,15 @@ void loop()
 
     if (M5.BtnA.wasClicked()) {
         current_slot = (current_slot + 1) % slot_count;
-        activate(current_slot);
-        render_event(m5::imu::MotionEventKind::None);  // idle after switching
+        activate(current_slot, false);
+        render_event(m5::imu::MotionEventStatus{});  // idle after switching
     }
     if (M5.BtnA.wasHold()) {
-        // Long press: re-arm the current slot (re-write chip config + reset SW plugin state).
-        // Useful if events get stuck (e.g. a chip register got out of sync) or the config needs
-        // to be re-applied after a fault.
-        activate(current_slot);
-        render_event(m5::imu::MotionEventKind::None);
+        // Long press: re-arm the current slot (re-write chip config + reset SW plugin state), and
+        // zero the chip's step counter if the slot uses StepCounter. Useful if events get stuck
+        // (e.g. a chip register got out of sync) or the config needs to be re-applied after a fault.
+        activate(current_slot, true);
+        render_event(m5::imu::MotionEventStatus{});
         M5_LOGI("[REARM] slot %s", slots[current_slot].label);
     }
 
@@ -479,8 +582,10 @@ void loop()
     const auto fired = motion.update(dt);
     if (m5::imu::any(fired)) {
         last_fired = fired;
-        log_fired(fired);
-        render_event(fired);
+        m5::imu::MotionEventStatus status{};
+        motion.latest(status);
+        log_fired(status);
+        render_event(status);
     }
 
     // Debug strip: refresh at ~5 Hz so per-frame flicker is invisible without wasting cycles
