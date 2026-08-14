@@ -6,10 +6,23 @@ using example::SoftwareFreeFall;
 using m5::imu::imu_physical_data_t;
 using m5::imu::MotionEventStatus;
 
+namespace {
+
+//! @brief Prime the plugin's state machine by feeding a few 1G samples
+inline void prime_with_normal_gravity(SoftwareFreeFall& ff)
+{
+    imu_physical_data_t g{};
+    g.accel[2] = 1.0f;
+    for (int i = 0; i < 3; ++i) ff.update(0.010f, g);
+}
+
+}  // namespace
+
 TEST(SoftwareFreeFall, fires_after_duration_of_low_g)
 {
     SoftwareFreeFall ff{SoftwareFreeFall::Config{0.3f, 100}};
-    ASSERT_TRUE(ff.enableEvent(FreeFallBit, nullptr));
+    EXPECT_TRUE(ff.enableEvent(FreeFallBit, nullptr));
+    prime_with_normal_gravity(ff);
 
     imu_physical_data_t s{};
     s.accel[0] = 0.05f;
@@ -42,6 +55,8 @@ TEST(SoftwareFreeFall, motion_interrupt_resets_still_timer)
 {
     SoftwareFreeFall ff{SoftwareFreeFall::Config{0.3f, 100}};
     ff.enableEvent(FreeFallBit, nullptr);
+    prime_with_normal_gravity(ff);
+
     imu_physical_data_t low{};
     imu_physical_data_t high{};
     low.accel[2]  = 0.1f;
@@ -64,4 +79,50 @@ TEST(SoftwareFreeFall, disabled_ignores_input)
     for (int i = 0; i < 30; ++i) ff.update(0.010f, low);
     MotionEventStatus out{};
     EXPECT_FALSE(ff.readEventStatus(out));
+}
+
+//! @brief State machine: low-g from the very first sample must NOT fire (sensor may be broken)
+TEST(SoftwareFreeFall, does_not_fire_before_observing_normal_gravity)
+{
+    SoftwareFreeFall ff{SoftwareFreeFall::Config{0.3f, 100}};
+    ff.enableEvent(FreeFallBit, nullptr);
+
+    // Simulate a sensor stuck at ~0.08G (never sees gravity — e.g. MPU-6886 in WoM cycle mode)
+    imu_physical_data_t s{};
+    s.accel[0] = 0.05f;
+    s.accel[1] = 0.05f;
+    s.accel[2] = 0.05f;
+    for (int i = 0; i < 100; ++i) ff.update(0.010f, s);  // 1 second of low-g
+
+    MotionEventStatus out{};
+    EXPECT_FALSE(ff.readEventStatus(out));
+}
+
+//! @brief State machine: enable() re-arms — even after firing, needs normal gravity again
+TEST(SoftwareFreeFall, refires_only_after_normal_gravity_again)
+{
+    SoftwareFreeFall ff{SoftwareFreeFall::Config{0.3f, 100}};
+    ff.enableEvent(FreeFallBit, nullptr);
+    prime_with_normal_gravity(ff);
+
+    imu_physical_data_t low{};
+    low.accel[2] = 0.05f;
+
+    // First fall fires
+    for (int i = 0; i < 10; ++i) ff.update(0.010f, low);
+    MotionEventStatus out1{};
+    EXPECT_TRUE(ff.readEventStatus(out1));
+    EXPECT_EQ(out1.fired, FreeFallBit);
+
+    // Continuing low-g without a normal-gravity interlude must NOT re-fire
+    for (int i = 0; i < 20; ++i) ff.update(0.010f, low);
+    MotionEventStatus out2{};
+    EXPECT_FALSE(ff.readEventStatus(out2));
+
+    // After feeding gravity again, another fall fires
+    prime_with_normal_gravity(ff);
+    for (int i = 0; i < 10; ++i) ff.update(0.010f, low);
+    MotionEventStatus out3{};
+    EXPECT_TRUE(ff.readEventStatus(out3));
+    EXPECT_EQ(out3.fired, FreeFallBit);
 }
