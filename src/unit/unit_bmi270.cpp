@@ -1153,13 +1153,17 @@ bool UnitBMI270::resetStepCount()
     // clears the bit back itself to leave the feature re-armed for a future reset. Per datasheet
     // section 4.8.8, the reset only takes effect while at least one of en_counter/en_detector/
     // en_activity is enabled.
+    //
+    // Wait long enough for the feature engine (fixed 50 Hz internally, one tick = 20 ms) to see
+    // the reset bit and process it. Two ticks (40 ms) leave a safety margin so the clear that
+    // follows never overtakes the engine's read of the FEATURES bank and lands as a no-op.
     const uint16_t set_word = static_cast<uint16_t>(word | SC26_RESET_COUNTER_BIT);
     buf[0]                  = static_cast<uint8_t>(set_word & 0xFF);
     buf[1]                  = static_cast<uint8_t>(set_word >> 8);
     if (!write_feature_bytes(BMI270_FEATURE_STEP_COUNT_SC26_OFS, buf, sizeof(buf))) {
         return false;
     }
-    m5::utility::delay(2);
+    m5::utility::delay(40);
 
     const uint16_t clear_word = static_cast<uint16_t>(word & ~SC26_RESET_COUNTER_BIT);
     buf[0]                    = static_cast<uint8_t>(clear_word & 0xFF);
