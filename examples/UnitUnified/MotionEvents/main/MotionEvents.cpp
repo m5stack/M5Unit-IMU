@@ -542,13 +542,12 @@ void setup()
 void loop()
 {
     static uint32_t prev_ms{0};
-    const uint32_t now = m5::utility::millis();
-    const float dt     = (prev_ms == 0) ? 0.020f : (now - prev_ms) / 1000.0f;
-    prev_ms            = now;
 
     M5.update();
     Units.update();
 
+    // Buttons: check every iteration so BtnA responds immediately (matches AhrsDemo / PlotToSerial;
+    // dropping the trailing delay is what makes this cheap).
     if (M5.BtnA.wasClicked()) {
         current_slot = (current_slot + 1) % slot_count;
         activate(current_slot, false);
@@ -563,33 +562,50 @@ void loop()
         M5_LOGI("[REARM] slot %s", slots[current_slot].label);
     }
 
-    // Feed the SW plugin (SoftwareFreeFall) the latest physical-unit accel sample every tick
-#if defined(USING_BUILTIN_IMU)
-    const auto sample = read_accel_sample();
-#else
-    const auto d = hw_source_ptr->latest();
-    m5::imu::imu_physical_data_t sample{};
-    sample.accel[0] = d.accel_x() * convert_param.accel_res;
-    sample.accel[1] = d.accel_y() * convert_param.accel_res;
-    sample.accel[2] = d.accel_z() * convert_param.accel_res;
-#endif
-    sw_ff.update(dt, sample);
-    last_ax = sample.accel[0];
-    last_ay = sample.accel[1];
-    last_az = sample.accel[2];
-    last_g  = std::sqrt(last_ax * last_ax + last_ay * last_ay + last_az * last_az);
+    const uint32_t now = m5::utility::millis();
 
-    // Poll every registered source and aggregate newly fired events
-    const auto fired = motion.update(dt);
-    if (m5::imu::any(fired)) {
-        last_fired = fired;
-        m5::imu::MotionEventStatus status{};
-        motion.latest(status);
-        log_fired(status);
-        render_event(status);
+    // Motion tick: only when a fresh IMU sample lands (AhrsDemo / PlotToSerial convention).
+    // updated() flips true for one pass after Units.update() reads a new sample, so this naturally
+    // matches the chip's ODR without a hand-tuned tick period.
+#if defined(USING_BUILTIN_IMU)
+    const bool sample_ready = (bmi_ptr && bmi_ptr->updated()) || (mpu_ptr && mpu_ptr->updated());
+#else
+    const bool sample_ready = hw_source_ptr->updated();
+#endif
+
+    if (sample_ready) {
+        const float dt = (prev_ms == 0) ? 0.020f : (now - prev_ms) / 1000.0f;
+        prev_ms        = now;
+
+        // Feed the SW plugin (SoftwareFreeFall) the latest physical-unit accel sample
+#if defined(USING_BUILTIN_IMU)
+        const auto sample = read_accel_sample();
+#else
+        const auto d = hw_source_ptr->latest();
+        m5::imu::imu_physical_data_t sample{};
+        sample.accel[0] = d.accel_x() * convert_param.accel_res;
+        sample.accel[1] = d.accel_y() * convert_param.accel_res;
+        sample.accel[2] = d.accel_z() * convert_param.accel_res;
+#endif
+        sw_ff.update(dt, sample);
+        last_ax = sample.accel[0];
+        last_ay = sample.accel[1];
+        last_az = sample.accel[2];
+        last_g  = std::sqrt(last_ax * last_ax + last_ay * last_ay + last_az * last_az);
+
+        // Poll every registered source and aggregate newly fired events
+        const auto fired = motion.update(dt);
+        if (m5::imu::any(fired)) {
+            last_fired = fired;
+            m5::imu::MotionEventStatus status{};
+            motion.latest(status);
+            log_fired(status);
+            render_event(status);
+        }
     }
 
-    // Debug strip: refresh at ~5 Hz so per-frame flicker is invisible without wasting cycles
+    // Debug strip: refresh at ~5 Hz using last-known values (runs regardless of sample_ready so
+    // the strip keeps updating even when the chip is quiet).
     static uint32_t last_debug_ms{0};
     if (has_lcd && debug_h > 0 && (now - last_debug_ms) >= 200) {
         last_debug_ms = now;
@@ -613,8 +629,6 @@ void loop()
         M5_LOGI("[DBG] ax=%+.2f ay=%+.2f az=%+.2f g=%.2f enb=0x%02X last=0x%02X slot=%s", last_ax, last_ay, last_az,
                 last_g, enb, fmask, slots[current_slot].label);
     }
-
-    m5::utility::delay(20);
 }
 
 #if !defined(ARDUINO)
