@@ -20,6 +20,7 @@
 #include <M5UnitUnified.h>
 #include <M5UnitUnifiedIMU.h>
 #include <algorithm>
+#include <cmath>
 #include <wiring/m5_unit_unified_wiring.hpp>  // Board-aware connection helpers (include last)
 #include <wiring/m5_unit_imu_wiring.hpp>      // This library: classic Core Port C helper
 #include "software_free_fall.hpp"
@@ -109,7 +110,9 @@ m5::unit::UnitBMI270* hw_source_ptr = &unit.imu();
 m5::imu::imu_convert_param_t convert_param{};
 
 // --- SW extension (example plugin; see software_free_fall.hpp) ---
-example::SoftwareFreeFall sw_ff;
+// Loosened from the plugin defaults (0.3G / 100ms) so a bench-thrown device triggers reliably;
+// tune tighter (0.3G / 100ms or stricter) for real drop-detection.
+example::SoftwareFreeFall sw_ff{example::SoftwareFreeFall::Config{0.5f, 50}};
 
 // --- Event configuration shared by every slot that enables AnyMotion ---
 // Threshold lowered from the 500 mg default so light shaking triggers on a bench; tune upward
@@ -151,6 +154,7 @@ int32_t debug_h{};
 float last_ax{0.0f};
 float last_ay{0.0f};
 float last_az{0.0f};
+float last_g{0.0f};  // magnitude sqrt(ax^2 + ay^2 + az^2)
 m5::imu::MotionEventKind last_fired{m5::imu::MotionEventKind::None};
 
 // event_sprite palette indices (a palette sprite interprets color arguments as indices)
@@ -440,6 +444,7 @@ void loop()
     last_ax = sample.accel[0];
     last_ay = sample.accel[1];
     last_az = sample.accel[2];
+    last_g  = std::sqrt(last_ax * last_ax + last_ay * last_ay + last_az * last_az);
 
     // Poll every registered source and aggregate newly fired events
     const auto fired = motion.update(dt);
@@ -456,7 +461,7 @@ void loop()
         debug_sprite.fillSprite(TFT_BLACK);
         const int32_t line_h = 8 * debug_sprite.getTextSizeY() + 2;
         debug_sprite.setCursor(4, 2);
-        debug_sprite.printf("ax:%+.2f ay:%+.2f az:%+.2f", last_ax, last_ay, last_az);
+        debug_sprite.printf("ax:%+.2f ay:%+.2f az:%+.2f g:%.2f", last_ax, last_ay, last_az, last_g);
         debug_sprite.setCursor(4, 2 + line_h);
         const unsigned enb   = static_cast<unsigned>(motion.enabledEvents());
         const unsigned fmask = static_cast<unsigned>(last_fired);
@@ -470,8 +475,8 @@ void loop()
         last_serial_ms       = now;
         const unsigned enb   = static_cast<unsigned>(motion.enabledEvents());
         const unsigned fmask = static_cast<unsigned>(last_fired);
-        M5_LOGI("[DBG] ax=%+.2f ay=%+.2f az=%+.2f enb=0x%02X last=0x%02X slot=%s", last_ax, last_ay, last_az, enb,
-                fmask, slots[current_slot].label);
+        M5_LOGI("[DBG] ax=%+.2f ay=%+.2f az=%+.2f g=%.2f enb=0x%02X last=0x%02X slot=%s", last_ax, last_ay, last_az,
+                last_g, enb, fmask, slots[current_slot].label);
     }
 
     m5::utility::delay(20);
