@@ -68,6 +68,17 @@ constexpr uint16_t NOMO2_THRESHOLD_MASK{0x07FF};
 constexpr uint16_t NOMO2_OUT_CONF_MASK{0x0Fu << 11};
 constexpr uint16_t NOMO2_ENABLE_BIT{1u << 15};
 
+// SIGMO_1 (word0, BMI270_FEATURE_SIG_MOTION_OFS_WORDS): block_size occupies the full 16 bits --
+// unlike ANYMO_1/NOMO_1 above, there is no per-axis select field here (BMI270 datasheet section
+// 4.8.4 / register table, address 0x34, page 2)
+constexpr uint16_t SIGMO1_BLOCK_SIZE_MASK{0xFFFF};
+
+// SIGMO_2 (word, BMI270_FEATURE_SIG_MOTION_2_OFS_WORDS): enable[0], out_conf[4:1] -- a different
+// bit layout from ANYMO_2/NOMO_2 above, whose enable bit is bit 15 (same datasheet reference,
+// address 0x3E)
+constexpr uint16_t SIGMO2_ENABLE_BIT{1u << 0};
+constexpr uint16_t SIGMO2_OUT_CONF_MASK{0x0Fu << 1};
+
 // Feature engine internal sample rate is fixed 50Hz (1 sample = 20ms) regardless of accel ODR.
 // Convert a user-facing duration_ms to a sample count. Rejects durations shorter than one sample
 // and counts that do not fit max_samples (13 bit field for no_motion, 16 bit for
@@ -670,6 +681,15 @@ bool UnitBMI270::enableEvent(const m5::imu::MotionEventKind kind, const void* cf
         _enabled_mask |= m5::imu::MotionEventKind::NoMotion;
         _no_motion_pending = false;
         return true;
+    } else if (kind == m5::imu::MotionEventKind::SignificantMotion) {
+        const auto& c = *static_cast<const m5::imu::SignificantMotionConfig*>(cfg);
+        if (!write_sig_motion_features(c)) {
+            return false;
+        }
+        _sig_motion_cfg = c;
+        _enabled_mask |= m5::imu::MotionEventKind::SignificantMotion;
+        _sig_motion_pending = false;
+        return true;
     }
     return false;
 }
@@ -690,14 +710,22 @@ bool UnitBMI270::disableEvent(const m5::imu::MotionEventKind kind)
         _enabled_mask &= ~m5::imu::MotionEventKind::NoMotion;
         _no_motion_pending = false;
         return true;
+    } else if (kind == m5::imu::MotionEventKind::SignificantMotion) {
+        if (!clear_sig_motion_features()) {
+            return false;
+        }
+        _enabled_mask &= ~m5::imu::MotionEventKind::SignificantMotion;
+        _sig_motion_pending = false;
+        return true;
     }
     return false;
 }
 
 bool UnitBMI270::readEventStatus(m5::imu::MotionEventStatus& out)
 {
-    const m5::imu::MotionEventKind feature_mask =
-        m5::imu::MotionEventKind::AnyMotion | m5::imu::MotionEventKind::NoMotion;
+    const m5::imu::MotionEventKind feature_mask = m5::imu::MotionEventKind::AnyMotion |
+                                                   m5::imu::MotionEventKind::NoMotion |
+                                                   m5::imu::MotionEventKind::SignificantMotion;
     if (!m5::imu::any(_enabled_mask & feature_mask)) return false;
 
     // INT_STATUS_0 is read-to-clear on the chip and reports every feature engine output in a
@@ -712,6 +740,9 @@ bool UnitBMI270::readEventStatus(m5::imu::MotionEventStatus& out)
         if (status & INT_STATUS_0_NO_MOTION_OUT_BIT) {
             _no_motion_pending = true;
         }
+        if (status & INT_STATUS_0_SIG_MOTION_OUT_BIT) {
+            _sig_motion_pending = true;
+        }
     }
 
     bool fired = false;
@@ -723,6 +754,11 @@ bool UnitBMI270::readEventStatus(m5::imu::MotionEventStatus& out)
     if (m5::imu::any(_enabled_mask & m5::imu::MotionEventKind::NoMotion) && _no_motion_pending) {
         out.fired |= m5::imu::MotionEventKind::NoMotion;
         _no_motion_pending = false;
+        fired = true;
+    }
+    if (m5::imu::any(_enabled_mask & m5::imu::MotionEventKind::SignificantMotion) && _sig_motion_pending) {
+        out.fired |= m5::imu::MotionEventKind::SignificantMotion;
+        _sig_motion_pending = false;
         fired = true;
     }
     return fired;
@@ -872,6 +908,83 @@ bool UnitBMI270::clear_no_motion_features()
         return false;
     }
     map &= static_cast<uint8_t>(~INT_MAP_FEAT_NO_MOTION_OUT_BIT);
+    return writeRegister8(REG_INT_MAP_FEAT, map);
+}
+
+bool UnitBMI270::write_sig_motion_features(const m5::imu::SignificantMotionConfig& cfg)
+{
+    if (!writeRegister8(REG_FEAT_PAGE, FEAT_PAGE_NO_MOTION)) {
+        return false;
+    }
+
+    // SIGMO_1 is fully specified by this driver -- the whole word is block_size, no reserved bits
+    // left to preserve -- so it is built from scratch rather than read-modified.
+    uint16_t block_size{};
+    if (!duration_ms_to_samples_50hz(cfg.duration_ms, SIGMO1_BLOCK_SIZE_MASK, block_size)) {
+        return false;
+    }
+    const uint8_t word0[2]{
+        static_cast<uint8_t>(block_size & 0xFF),
+        static_cast<uint8_t>(block_size >> 8),
+    };
+    if (!write_feature_bytes(BMI270_FEATURE_SIG_MOTION_OFS_WORDS, word0, sizeof(word0))) {
+        return false;
+    }
+
+    // SIGMO_2.out_conf is preserved instead of being forced to a fixed value, same reasoning as
+    // NOMO_2.out_conf in write_no_motion_features(): its reset default already routes
+    // sig_motion_out onto INT_STATUS_0 bit 0.
+    uint8_t existing[2]{};
+    if (!read_feature_bytes(BMI270_FEATURE_SIG_MOTION_2_OFS_WORDS, existing, sizeof(existing))) {
+        return false;
+    }
+    uint16_t word1 = static_cast<uint16_t>(existing[0]) | (static_cast<uint16_t>(existing[1]) << 8);
+    word1          = static_cast<uint16_t>((word1 & SIGMO2_OUT_CONF_MASK) | SIGMO2_ENABLE_BIT);
+    const uint8_t word1_buf[2]{
+        static_cast<uint8_t>(word1 & 0xFF),
+        static_cast<uint8_t>(word1 >> 8),
+    };
+    if (!write_feature_bytes(BMI270_FEATURE_SIG_MOTION_2_OFS_WORDS, word1_buf, sizeof(word1_buf))) {
+        return false;
+    }
+
+    // Map sig_motion_out onto INT1 as well, same reasoning as write_any_motion_features():
+    // INT_STATUS_0 reports a feature's output only once it is mapped (BMI270 datasheet section
+    // 4.8.1).
+    uint8_t map{};
+    if (!readRegister8(REG_INT_MAP_FEAT, map, 0)) {
+        return false;
+    }
+    map |= INT_MAP_FEAT_SIG_MOTION_OUT_BIT;
+    return writeRegister8(REG_INT_MAP_FEAT, map);
+}
+
+bool UnitBMI270::clear_sig_motion_features()
+{
+    if (!writeRegister8(REG_FEAT_PAGE, FEAT_PAGE_NO_MOTION)) {
+        return false;
+    }
+
+    // Only SIGMO_2.enable needs clearing to stop the feature; block_size in SIGMO_1 and out_conf in
+    // SIGMO_2 are left as they were so a later enableEvent() call is not required to fully
+    // reprogram them.
+    uint8_t buf[2]{};
+    if (!read_feature_bytes(BMI270_FEATURE_SIG_MOTION_2_OFS_WORDS, buf, sizeof(buf))) {
+        return false;
+    }
+    uint16_t word1 = static_cast<uint16_t>(buf[0]) | (static_cast<uint16_t>(buf[1]) << 8);
+    word1          = static_cast<uint16_t>(word1 & ~SIGMO2_ENABLE_BIT);
+    buf[0]         = static_cast<uint8_t>(word1 & 0xFF);
+    buf[1]         = static_cast<uint8_t>(word1 >> 8);
+    if (!write_feature_bytes(BMI270_FEATURE_SIG_MOTION_2_OFS_WORDS, buf, sizeof(buf))) {
+        return false;
+    }
+
+    uint8_t map{};
+    if (!readRegister8(REG_INT_MAP_FEAT, map, 0)) {
+        return false;
+    }
+    map &= static_cast<uint8_t>(~INT_MAP_FEAT_SIG_MOTION_OUT_BIT);
     return writeRegister8(REG_INT_MAP_FEAT, map);
 }
 

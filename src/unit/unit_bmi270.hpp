@@ -238,7 +238,8 @@ public:
     //! @brief Bitmap of motion events this chip provides
     virtual m5::imu::MotionEventKind motionEventSpec() const override
     {
-        return m5::imu::MotionEventKind::AnyMotion | m5::imu::MotionEventKind::NoMotion;
+        return m5::imu::MotionEventKind::AnyMotion | m5::imu::MotionEventKind::NoMotion |
+               m5::imu::MotionEventKind::SignificantMotion;
     }
     //! @brief Currently enabled motion event bitmap
     virtual m5::imu::MotionEventKind enabledEvents() const override
@@ -246,7 +247,8 @@ public:
         return _enabled_mask;
     }
     //! @brief Enable a motion event kind. cfg must point to the config struct matching kind
-    //! (AnyMotionConfig for AnyMotion, NoMotionConfig for NoMotion)
+    //! (AnyMotionConfig for AnyMotion, NoMotionConfig for NoMotion, SignificantMotionConfig for
+    //! SignificantMotion)
     //! @return true on success, false when kind is unsupported or cfg is null
     virtual bool enableEvent(m5::imu::MotionEventKind kind, const void* cfg) override;
     //! @brief Disable a motion event kind and clear its status
@@ -297,6 +299,12 @@ protected:
     // Clears the no_motion feature's enable bit and its INT_MAP_FEAT routing, without disturbing
     // the duration/threshold/axis fields written by write_no_motion_features()
     bool clear_no_motion_features();
+    // Programs the significant_motion feature engine registers (SIGMO_1/SIGMO_2) from cfg and maps
+    // its output onto INT1 so INT_STATUS_0 latches it. See unit_bmi270.cpp for the register layout.
+    bool write_sig_motion_features(const m5::imu::SignificantMotionConfig& cfg);
+    // Clears the significant_motion feature's enable bit and its INT_MAP_FEAT routing, without
+    // disturbing the block_size field written by write_sig_motion_features()
+    bool clear_sig_motion_features();
     // Reads len bytes starting at ofs_bytes (an address within the currently FEAT_PAGE-selected
     // FEATURES[16] window, REG_FEATURES..REG_FEATURES+0x0F)
     bool read_feature_bytes(const uint16_t ofs_bytes, uint8_t* buf, const size_t len);
@@ -337,6 +345,8 @@ private:
     bool _any_motion_pending{false};
     m5::imu::NoMotionConfig _no_motion_cfg{};
     bool _no_motion_pending{false};
+    m5::imu::SignificantMotionConfig _sig_motion_cfg{};
+    bool _sig_motion_pending{false};
 };
 
 namespace bmi270 {
@@ -387,7 +397,10 @@ constexpr uint8_t REG_FEATURES_ANY_MOTION_2{0x3E};  // ANYMO_2 alone (threshold/
 constexpr uint8_t FEAT_PAGE_NO_MOTION{0x02};                     // Page holding NOMO_1/NOMO_2
 constexpr uint16_t BMI270_FEATURE_NO_MOTION_OFS_WORDS{0x30};     // NOMO_1, 2 bytes, followed by NOMO_2
 constexpr uint16_t BMI270_FEATURE_NO_MOTION_2_OFS_WORDS{0x32};   // NOMO_2 alone (threshold/out_conf/enable)
-constexpr uint16_t BMI270_FEATURE_SIG_MOTION_OFS_WORDS{0x34};    // SIGMO_1
+constexpr uint16_t BMI270_FEATURE_SIG_MOTION_OFS_WORDS{0x34};    // SIGMO_1 (block_size, full word)
+// SIGMO_2 sits 5 words after SIGMO_1, not immediately after it like NOMO_1/NOMO_2: 0x36/0x38/0x3A/
+// 0x3C in between are reserved words (datasheet section 4.8.4 register table, page 2)
+constexpr uint16_t BMI270_FEATURE_SIG_MOTION_2_OFS_WORDS{0x3E};  // SIGMO_2 (enable + out_conf)
 constexpr uint16_t BMI270_FEATURE_STEP_COUNT_OFS_WORDS{0x30};    // SC_1
 constexpr uint8_t INT_STATUS_0_ANY_MOTION_OUT_BIT{1 << 6};
 // INT_STATUS_0 also reports these feature engine outputs (datasheet section 5.2.28)
