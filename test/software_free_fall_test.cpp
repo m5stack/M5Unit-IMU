@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "../../../examples/UnitUnified/MotionEvents/main/software_free_fall.hpp"
+#include "../examples/UnitUnified/MotionEvents/main/software_free_fall.hpp"
 
 using example::FreeFallBit;
 using example::SoftwareFreeFall;
