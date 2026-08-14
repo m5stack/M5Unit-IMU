@@ -255,6 +255,14 @@ public:
     virtual bool disableEvent(m5::imu::MotionEventKind kind) override;
     //! @brief Read latched motion event status (clears internal latch on read)
     virtual bool readEventStatus(m5::imu::MotionEventStatus& out) override;
+    /*!
+      @brief BMI270 step counter watermark hardware resolution
+      @return 20 (SC_26.watermark_level implicitly carries a 20x factor per datasheet section 4.8.8)
+     */
+    uint16_t stepCounterResolutionSteps() const override
+    {
+        return 20;
+    }
     ///@}
 
     ///@name Step counter

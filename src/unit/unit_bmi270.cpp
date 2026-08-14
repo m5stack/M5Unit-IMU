@@ -1063,6 +1063,15 @@ bool UnitBMI270::write_step_counter_features(const m5::imu::StepCounterConfig& c
         if (field > SC26_WATERMARK_MASK) {
             field = SC26_WATERMARK_MASK;
         }
+        // Warn when the requested watermark cannot be represented exactly at the chip's 20-step
+        // resolution (SC_26.watermark_level LSB = SC26_WATERMARK_STEP_UNIT actual steps): either
+        // the rounding or the clamp above can make the value that actually fires differ from what
+        // the caller asked for.
+        const uint32_t actual_fire_steps = field * SC26_WATERMARK_STEP_UNIT;
+        if (cfg.watermark_steps > 0 && actual_fire_steps != cfg.watermark_steps) {
+            M5_LIB_LOGW("BMI270 step watermark: requested %u steps, actual %u steps (HW resolution %u)",
+                        cfg.watermark_steps, actual_fire_steps, SC26_WATERMARK_STEP_UNIT);
+        }
         word |= SC26_EN_COUNTER_BIT;
         word |= static_cast<uint16_t>(field);
     } else {

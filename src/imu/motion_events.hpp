@@ -128,7 +128,9 @@ struct StepCounterConfig {
         Detector,  //!< @brief Fire on every single step (low-latency)
     };
     Mode mode{Mode::Counter};
-    uint16_t watermark_steps{1};   //!< @brief Watermark for Counter mode (ignored in Detector)
+    uint16_t watermark_steps{1};   //!< @brief Watermark in raw steps for Counter mode (ignored in Detector).
+                                   //!<        Chip-specific hardware granularity may round this value;
+                                   //!<        query MotionEventSource::stepCounterResolutionSteps() to check.
     StepCounterConfig() = default;
     StepCounterConfig(Mode m, uint16_t wm) : mode{m}, watermark_steps{wm}
     {
@@ -169,6 +171,13 @@ public:
     //! @param[out] out fired flags and event-specific payload
     //! @return true if any event was fired since last read
     virtual bool readEventStatus(MotionEventStatus& out) = 0;
+
+    /*!
+      @brief Hardware granularity of the step counter fire watermark, in raw steps.
+      @return 1 if the chip resolves 1-step watermarks (default); larger values for chips
+              that round to a coarser boundary (e.g. BMI270 returns 20).
+     */
+    virtual uint16_t stepCounterResolutionSteps() const { return 1; }
 };
 
 /*!
