@@ -110,9 +110,20 @@ bool UnitMPU6886::disableEvent(m5::imu::MotionEventKind kind)
 bool UnitMPU6886::readEventStatus(m5::imu::MotionEventStatus& out)
 {
     if (!m5::imu::any(_enabled_mask & m5::imu::MotionEventKind::AnyMotion)) return false;
+    // Drain WoM bits latched by read_measurement() (INT_STATUS is read-clear, so the periodic
+    // measurement task would otherwise consume them before we get here).
+    uint8_t combined = _pending_wom_status;
+    _pending_wom_status = 0;
+    // Also try a direct read in case no periodic read has happened yet (e.g. WoM enabled after
+    // stopPeriodicMeasurement, or on the very first call). This is harmless when combined with
+    // the latched bits.
     uint8_t status{};
-    if (!readRegister8(REG_INT_STATUS, status, 0)) return false;
-    if (status & INT_STATUS_WOM_INT_MASK) {
+    if (readRegister8(REG_INT_STATUS, status, 0)) {
+        combined |= static_cast<uint8_t>(status & INT_STATUS_WOM_INT_MASK);
+        // Preserve any WoM bits we just consumed here in the latch too (paranoia; usually zero
+        // because the periodic task races with us and clears them first).
+    }
+    if (combined & INT_STATUS_WOM_INT_MASK) {
         out.fired |= m5::imu::MotionEventKind::AnyMotion;
         return true;
     }

@@ -302,6 +302,9 @@ bool UnitMPU6xxx::read_measurement(mpu6886::Data& d)
         M5_LIB_LOGE("Failed to read REG_INT_STATUS");
         return false;
     }
+    // INT_STATUS is read-clear. Latch WOM_X/Y/Z_INT (bits 7:5) for WoM-aware derived classes;
+    // otherwise the WoM interrupt gets consumed here before readEventStatus() can see it.
+    _pending_wom_status |= static_cast<uint8_t>(status & 0xE0);
     if (!(status & 0x01)) {
         return false;  // Not ready yet (normal case, no log)
     }

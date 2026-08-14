@@ -254,6 +254,12 @@ protected:
 
     M5_UNIT_COMPONENT_PERIODIC_MEASUREMENT_ADAPTER_HPP_BUILDER(UnitMPU6xxx, mpu6886::Data);
 
+    // INT_STATUS is read-clear on every register access. The periodic measurement task reads it
+    // frequently (for DATA_RDY), which would consume any Wake-on-Motion bits before readEventStatus()
+    // sees them. read_measurement() latches the WoM bits here so the WoM-aware derived class (only
+    // UnitMPU6886 today) can drain them at its own cadence. Non-WoM derived classes ignore it.
+    uint8_t _pending_wom_status{0};
+
 private:
     // Settings for begin(); never written to after that. What is currently on the device lives in
     // the live-state members below, so config() keeps meaning "what was configured"
