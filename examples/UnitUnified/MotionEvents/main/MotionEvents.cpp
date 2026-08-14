@@ -115,12 +115,14 @@ m5::imu::imu_convert_param_t convert_param{};
 example::SoftwareFreeFall sw_ff{example::SoftwareFreeFall::Config{0.5f, 50}};
 
 // --- Event configuration shared by every slot that enables AnyMotion ---
-// Threshold lowered from the 500 mg default so light shaking triggers on a bench; tune upward
-// (e.g. 500-1000 mg) if the environment is noisy enough to false-trigger. AnyMotionConfig is not
-// an aggregate under C++11 (default member initializers), so build via IIFE.
+// 500 mg matches the datasheet default and behaves well on both chips: BMI270's per-axis feature
+// engine trips on clear shakes rather than every micro-movement, and MPU-6886's coarser 4 mg/LSB
+// threshold still fires on deliberate shaking. Tune lower (200-300) for wearables where subtle
+// gestures should trigger, higher (700-1000) for wall-mount / industrial wake-on-vibration.
+// AnyMotionConfig is not an aggregate under C++11 (default member initializers), so build via IIFE.
 const m5::imu::AnyMotionConfig any_cfg = [] {
     m5::imu::AnyMotionConfig c;
-    c.threshold_mg = 200;
+    c.threshold_mg = 500;
     return c;
 }();
 
@@ -137,8 +139,20 @@ struct Slot {
 const Slot slots[] = {
     {"AnyMotion", 1, {{m5::imu::MotionEventKind::AnyMotion, &any_cfg}}},
     {"FreeFall(SW)", 1, {{example::FreeFallBit, nullptr}}},
+    // The combo slot only works reliably on chips whose HW AnyMotion path does not disturb the
+    // accelerometer output used by the SW plugin. MPU-6886 Wake-on-Motion puts the accelerometer
+    // into low-power cycle mode; a brief motion spike can bypass SoftwareFreeFall's pre-fall
+    // gravity guard and cause a spurious FreeFall right after the shake. slot_count masks it off
+    // at runtime for that chip.
     {"AnyMotion+FreeFall", 2, {{m5::imu::MotionEventKind::AnyMotion, &any_cfg}, {example::FreeFallBit, nullptr}}},
 };
+// slots that both chips handle correctly (AnyMotion, FreeFall SW)
+constexpr size_t SLOT_COUNT_SAFE{2};
+// full slot table, including the AnyMotion + FreeFall combo (only enabled where it works)
+constexpr size_t SLOT_COUNT_FULL{sizeof(slots) / sizeof(slots[0])};
+
+// Runtime slot count; adjusted in setup() based on chip capability
+size_t slot_count{SLOT_COUNT_FULL};
 size_t current_slot{0};
 
 // --- LCD: header strip (slot label, redrawn only on slot change) + event status area (redrawn per fire)
@@ -399,6 +413,21 @@ void setup()
     // --- Register HW + SW sources with the controller, then activate the first slot ---
     motion.add(*hw_source_ptr);
     motion.add(sw_ff);
+
+    // Slot 3 (AnyMotion + FreeFall combo) is skipped on chips that cannot run the two together
+    // reliably (see the slots[] definition for the reason). Compile-time when we already know the
+    // chip; runtime probe result for USING_BUILTIN_IMU.
+#if defined(USING_UNIT_MINI_IMU)
+    slot_count = SLOT_COUNT_SAFE;  // MPU-6886 -- WoM breaks the SW plugin
+#elif defined(USING_BUILTIN_IMU)
+    if (mpu_ptr) slot_count = SLOT_COUNT_SAFE;
+#endif
+    if (slot_count < SLOT_COUNT_FULL) {
+        M5_LOGI("Slot table: %u slots (combo slot skipped: chip cannot run HW AnyMotion and SW plugin together)",
+                static_cast<unsigned>(slot_count));
+    } else {
+        M5_LOGI("Slot table: %u slots", static_cast<unsigned>(slot_count));
+    }
     activate(current_slot);
 
     render_event(m5::imu::MotionEventKind::None);  // idle
@@ -417,7 +446,7 @@ void loop()
     Units.update();
 
     if (M5.BtnA.wasClicked()) {
-        current_slot = (current_slot + 1) % (sizeof(slots) / sizeof(slots[0]));
+        current_slot = (current_slot + 1) % slot_count;
         activate(current_slot);
         render_event(m5::imu::MotionEventKind::None);  // idle after switching
     }
