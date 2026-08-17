@@ -116,6 +116,33 @@ constexpr uint8_t WR_GEST_ACT_GEST_MASK{0x07};
 constexpr uint8_t WR_GEST_ACT_ACT_SHIFT{3};
 constexpr uint8_t WR_GEST_ACT_ACT_MASK{0x03};
 
+// Bench-tuned loose preset for WR_WAKEUP_2..7 (applyBenchPickUpPreset()), datasheet section 4.8.6.
+// Datasheet defaults target wrist-mounted use; a bench-held unit with hand-simulated arm motion
+// under-triggers PickUpGesture with them. Each value below is biased toward the most permissive
+// end of its documented register range (min_angle_focus/min_angle_nonfocus are a "minimum required
+// attitude change" encoded as cosine*2048 -- larger encodes a *smaller* required angle, so raising
+// them loosens the check; max_tilt_* are a "maximum tolerated tilt" encoded as sine*2048 -- larger
+// tolerates *more* tilt, so raising them also loosens the check. max_tilt_lr/max_tilt_pd are
+// already left at their datasheet default because that default sits at the top of the documented
+// range). Range/default values verified against the datasheet PDF (section 5.2.40, FEATURES page
+// 7 register table); user should iterate further via writePickUpThresholds() as needed.
+constexpr uint16_t BENCH_PICKUP_MIN_ANGLE_FOCUS{0x06A4};     // 1700 (range 1024-1774, default 1448)
+constexpr uint16_t BENCH_PICKUP_MIN_ANGLE_NONFOCUS{0x0726};  // 1830 (range 1448-1856, default 1774)
+constexpr uint16_t BENCH_PICKUP_MAX_TILT_LR{0x0400};         // 1024 (range 700-1024, default 1024 -- already max)
+constexpr uint16_t BENCH_PICKUP_MAX_TILT_LL{0x0400};         // 1024 (range 700-1024, default 700)
+constexpr uint16_t BENCH_PICKUP_MAX_TILT_PD{0x00B3};         // 179 (range 0-179, default 179 -- already max)
+constexpr uint16_t BENCH_PICKUP_MAX_TILT_PU{0x07B2};         // 1970 (range 1774-1978, default 1925)
+
+// Bench-tuned loose preset for WR_GEST_2..4 (applyBenchWristGesturePreset()), datasheet section
+// 4.8.7. min_flick_peak is a "minimum required tilt" encoded as sine*2048 -- unlike the cosine
+// fields above, a *smaller* value here means a *smaller* required angle, so it is lowered (not
+// raised) to loosen; min_flick_samples (min timing gap between roll-out/roll-in) is lowered so
+// imprecise bench timing still qualifies; max_duration (max time to complete the gesture) is
+// raised to give more time to complete the motion. All three stay within the documented range.
+constexpr uint16_t BENCH_GEST_MIN_FLICK_PEAK{0x05A8};     // 1448 (range 1448-1774, default 1774)
+constexpr uint16_t BENCH_GEST_MIN_FLICK_SAMPLES{0x0003};  // 3 (range 3-5, default 4)
+constexpr uint16_t BENCH_GEST_MAX_DURATION{0x00FA};       // 250 (range 150-250, default 200)
+
 // Feature engine internal sample rate is fixed 50Hz (1 sample = 20ms) regardless of accel ODR.
 // Convert a user-facing duration_ms to a sample count. Rejects durations shorter than one sample
 // and counts that do not fit max_samples (13 bit field for no_motion, 16 bit for
@@ -1504,6 +1531,115 @@ bool UnitBMI270::read_feature_bytes(const uint16_t ofs_bytes, uint8_t* buf, cons
 bool UnitBMI270::write_feature_bytes(const uint16_t ofs_bytes, const uint8_t* buf, const size_t len)
 {
     return writeRegister(static_cast<uint8_t>(ofs_bytes), buf, len);
+}
+
+bool UnitBMI270::write_pickup_thresholds_impl(const uint16_t min_angle_focus, const uint16_t min_angle_nonfocus,
+                                              const uint16_t max_tilt_lr, const uint16_t max_tilt_ll,
+                                              const uint16_t max_tilt_pd, const uint16_t max_tilt_pu)
+{
+    if (!writeRegister8(REG_FEAT_PAGE, FEAT_PAGE_WRIST_WAKEUP)) {
+        return false;
+    }
+    // WR_WAKEUP_2..7: 6 contiguous words (little-endian), written as a single 12 byte burst
+    const uint16_t words[6] = {min_angle_focus, min_angle_nonfocus, max_tilt_lr, max_tilt_ll, max_tilt_pd, max_tilt_pu};
+    uint8_t buf[12]{};
+    for (size_t i = 0; i < 6; ++i) {
+        buf[2 * i]     = static_cast<uint8_t>(words[i] & 0xFF);
+        buf[2 * i + 1] = static_cast<uint8_t>(words[i] >> 8);
+    }
+    return write_feature_bytes(BMI270_FEATURE_WR_WAKEUP_2_OFS, buf, sizeof(buf));
+}
+
+bool UnitBMI270::read_pickup_thresholds_impl(uint16_t& min_angle_focus, uint16_t& min_angle_nonfocus,
+                                             uint16_t& max_tilt_lr, uint16_t& max_tilt_ll, uint16_t& max_tilt_pd,
+                                             uint16_t& max_tilt_pu)
+{
+    if (!writeRegister8(REG_FEAT_PAGE, FEAT_PAGE_WRIST_WAKEUP)) {
+        return false;
+    }
+    uint8_t buf[12]{};
+    if (!read_feature_bytes(BMI270_FEATURE_WR_WAKEUP_2_OFS, buf, sizeof(buf))) {
+        return false;
+    }
+    min_angle_focus    = static_cast<uint16_t>(buf[0] | (static_cast<uint16_t>(buf[1]) << 8));
+    min_angle_nonfocus = static_cast<uint16_t>(buf[2] | (static_cast<uint16_t>(buf[3]) << 8));
+    max_tilt_lr        = static_cast<uint16_t>(buf[4] | (static_cast<uint16_t>(buf[5]) << 8));
+    max_tilt_ll        = static_cast<uint16_t>(buf[6] | (static_cast<uint16_t>(buf[7]) << 8));
+    max_tilt_pd        = static_cast<uint16_t>(buf[8] | (static_cast<uint16_t>(buf[9]) << 8));
+    max_tilt_pu        = static_cast<uint16_t>(buf[10] | (static_cast<uint16_t>(buf[11]) << 8));
+    return true;
+}
+
+bool UnitBMI270::write_wrist_gesture_thresholds_impl(const uint16_t min_flick_peak, const uint16_t min_flick_samples,
+                                                     const uint16_t max_duration)
+{
+    if (!writeRegister8(REG_FEAT_PAGE, FEAT_PAGE_WRIST_GESTURE)) {
+        return false;
+    }
+    // WR_GEST_2..4: 3 contiguous words (little-endian), written as a single 6 byte burst
+    const uint16_t words[3] = {min_flick_peak, min_flick_samples, max_duration};
+    uint8_t buf[6]{};
+    for (size_t i = 0; i < 3; ++i) {
+        buf[2 * i]     = static_cast<uint8_t>(words[i] & 0xFF);
+        buf[2 * i + 1] = static_cast<uint8_t>(words[i] >> 8);
+    }
+    return write_feature_bytes(BMI270_FEATURE_WR_GEST_2_OFS, buf, sizeof(buf));
+}
+
+bool UnitBMI270::read_wrist_gesture_thresholds_impl(uint16_t& min_flick_peak, uint16_t& min_flick_samples,
+                                                    uint16_t& max_duration)
+{
+    if (!writeRegister8(REG_FEAT_PAGE, FEAT_PAGE_WRIST_GESTURE)) {
+        return false;
+    }
+    uint8_t buf[6]{};
+    if (!read_feature_bytes(BMI270_FEATURE_WR_GEST_2_OFS, buf, sizeof(buf))) {
+        return false;
+    }
+    min_flick_peak    = static_cast<uint16_t>(buf[0] | (static_cast<uint16_t>(buf[1]) << 8));
+    min_flick_samples = static_cast<uint16_t>(buf[2] | (static_cast<uint16_t>(buf[3]) << 8));
+    max_duration      = static_cast<uint16_t>(buf[4] | (static_cast<uint16_t>(buf[5]) << 8));
+    return true;
+}
+
+bool UnitBMI270::writePickUpThresholds(const uint16_t min_angle_focus, const uint16_t min_angle_nonfocus,
+                                       const uint16_t max_tilt_lr, const uint16_t max_tilt_ll,
+                                       const uint16_t max_tilt_pd, const uint16_t max_tilt_pu)
+{
+    return write_pickup_thresholds_impl(min_angle_focus, min_angle_nonfocus, max_tilt_lr, max_tilt_ll, max_tilt_pd,
+                                        max_tilt_pu);
+}
+
+bool UnitBMI270::readPickUpThresholds(uint16_t& min_angle_focus, uint16_t& min_angle_nonfocus, uint16_t& max_tilt_lr,
+                                      uint16_t& max_tilt_ll, uint16_t& max_tilt_pd, uint16_t& max_tilt_pu)
+{
+    return read_pickup_thresholds_impl(min_angle_focus, min_angle_nonfocus, max_tilt_lr, max_tilt_ll, max_tilt_pd,
+                                       max_tilt_pu);
+}
+
+bool UnitBMI270::writeWristGestureThresholds(const uint16_t min_flick_peak, const uint16_t min_flick_samples,
+                                             const uint16_t max_duration)
+{
+    return write_wrist_gesture_thresholds_impl(min_flick_peak, min_flick_samples, max_duration);
+}
+
+bool UnitBMI270::readWristGestureThresholds(uint16_t& min_flick_peak, uint16_t& min_flick_samples,
+                                            uint16_t& max_duration)
+{
+    return read_wrist_gesture_thresholds_impl(min_flick_peak, min_flick_samples, max_duration);
+}
+
+bool UnitBMI270::applyBenchPickUpPreset()
+{
+    return writePickUpThresholds(BENCH_PICKUP_MIN_ANGLE_FOCUS, BENCH_PICKUP_MIN_ANGLE_NONFOCUS,
+                                 BENCH_PICKUP_MAX_TILT_LR, BENCH_PICKUP_MAX_TILT_LL, BENCH_PICKUP_MAX_TILT_PD,
+                                 BENCH_PICKUP_MAX_TILT_PU);
+}
+
+bool UnitBMI270::applyBenchWristGesturePreset()
+{
+    return writeWristGestureThresholds(BENCH_GEST_MIN_FLICK_PEAK, BENCH_GEST_MIN_FLICK_SAMPLES,
+                                       BENCH_GEST_MAX_DURATION);
 }
 
 uint16_t UnitBMI270::accelOdrHz() const

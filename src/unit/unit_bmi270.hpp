@@ -302,6 +302,88 @@ public:
     bool resetStepCount();
     ///@}
 
+    ///@name BMI270-specific tuning (chip-specific, not part of the universal motion event config)
+    ///@{
+    /*!
+      @brief BMI270 wrist wear wakeup raw threshold write (datasheet section 4.8.6, WR_WAKEUP_2..7)
+      @note This is BMI270-specific tuning: framework config m5::imu::PickUpGestureConfig stays
+      universal (empty struct). Use this API for bench-tuning or custom sensitivity; other chips
+      implementing PickUpGesture (LSM/ICM/BHI) would provide their own tuning API via their drivers
+      @param min_angle_focus Cosine of minimum expected attitude change within focus position,
+      scaled by 2048 (WR_WAKEUP_2, range 1024-1774, datasheet default 1448)
+      @param min_angle_nonfocus Cosine of minimum expected attitude change moving into focus
+      position, scaled by 2048 (WR_WAKEUP_3, range 1448-1856, datasheet default 1774)
+      @param max_tilt_lr Sine of max downward tilt allowed in landscape right, scaled by 2048
+      (WR_WAKEUP_4, range 700-1024, datasheet default 1024)
+      @param max_tilt_ll Sine of max downward tilt allowed in landscape left, scaled by 2048
+      (WR_WAKEUP_5, range 700-1024, datasheet default 700)
+      @param max_tilt_pd Sine of max backward tilt allowed in portrait down, scaled by 2048
+      (WR_WAKEUP_6, range 0-179, datasheet default 179)
+      @param max_tilt_pu Sine of max forward tilt allowed in portrait up, scaled by 2048
+      (WR_WAKEUP_7, range 1774-1978, datasheet default 1925)
+      @return true if all 6 registers were written successfully
+     */
+    bool writePickUpThresholds(const uint16_t min_angle_focus, const uint16_t min_angle_nonfocus,
+                               const uint16_t max_tilt_lr, const uint16_t max_tilt_ll, const uint16_t max_tilt_pd,
+                               const uint16_t max_tilt_pu);
+    /*!
+      @brief BMI270 wrist wear wakeup raw threshold read (datasheet section 4.8.6, WR_WAKEUP_2..7)
+      @note Reads the chip's current register values, which may differ from a previous
+      writePickUpThresholds() call if the chip has since been re-initialized
+      @param[out] min_angle_focus WR_WAKEUP_2 (see writePickUpThresholds())
+      @param[out] min_angle_nonfocus WR_WAKEUP_3
+      @param[out] max_tilt_lr WR_WAKEUP_4
+      @param[out] max_tilt_ll WR_WAKEUP_5
+      @param[out] max_tilt_pd WR_WAKEUP_6
+      @param[out] max_tilt_pu WR_WAKEUP_7
+      @return true if all 6 registers were read successfully
+     */
+    bool readPickUpThresholds(uint16_t& min_angle_focus, uint16_t& min_angle_nonfocus, uint16_t& max_tilt_lr,
+                              uint16_t& max_tilt_ll, uint16_t& max_tilt_pd, uint16_t& max_tilt_pu);
+    /*!
+      @brief BMI270 wrist navigation gesture raw threshold write (datasheet section 4.8.7,
+      WR_GEST_2..4)
+      @note Framework m5::imu::WristGestureConfig::arm (Left/Right) is written separately by
+      write_wrist_gesture_features() when enableEvent() is called; this API only tunes the
+      timing/peak thresholds
+      @param min_flick_peak Sine of the minimum tilt angle for a flick roll-out, scaled by 2048
+      (WR_GEST_2, range 1448-1774, datasheet default 1774)
+      @param min_flick_samples Minimum time (50Hz samples) between roll-out and roll-in
+      (WR_GEST_3, range 3-5, datasheet default 4)
+      @param max_duration Maximum time (50Hz samples) allowed to complete the gesture
+      (WR_GEST_4, range 150-250, datasheet default 200)
+      @return true if all 3 registers were written successfully
+     */
+    bool writeWristGestureThresholds(const uint16_t min_flick_peak, const uint16_t min_flick_samples,
+                                     const uint16_t max_duration);
+    /*!
+      @brief BMI270 wrist navigation gesture raw threshold read (datasheet section 4.8.7,
+      WR_GEST_2..4)
+      @param[out] min_flick_peak WR_GEST_2 (see writeWristGestureThresholds())
+      @param[out] min_flick_samples WR_GEST_3
+      @param[out] max_duration WR_GEST_4
+      @return true if all 3 registers were read successfully
+     */
+    bool readWristGestureThresholds(uint16_t& min_flick_peak, uint16_t& min_flick_samples, uint16_t& max_duration);
+    /*!
+      @brief Apply a bench-tuned loose preset for the BMI270 wrist wear wakeup thresholds
+      @note Datasheet section 4.8.6 targets wrist-mounted use; bench dynamics (hand-holding the
+      unit and simulating arm motion) differ significantly, so PickUpGesture under-triggers with
+      datasheet defaults. This preset biases every threshold toward the most permissive end of its
+      documented register range, so it fires more readily on the bench. Iterate further via
+      writePickUpThresholds() as needed
+      @return true on success
+     */
+    bool applyBenchPickUpPreset();
+    /*!
+      @brief Apply a bench-tuned loose preset for the BMI270 wrist gesture thresholds
+      @note Same bench-vs-wrist-mounted rationale as applyBenchPickUpPreset(); biases every
+      threshold toward the most permissive end of its documented register range
+      @return true on success
+     */
+    bool applyBenchWristGesturePreset();
+    ///@}
+
 protected:
     virtual bool start_periodic_measurement(const bmi270::AccelRange accel_range, const bmi270::GyroRange gyro_range,
                                             const bmi270::AccelODR accel_odr, const bmi270::GyroODR gyro_odr,
@@ -389,6 +471,21 @@ protected:
     M5_UNIT_COMPONENT_PERIODIC_MEASUREMENT_ADAPTER_HPP_BUILDER(UnitBMI270, bmi270::Data);
 
 private:
+    // Impl helpers for the public writePickUpThresholds()/readPickUpThresholds() wrappers: select
+    // FEAT_PAGE_WRIST_WAKEUP and read/write WR_WAKEUP_2..7 (12 contiguous bytes at
+    // BMI270_FEATURE_WR_WAKEUP_1_OFS + 2) as a single burst. Kept separate from the public API so
+    // the page-select + fail-fast plumbing is not duplicated between write and the bench preset.
+    bool write_pickup_thresholds_impl(const uint16_t min_angle_focus, const uint16_t min_angle_nonfocus,
+                                      const uint16_t max_tilt_lr, const uint16_t max_tilt_ll,
+                                      const uint16_t max_tilt_pd, const uint16_t max_tilt_pu);
+    bool read_pickup_thresholds_impl(uint16_t& min_angle_focus, uint16_t& min_angle_nonfocus, uint16_t& max_tilt_lr,
+                                     uint16_t& max_tilt_ll, uint16_t& max_tilt_pd, uint16_t& max_tilt_pu);
+    // Same role as the pair above, for WR_GEST_2..4 (6 contiguous bytes, page FEAT_PAGE_WRIST_GESTURE)
+    bool write_wrist_gesture_thresholds_impl(const uint16_t min_flick_peak, const uint16_t min_flick_samples,
+                                             const uint16_t max_duration);
+    bool read_wrist_gesture_thresholds_impl(uint16_t& min_flick_peak, uint16_t& min_flick_samples,
+                                            uint16_t& max_duration);
+
     // Settings for begin(); never written to after that. What is currently on the device lives in
     // the live-state members below, so config() keeps meaning "what was configured"
     config_t _cfg{};
@@ -514,12 +611,19 @@ constexpr uint8_t INT_MAP_FEAT_SIG_MOTION_OUT_BIT{1 << 0};
 // wrist_gesture (WR_GEST_1..4) shares FEAT_PAGE 6 with the step counter above; wrist_wear_wakeup
 // (WR_WAKEUP_1..7) has a dedicated page 7 (datasheet section 4.8.6/4.8.7, "FEATURES Pages" register
 // table). Values are FEATURES-window register addresses, for use with read_feature_bytes()/
-// write_feature_bytes() -- same convention as BMI270_FEATURE_STEP_COUNT_SC26_OFS above. Neither
-// offset is read/written yet: this driver only establishes them here, Task 3-5 program the fields.
-constexpr uint8_t FEAT_PAGE_WRIST_GESTURE{0x06};          // same page as step_counter (SC_25/SC_26)
-constexpr uint16_t BMI270_FEATURE_WR_GEST_1_OFS{0x36};    // WR_GEST_1 (page 6)
+// write_feature_bytes() -- same convention as BMI270_FEATURE_STEP_COUNT_SC26_OFS above.
+constexpr uint8_t FEAT_PAGE_WRIST_GESTURE{0x06};        // same page as step_counter (SC_25/SC_26)
+constexpr uint16_t BMI270_FEATURE_WR_GEST_1_OFS{0x36};  // WR_GEST_1 (page 6)
+// WR_GEST_2..4 (min_flick_peak/min_flick_samples/max_duration, datasheet section 4.8.7) are 3
+// contiguous words starting right after WR_GEST_1, read/written as a single 6 byte burst by
+// write_wrist_gesture_thresholds_impl()/read_wrist_gesture_thresholds_impl()
+constexpr uint16_t BMI270_FEATURE_WR_GEST_2_OFS{0x38};
 constexpr uint8_t FEAT_PAGE_WRIST_WAKEUP{0x07};           // dedicated page
 constexpr uint16_t BMI270_FEATURE_WR_WAKEUP_1_OFS{0x30};  // WR_WAKEUP_1 (page 7)
+// WR_WAKEUP_2..7 (min_angle_focus/min_angle_nonfocus/max_tilt_lr/max_tilt_ll/max_tilt_pd/
+// max_tilt_pu, datasheet section 4.8.6) are 6 contiguous words starting right after WR_WAKEUP_1,
+// read/written as a single 12 byte burst by write_pickup_thresholds_impl()/read_pickup_thresholds_impl()
+constexpr uint16_t BMI270_FEATURE_WR_WAKEUP_2_OFS{0x32};
 
 // Direct (non-paged) register carrying the wrist gesture and activity classifier outputs
 // (datasheet section 5.2.32): wr_gest_out at bits[2:0] (values 0-5, same order as
