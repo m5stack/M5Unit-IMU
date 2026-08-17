@@ -231,6 +231,10 @@ float last_az{0.0f};
 float last_g{0.0f};  // magnitude sqrt(ax^2 + ay^2 + az^2)
 m5::imu::MotionEventKind last_fired{m5::imu::MotionEventKind::None};
 
+// Rising-edge tracker for state-event tone gating (AnyMotion / NoMotion / SignificantMotion).
+// Reset on activate() so each slot switch re-arms the first state fire's chime.
+m5::imu::MotionEventKind prev_fired_bits{m5::imu::MotionEventKind::None};
+
 // event_sprite palette indices (a palette sprite interprets color arguments as indices)
 enum : uint8_t {
     PAL_IDLE_BG      = 0,
@@ -278,7 +282,10 @@ void reset_step_count()
 void activate(const size_t idx, const bool reset_step)
 {
     motion.disableAll();
-    const Slot& s = slots[idx];
+    // Clear rising-edge memory so the first state-event fire in the new slot chimes,
+    // regardless of what was firing in the previous slot.
+    prev_fired_bits = m5::imu::MotionEventKind::None;
+    const Slot& s   = slots[idx];
     bool all_ok   = true;
     for (uint8_t i = 0; i < s.count; ++i) {
         if (!motion.enable(s.entries[i].kind, s.entries[i].cfg)) {
@@ -449,34 +456,66 @@ void render_event(const m5::imu::MotionEventStatus& status)
     event_sprite.pushSprite(0, header_h);
 }
 
-//! @brief Log every fired bit this update() cycle carries (may be more than one at once)
+//! @brief Log every fired bit this update() cycle carries (may be more than one at once),
+//! and beep a per-event tone so audible feedback complements the LCD + Serial output.
+//! Tone gating differs by event category:
+//!  - State events (AnyMotion / NoMotion / SignificantMotion) chime only on the rising edge --
+//!    consecutive fires while the underlying condition still holds stay silent, so a device left
+//!    still under a NoMotion slot beeps once at entry rather than 30x per second.
+//!  - Discrete events (FreeFall / StepCounter / ActivityChange / PickUp / WristGesture) chime on
+//!    every fire, since each fire represents a distinct step/gesture/transition the user wants to hear.
+//! Serial log stays per-fire for debugging visibility.
 void log_fired(const m5::imu::MotionEventStatus& status)
 {
-    const auto fired = status.fired;
+    // prev_fired_bits is file-scope (reset in activate()) so rising-edge memory clears cleanly on
+    // slot switch. Storing "fired" (not OR-accumulating) means a bit clears itself once the event
+    // stops firing, so a shake -> stop -> shake sequence re-arms AnyMotion's tone each time.
+    const auto fired       = status.fired;
+    const auto rising_edge = fired & ~prev_fired_bits;
+
     if (m5::imu::any(fired & m5::imu::MotionEventKind::AnyMotion)) {
         M5_LOGI("[FIRED] AnyMotion");
+        if (m5::imu::any(rising_edge & m5::imu::MotionEventKind::AnyMotion)) {
+            M5.Speaker.tone(880, 40);  // A5, state: rising edge only
+        }
     }
     if (m5::imu::any(fired & example::FreeFallBit)) {
         M5_LOGI("[FIRED] FreeFall(SW)");
+        // Discrete alarm: two quick descending beeps. M5 speakers attenuate frequencies below
+        // ~400 Hz, so both pitches stay in the audible range and rely on the descent for urgency.
+        M5.Speaker.tone(1200, 100);
+        M5.Speaker.tone(800, 100);
     }
     if (m5::imu::any(fired & m5::imu::MotionEventKind::NoMotion)) {
         M5_LOGI("[FIRED] NoMotion");
+        if (m5::imu::any(rising_edge & m5::imu::MotionEventKind::NoMotion)) {
+            M5.Speaker.tone(550, 80);  // C#5, state (raised from 330 Hz for audibility on M5 speaker)
+        }
     }
     if (m5::imu::any(fired & m5::imu::MotionEventKind::SignificantMotion)) {
         M5_LOGI("[FIRED] SignificantMotion");
+        if (m5::imu::any(rising_edge & m5::imu::MotionEventKind::SignificantMotion)) {
+            M5.Speaker.tone(1100, 100);  // C#6, state (chip auto-disables after fire anyway)
+        }
     }
     if (m5::imu::any(fired & m5::imu::MotionEventKind::StepCounter)) {
         M5_LOGI("[FIRED] StepCounter %u", static_cast<unsigned>(status.step_count));
+        M5.Speaker.tone(660, 40);  // E5, per-step / per-watermark
     }
     if (m5::imu::any(fired & m5::imu::MotionEventKind::ActivityChange)) {
         M5_LOGI("[FIRED] ActivityChange %s", activity_type_str(status.activity_type));
+        M5.Speaker.tone(550, 80);  // C#5, per-transition
     }
     if (m5::imu::any(fired & m5::imu::MotionEventKind::PickUpGesture)) {
         M5_LOGI("[FIRED] PickUp");
+        M5.Speaker.tone(1320, 80);  // E6, per-gesture
     }
     if (m5::imu::any(fired & m5::imu::MotionEventKind::WristGesture)) {
         M5_LOGI("[FIRED] WristGesture %s", gesture_type_str(status.gesture_type));
+        M5.Speaker.tone(1760, 80);  // A6, per-gesture
     }
+
+    prev_fired_bits = fired;
 }
 
 #if defined(USING_BUILTIN_IMU)
