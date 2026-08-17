@@ -95,6 +95,11 @@ constexpr uint16_t SC26_EN_ACTIVITY_BIT{1u << 13};
 // firmware -- callers of the register must do it themselves.
 constexpr uint32_t SC26_WATERMARK_STEP_UNIT{20};
 
+// REG_WR_GEST_ACT (0x20): wr_gest_out[2:0], act_out[4:3] (BMI270 datasheet section 5.2.32)
+constexpr uint8_t WR_GEST_ACT_GEST_MASK{0x07};
+constexpr uint8_t WR_GEST_ACT_ACT_SHIFT{3};
+constexpr uint8_t WR_GEST_ACT_ACT_MASK{0x03};
+
 // Feature engine internal sample rate is fixed 50Hz (1 sample = 20ms) regardless of accel ODR.
 // Convert a user-facing duration_ms to a sample count. Rejects durations shorter than one sample
 // and counts that do not fit max_samples (13 bit field for no_motion, 16 bit for
@@ -1173,6 +1178,40 @@ bool UnitBMI270::resetStepCount()
     }
 
     _step_count_latest = 0;
+    return true;
+}
+
+bool UnitBMI270::read_wr_gest_act(m5::imu::ActivityType& act, m5::imu::GestureType& gest)
+{
+    uint8_t val{};
+    if (!readRegister8(REG_WR_GEST_ACT, val, 0)) {
+        return false;
+    }
+
+    // wr_gest_out (bits[2:0]) encodes 0 (no gesture) through 5 (flick_out) in the same order as
+    // m5::imu::GestureType (datasheet section 4.8.7 Output details table), so no remap is needed.
+    const uint8_t gest_raw = static_cast<uint8_t>(val & WR_GEST_ACT_GEST_MASK);
+    gest = (gest_raw <= static_cast<uint8_t>(m5::imu::GestureType::WristFlickOut))
+               ? static_cast<m5::imu::GestureType>(gest_raw)
+               : m5::imu::GestureType::None;
+
+    // act_out (bits[4:3]) uses 0=still, 1=walking, 2=running, 3=unknown (datasheet section 4.8.5),
+    // which does not line up with m5::imu::ActivityType (whose Unknown is 0) -- remap explicitly.
+    const uint8_t act_raw = static_cast<uint8_t>((val >> WR_GEST_ACT_ACT_SHIFT) & WR_GEST_ACT_ACT_MASK);
+    switch (act_raw) {
+        case 0:
+            act = m5::imu::ActivityType::Stationary;
+            break;
+        case 1:
+            act = m5::imu::ActivityType::Walking;
+            break;
+        case 2:
+            act = m5::imu::ActivityType::Running;
+            break;
+        default:
+            act = m5::imu::ActivityType::Unknown;
+            break;
+    }
     return true;
 }
 

@@ -239,7 +239,9 @@ public:
     virtual m5::imu::MotionEventKind motionEventSpec() const override
     {
         return m5::imu::MotionEventKind::AnyMotion | m5::imu::MotionEventKind::NoMotion |
-               m5::imu::MotionEventKind::SignificantMotion | m5::imu::MotionEventKind::StepCounter;
+               m5::imu::MotionEventKind::SignificantMotion | m5::imu::MotionEventKind::StepCounter |
+               m5::imu::MotionEventKind::ActivityChange | m5::imu::MotionEventKind::PickUpGesture |
+               m5::imu::MotionEventKind::WristGesture;
     }
     //! @brief Currently enabled motion event bitmap
     virtual m5::imu::MotionEventKind enabledEvents() const override
@@ -262,6 +264,31 @@ public:
     uint16_t stepCounterResolutionSteps() const override
     {
         return 20;
+    }
+    /*!
+      @brief BMI270 activity classifier capability
+      @return Bit mask for Unknown | Stationary | Walking | Running (0x0F); Cycling/InVehicle/
+      Sitting/Standing/Tilting/Other are not classified by this chip's activity feature (§4.8.5)
+     */
+    uint32_t supportedActivityTypes() const override
+    {
+        return (1u << static_cast<uint8_t>(m5::imu::ActivityType::Unknown)) |
+               (1u << static_cast<uint8_t>(m5::imu::ActivityType::Stationary)) |
+               (1u << static_cast<uint8_t>(m5::imu::ActivityType::Walking)) |
+               (1u << static_cast<uint8_t>(m5::imu::ActivityType::Running));
+    }
+    /*!
+      @brief BMI270 wrist gesture classifier capability
+      @return Bit mask for the five wrist-family gestures (WristPushArmDown | WristPivotUp |
+      WristShake | WristFlickIn | WristFlickOut, 0x3E) reported by WR_GEST_OUT (§4.8.7)
+     */
+    uint32_t supportedGestureTypes() const override
+    {
+        return (1u << static_cast<uint8_t>(m5::imu::GestureType::WristPushArmDown)) |
+               (1u << static_cast<uint8_t>(m5::imu::GestureType::WristPivotUp)) |
+               (1u << static_cast<uint8_t>(m5::imu::GestureType::WristShake)) |
+               (1u << static_cast<uint8_t>(m5::imu::GestureType::WristFlickIn)) |
+               (1u << static_cast<uint8_t>(m5::imu::GestureType::WristFlickOut));
     }
     ///@}
 
@@ -332,6 +359,21 @@ protected:
     bool clear_step_counter_features();
     // Reads the 16-bit step count (REG_STEP_COUNT_0/1, little-endian)
     bool read_step_count(uint32_t& out);
+    // Enables/disables SC_26.en_activity (shares the step counter's word, page FEAT_PAGE_STEP_COUNTER)
+    // and maps activity_out onto INT1. Declared here for Task 3-5; not yet implemented.
+    bool write_activity_features(const m5::imu::ActivityChangeConfig& cfg);
+    bool clear_activity_features();
+    // Programs WR_WAKEUP_1..7 (page FEAT_PAGE_WRIST_WAKEUP) and maps wrist_wear_wakeup_out onto INT1.
+    // Declared here for Task 3-5; not yet implemented.
+    bool write_pickup_features(const m5::imu::PickUpGestureConfig& cfg);
+    bool clear_pickup_features();
+    // Programs WR_GEST_1..4 (page FEAT_PAGE_WRIST_GESTURE) and maps wrist_gesture_out onto INT1.
+    // Declared here for Task 3-5; not yet implemented.
+    bool write_wrist_gesture_features(const m5::imu::WristGestureConfig& cfg);
+    bool clear_wrist_gesture_features();
+    // Reads REG_WR_GEST_ACT (0x20, no FEAT_PAGE select needed): wr_gest_out (bits[2:0], maps 1:1 onto
+    // GestureType) and act_out (bits[4:3], remapped -- its raw encoding does not match ActivityType)
+    bool read_wr_gest_act(m5::imu::ActivityType& act, m5::imu::GestureType& gest);
     // Reads len bytes starting at ofs_bytes (an address within the currently FEAT_PAGE-selected
     // FEATURES[16] window, REG_FEATURES..REG_FEATURES+0x0F)
     bool read_feature_bytes(const uint16_t ofs_bytes, uint8_t* buf, const size_t len);
@@ -377,6 +419,16 @@ private:
     m5::imu::StepCounterConfig _step_counter_cfg{};
     uint32_t _step_count_latest{0};
     bool _step_counter_pending{false};
+    // Task 3-5 event bookkeeping (mirrors the members above): config last handed to enableEvent(),
+    // the locally latched pending flag, and the last value decoded by read_wr_gest_act()
+    m5::imu::ActivityChangeConfig _activity_cfg{};
+    m5::imu::PickUpGestureConfig _pickup_cfg{};
+    m5::imu::WristGestureConfig _wrist_gesture_cfg{};
+    bool _activity_pending{false};
+    bool _pickup_pending{false};
+    bool _wrist_gesture_pending{false};
+    m5::imu::ActivityType _activity_latest{m5::imu::ActivityType::Unknown};
+    m5::imu::GestureType _gesture_latest{m5::imu::GestureType::None};
 };
 
 namespace bmi270 {
@@ -455,6 +507,34 @@ constexpr uint8_t INT_MAP_FEAT_ANY_MOTION_OUT_BIT{1 << 6};  // any_motion_out ->
 constexpr uint8_t INT_MAP_FEAT_NO_MOTION_OUT_BIT{1 << 5};
 constexpr uint8_t INT_MAP_FEAT_STEP_COUNTER_OUT_BIT{1 << 1};
 constexpr uint8_t INT_MAP_FEAT_SIG_MOTION_OUT_BIT{1 << 0};
+
+// wrist_gesture (WR_GEST_1..4) shares FEAT_PAGE 6 with the step counter above; wrist_wear_wakeup
+// (WR_WAKEUP_1..7) has a dedicated page 7 (datasheet section 4.8.6/4.8.7, "FEATURES Pages" register
+// table). Values are FEATURES-window register addresses, for use with read_feature_bytes()/
+// write_feature_bytes() -- same convention as BMI270_FEATURE_STEP_COUNT_SC26_OFS above. Neither
+// offset is read/written yet: this driver only establishes them here, Task 3-5 program the fields.
+constexpr uint8_t FEAT_PAGE_WRIST_GESTURE{0x06};         // same page as step_counter (SC_25/SC_26)
+constexpr uint16_t BMI270_FEATURE_WR_GEST_1_OFS{0x36};   // WR_GEST_1 (page 6)
+constexpr uint8_t FEAT_PAGE_WRIST_WAKEUP{0x07};          // dedicated page
+constexpr uint16_t BMI270_FEATURE_WR_WAKEUP_1_OFS{0x30};  // WR_WAKEUP_1 (page 7)
+
+// Direct (non-paged) register carrying the wrist gesture and activity classifier outputs
+// (datasheet section 5.2.32): wr_gest_out at bits[2:0] (values 0-5, same order as
+// m5::imu::GestureType) and act_out at bits[4:3] (values 0-3: 0=still/stationary, 1=walking,
+// 2=running, 3=unknown per section 4.8.5 -- this raw encoding does NOT match m5::imu::ActivityType,
+// whose Unknown is 0; read_wr_gest_act() remaps it). Unlike the FEATURES[16] window above, this
+// register needs no FEAT_PAGE select.
+constexpr uint8_t REG_WR_GEST_ACT{0x20};
+
+// INT_STATUS_0 (datasheet section 5.2.28) additional feature engine output bits
+constexpr uint8_t INT_STATUS_0_ACTIVITY_OUT_BIT{1 << 2};
+constexpr uint8_t INT_STATUS_0_WRIST_WAKEUP_OUT_BIT{1 << 3};
+constexpr uint8_t INT_STATUS_0_WRIST_GESTURE_OUT_BIT{1 << 4};
+
+// INT1_MAP_FEAT (datasheet section 5.2.61) additional bits, same positions as INT_STATUS_0 above
+constexpr uint8_t INT_MAP_FEAT_ACTIVITY_OUT_BIT{1 << 2};
+constexpr uint8_t INT_MAP_FEAT_WRIST_WAKEUP_OUT_BIT{1 << 3};
+constexpr uint8_t INT_MAP_FEAT_WRIST_GESTURE_OUT_BIT{1 << 4};
 
 constexpr uint8_t REG_INIT_CTRL{0x59};
 constexpr uint8_t REG_INIT_ADDR_0{0x5B};  // followed by INIT_ADDR_1 (0x5C)
