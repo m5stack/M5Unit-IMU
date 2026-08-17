@@ -1,0 +1,57 @@
+/*
+ * SPDX-FileCopyrightText: 2026 M5Stack Technology CO LTD
+ *
+ * SPDX-License-Identifier: MIT
+ */
+#include <gtest/gtest.h>
+#include <imu/motion_events.hpp>
+
+using m5::imu::ActivityChangeConfig;
+using m5::imu::MotionEventKind;
+using m5::imu::MotionEventSource;
+using m5::imu::MotionEventStatus;
+
+namespace {
+// No tunable params at this tier; the recorder only verifies that the cfg pointer
+// handed to enableEvent() arrives at the driver unchanged, matching the
+// void*-cfg-per-kind contract declared on MotionEventSource.
+class RecordingSource : public MotionEventSource {
+public:
+    MotionEventKind motionEventSpec() const override
+    {
+        return MotionEventKind::ActivityChange;
+    }
+    MotionEventKind enabledEvents() const override
+    {
+        return MotionEventKind::None;
+    }
+    bool enableEvent(MotionEventKind, const void* cfg) override
+    {
+        last_cfg = cfg;
+        return true;
+    }
+    bool disableEvent(MotionEventKind) override
+    {
+        return true;
+    }
+    bool readEventStatus(MotionEventStatus&) override
+    {
+        return false;
+    }
+    const void* last_cfg{nullptr};
+};
+}  // namespace
+
+TEST(ActivityChangeConfig, default_constructible)
+{
+    ActivityChangeConfig c;
+    (void)c;
+}
+
+TEST(ActivityChangeConfig, passed_through_enableEvent_as_void_ptr_round_trips)
+{
+    ActivityChangeConfig cfg;
+    RecordingSource src;
+    EXPECT_TRUE(src.enableEvent(MotionEventKind::ActivityChange, &cfg));
+    EXPECT_EQ(src.last_cfg, &cfg);
+}

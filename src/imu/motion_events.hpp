@@ -27,9 +27,13 @@ enum class MotionEventKind : uint32_t {
     NoMotion          = 1u << 1,  //!< @brief BMI270 no_motion
     SignificantMotion = 1u << 2,  //!< @brief BMI270 significant_motion
     StepCounter       = 1u << 3,  //!< @brief BMI270 step_counter / detector
-    WristWakeup       = 1u << 4,  //!< @brief BMI270 wrist_wear_wakeup
-    WristGesture      = 1u << 5,  //!< @brief BMI270 wrist_navigation_gesture
-    ActivityChange    = 1u << 6,  //!< @brief BMI270 activity_change_recognition
+    ActivityChange    = 1u << 4,  //!< @brief BMI270 activity_change_recognition; type via ActivityType
+    PickUpGesture     = 1u << 5,  //!< @brief Raise-to-view / wake gesture (Android WAKE_GESTURE equivalent); BMI270 wrist_wear_wakeup
+    TapGesture        = 1u << 6,  //!< @brief Single tap detection; reserved, no BMI270 support at this tier
+    DoubleTapGesture  = 1u << 7,  //!< @brief Double tap detection; reserved, no BMI270 support at this tier
+    TiltGesture       = 1u << 8,  //!< @brief Tilt gesture; reserved, no BMI270 support at this tier
+    WristGesture      = 1u << 9,  //!< @brief BMI270 wrist_navigation_gesture; wrist-family type via GestureType
+    // Reserved bit 10+ for future tiers
 };
 
 //! @brief Bitwise OR
@@ -66,14 +70,52 @@ constexpr bool any(const MotionEventKind c)
 }
 
 /*!
+  @brief Activity classification reported when ActivityChange event fires
+  @note Chip-specific behavior:
+   - BMI270 supports: Unknown, Stationary, Walking, Running
+   - Other chips (LSM6DSOX/ICM/BHI) may report additional types (Cycling/InVehicle/etc.)
+   - Query MotionEventSource::supportedActivityTypes() for the chip-specific set
+ */
+enum class ActivityType : uint8_t {
+    Unknown    = 0,
+    Stationary = 1,
+    Walking    = 2,
+    Running    = 3,
+    Cycling    = 4,
+    InVehicle  = 5,
+    Sitting    = 6,
+    Standing   = 7,
+    Tilting    = 8,
+    // 9-30 reserved for future
+    Other = 31,  //!< @brief Explicit "classified but not in this enum"
+};
+
+/*!
+  @brief Gesture type reported when WristGesture event fires
+  @note Chip-specific behavior:
+   - BMI270 supports the five wrist-family gestures below
+   - Values 6-31 reserved for future wrist-designed chips
+   - Non-wrist gestures (Tap/DoubleTap/PickUp) surface as their own MotionEventKind bits
+ */
+enum class GestureType : uint8_t {
+    None             = 0,
+    WristPushArmDown = 1,
+    WristPivotUp     = 2,
+    WristShake       = 3,
+    WristFlickIn     = 4,
+    WristFlickOut    = 5,
+    // 6-31 reserved
+};
+
+/*!
   @struct MotionEventStatus
   @brief Latched event snapshot returned by readEventStatus() and Controller::latest()
  */
 struct MotionEventStatus {
-    MotionEventKind fired{MotionEventKind::None};  //!< @brief Bitmap of events fired since last read
-    uint32_t step_count{0};                        //!< @brief Set when StepCounter fired (BMI270)
-    uint8_t wrist_gesture{0};                      //!< @brief Set when WristGesture fired (BMI270)
-    uint8_t activity_kind{0};                      //!< @brief Set when ActivityChange fired (BMI270)
+    MotionEventKind fired{MotionEventKind::None};       //!< @brief Bitmap of events fired since last read
+    uint32_t step_count{0};                             //!< @brief Set when StepCounter fired (BMI270)
+    ActivityType activity_type{ActivityType::Unknown};  //!< @brief Latest activity classification (updated when ActivityChange fires)
+    GestureType gesture_type{GestureType::None};        //!< @brief Latest wrist gesture (updated when WristGesture fires)
 };
 
 /*!
@@ -156,6 +198,43 @@ struct StepCounterConfig {
 };
 
 /*!
+  @struct ActivityChangeConfig
+  @brief Activity classifier event configuration
+  @note Chip-specific behavior:
+   - BMI270: enables SC_26.en_activity; activity type is auto-detected, no threshold params
+   - Other chips: may expose classification sensitivity in future extensions
+ */
+struct ActivityChangeConfig {
+    ActivityChangeConfig() = default;
+};
+
+/*!
+  @struct PickUpGestureConfig
+  @brief Raise-to-view / wake gesture configuration (Android WAKE_GESTURE equivalent)
+  @note Chip-specific behavior:
+   - BMI270: enables the wrist wear wakeup feature (WR_WAKEUP_1); angle/tilt thresholds use
+     datasheet defaults from §4.8.6 Table 14. No user-tunable params at this tier.
+   - Other chips (LSM/ICM/BHI): would implement raise-to-wake via their own algorithms
+ */
+struct PickUpGestureConfig {
+    PickUpGestureConfig() = default;
+};
+
+/*!
+  @struct WristGestureConfig
+  @brief Wrist-family gesture detector configuration
+  @note Chip-specific behavior:
+   - BMI270: enables WR_GEST_1..4 (§4.8.7); wearable_arm defaults to Left (chip default 0),
+     other timing/threshold params use datasheet defaults. Not exposed at this tier;
+     may be extended in a future release.
+   - Wrist-specific by definition; non-wrist chips report supportedGestureTypes()==0 and
+     enableEvent(WristGesture, ...) returns false.
+ */
+struct WristGestureConfig {
+    WristGestureConfig() = default;
+};
+
+/*!
   @class MotionEventSource
   @brief HW-backed motion event provider (implemented by unit drivers like UnitBMI270 / UnitMPU6886)
   @details Mirrors AHRS side IMUDataSource: capability query + enable/disable/status read the 4 API to provide
@@ -198,6 +277,27 @@ public:
     virtual uint16_t stepCounterResolutionSteps() const
     {
         return 1;
+    }
+
+    /*!
+      @brief Bit mask of ActivityType values this chip can classify
+      @return OR of (1u << static_cast<uint8_t>(ActivityType::X)) for each supported type.
+              Default 0 means activity classification is not supported.
+     */
+    virtual uint32_t supportedActivityTypes() const
+    {
+        return 0;
+    }
+
+    /*!
+      @brief Bit mask of GestureType values this chip can detect via the WristGesture event
+      @return OR of (1u << static_cast<uint8_t>(GestureType::X)) for each supported gesture.
+              Default 0 means wrist-family gestures are not supported. Non-wrist gestures
+              (Tap/DoubleTap/PickUp) are queried through motionEventSpec(), not this mask.
+     */
+    virtual uint32_t supportedGestureTypes() const
+    {
+        return 0;
     }
 };
 

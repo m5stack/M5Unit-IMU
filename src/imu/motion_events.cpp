@@ -113,8 +113,8 @@ MotionEventKind MotionEventController::update(const float dt)
         if (_entries[i].src->readEventStatus(s)) {
             _latest.fired |= s.fired;
             if (s.step_count) _latest.step_count = s.step_count;
-            if (s.wrist_gesture) _latest.wrist_gesture = s.wrist_gesture;
-            if (s.activity_kind) _latest.activity_kind = s.activity_kind;
+            if (s.gesture_type != GestureType::None) _latest.gesture_type = s.gesture_type;
+            if (s.activity_type != ActivityType::Unknown) _latest.activity_type = s.activity_type;
         }
     }
     return _latest.fired;
