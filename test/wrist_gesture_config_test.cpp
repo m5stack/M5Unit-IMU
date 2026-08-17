@@ -48,6 +48,18 @@ TEST(WristGestureConfig, default_constructible)
     (void)c;
 }
 
+TEST(WristGestureConfig, default_arm_is_left)
+{
+    WristGestureConfig c;
+    EXPECT_EQ(c.arm, WristGestureConfig::Arm::Left);
+}
+
+TEST(WristGestureConfig, explicit_arm_right)
+{
+    WristGestureConfig c{WristGestureConfig::Arm::Right};
+    EXPECT_EQ(c.arm, WristGestureConfig::Arm::Right);
+}
+
 TEST(WristGestureConfig, passed_through_enableEvent_as_void_ptr_round_trips)
 {
     WristGestureConfig cfg;

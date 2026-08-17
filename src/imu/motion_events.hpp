@@ -226,14 +226,24 @@ struct PickUpGestureConfig {
   @struct WristGestureConfig
   @brief Wrist-family gesture detector configuration
   @note Chip-specific behavior:
-   - BMI270: enables WR_GEST_1..4 (§4.8.7); wearable_arm defaults to Left (chip default 0),
-     other timing/threshold params use datasheet defaults. Not exposed yet;
-     may be extended in a future release.
+   - BMI270: 'arm' maps directly to WR_GEST_1.wearable_arm (§4.8.7); other timing/threshold
+     params use datasheet defaults and can be tuned via UnitBMI270 chip-specific API
+     (writeWristGestureThresholds).
    - Wrist-specific by definition; non-wrist chips report supportedGestureTypes()==0 and
      enableEvent(WristGesture, ...) returns false.
  */
 struct WristGestureConfig {
+    //! @brief Wrist-mount arm side (universal concept: wrist gesture chips need to know left/right)
+    enum class Arm : uint8_t {
+        Left  = 0,  //!< @brief Left wrist (chip default)
+        Right = 1,
+    };
+    Arm arm{Arm::Left};
+
     WristGestureConfig() = default;
+    explicit WristGestureConfig(Arm a) : arm{a}
+    {
+    }
 };
 
 /*!

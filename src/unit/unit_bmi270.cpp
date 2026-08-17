@@ -107,8 +107,9 @@ constexpr uint16_t WR_WAKEUP_1_ENABLE_BIT{1u << 4};
 // WR_WAKEUP_1 above, wearable_arm sits between out_conf and enable, so enable lands on bit 5 here,
 // not bit 4. out_conf's reset value 0x5 already selects BIT_4, matching wrist_gesture_out's fixed
 // INT_STATUS_0 position, so this driver only ever needs to touch the enable bit and leaves
-// out_conf/wearable_arm at their defaults (wearable_arm default 0 = Left, not exposed at MVP).
+// out_conf at its default; wearable_arm mirrors WristGestureConfig::arm (0 = Left, 1 = Right).
 constexpr uint16_t WR_GEST_1_ENABLE_BIT{1u << 5};
+constexpr uint16_t WR_GEST_1_WEARABLE_ARM_BIT{1u << 4};
 
 // REG_WR_GEST_ACT (0x20): wr_gest_out[2:0], act_out[4:3] (BMI270 datasheet section 5.2.32)
 constexpr uint8_t WR_GEST_ACT_GEST_MASK{0x07};
@@ -1398,21 +1399,26 @@ bool UnitBMI270::clear_pickup_features()
     return writeRegister8(REG_INT_MAP_FEAT, map);
 }
 
-bool UnitBMI270::write_wrist_gesture_features(const m5::imu::WristGestureConfig& /*cfg*/)
+bool UnitBMI270::write_wrist_gesture_features(const m5::imu::WristGestureConfig& cfg)
 {
     if (!writeRegister8(REG_FEAT_PAGE, FEAT_PAGE_WRIST_GESTURE)) {
         return false;
     }
 
     // WR_GEST_1 is shared with nothing else, but is still read-modify-written to leave out_conf
-    // (already the correct BIT_4 routing at its reset value) and wearable_arm (default 0 = Left,
-    // not exposed at MVP) untouched -- only enable is set here.
+    // (already the correct BIT_4 routing at its reset value) untouched -- enable and wearable_arm
+    // are set here from cfg.
     uint8_t buf[2]{};
     if (!read_feature_bytes(BMI270_FEATURE_WR_GEST_1_OFS, buf, sizeof(buf))) {
         return false;
     }
     uint16_t word = static_cast<uint16_t>(buf[0]) | (static_cast<uint16_t>(buf[1]) << 8);
     word |= WR_GEST_1_ENABLE_BIT;
+    if (cfg.arm == m5::imu::WristGestureConfig::Arm::Right) {
+        word |= WR_GEST_1_WEARABLE_ARM_BIT;
+    } else {
+        word = static_cast<uint16_t>(word & ~WR_GEST_1_WEARABLE_ARM_BIT);
+    }
     buf[0] = static_cast<uint8_t>(word & 0xFF);
     buf[1] = static_cast<uint8_t>(word >> 8);
     if (!write_feature_bytes(BMI270_FEATURE_WR_GEST_1_OFS, buf, sizeof(buf))) {
