@@ -720,6 +720,15 @@ bool UnitBMI270::enableEvent(const m5::imu::MotionEventKind kind, const void* cf
         _enabled_mask |= m5::imu::MotionEventKind::StepCounter;
         _step_counter_pending = false;
         return true;
+    } else if (kind == m5::imu::MotionEventKind::ActivityChange) {
+        const auto& c = *static_cast<const m5::imu::ActivityChangeConfig*>(cfg);
+        if (!write_activity_features(c)) {
+            return false;
+        }
+        _activity_cfg = c;
+        _enabled_mask |= m5::imu::MotionEventKind::ActivityChange;
+        _activity_pending = false;
+        return true;
     }
     return false;
 }
@@ -754,6 +763,13 @@ bool UnitBMI270::disableEvent(const m5::imu::MotionEventKind kind)
         _enabled_mask &= ~m5::imu::MotionEventKind::StepCounter;
         _step_counter_pending = false;
         return true;
+    } else if (kind == m5::imu::MotionEventKind::ActivityChange) {
+        if (!clear_activity_features()) {
+            return false;
+        }
+        _enabled_mask &= ~m5::imu::MotionEventKind::ActivityChange;
+        _activity_pending = false;
+        return true;
     }
     return false;
 }
@@ -762,7 +778,8 @@ bool UnitBMI270::readEventStatus(m5::imu::MotionEventStatus& out)
 {
     const m5::imu::MotionEventKind feature_mask =
         m5::imu::MotionEventKind::AnyMotion | m5::imu::MotionEventKind::NoMotion |
-        m5::imu::MotionEventKind::SignificantMotion | m5::imu::MotionEventKind::StepCounter;
+        m5::imu::MotionEventKind::SignificantMotion | m5::imu::MotionEventKind::StepCounter |
+        m5::imu::MotionEventKind::ActivityChange;
     if (!m5::imu::any(_enabled_mask & feature_mask)) return false;
 
     // INT_STATUS_0 is read-to-clear on the chip and reports every feature engine output in a
@@ -782,6 +799,9 @@ bool UnitBMI270::readEventStatus(m5::imu::MotionEventStatus& out)
         }
         if (status & INT_STATUS_0_STEP_COUNTER_OUT_BIT) {
             _step_counter_pending = true;
+        }
+        if (status & INT_STATUS_0_ACTIVITY_OUT_BIT) {
+            _activity_pending = true;
         }
     }
 
@@ -810,6 +830,16 @@ bool UnitBMI270::readEventStatus(m5::imu::MotionEventStatus& out)
         out.step_count        = _step_count_latest;
         _step_counter_pending = false;
         fired                 = true;
+    }
+    if (m5::imu::any(_enabled_mask & m5::imu::MotionEventKind::ActivityChange) && _activity_pending) {
+        // REG_WR_GEST_ACT reports activity and gesture together in one byte -- refresh both caches
+        // from a single read even though only activity_type is consumed here (WristGesture reuses
+        // the same call and cache).
+        read_wr_gest_act(_activity_latest, _gesture_latest);
+        out.fired |= m5::imu::MotionEventKind::ActivityChange;
+        out.activity_type = _activity_latest;
+        _activity_pending = false;
+        fired             = true;
     }
     return fired;
 }
@@ -1140,6 +1170,63 @@ bool UnitBMI270::read_step_count(uint32_t& out)
     return true;
 }
 
+bool UnitBMI270::write_activity_features(const m5::imu::ActivityChangeConfig& /*cfg*/)
+{
+    if (!writeRegister8(REG_FEAT_PAGE, FEAT_PAGE_STEP_COUNTER)) {
+        return false;
+    }
+
+    // SC_26 is shared with the step counter/detector -- read-modify-write to preserve
+    // en_counter/en_detector/watermark_level/reset_counter, only en_activity is set here.
+    uint8_t buf[2]{};
+    if (!read_feature_bytes(BMI270_FEATURE_STEP_COUNT_SC26_OFS, buf, sizeof(buf))) {
+        return false;
+    }
+    uint16_t word = static_cast<uint16_t>(buf[0]) | (static_cast<uint16_t>(buf[1]) << 8);
+    word |= SC26_EN_ACTIVITY_BIT;
+    buf[0] = static_cast<uint8_t>(word & 0xFF);
+    buf[1] = static_cast<uint8_t>(word >> 8);
+    if (!write_feature_bytes(BMI270_FEATURE_STEP_COUNT_SC26_OFS, buf, sizeof(buf))) {
+        return false;
+    }
+
+    // Map activity_out onto INT1 as well, same reasoning as write_step_counter_features()
+    uint8_t map{};
+    if (!readRegister8(REG_INT_MAP_FEAT, map, 0)) {
+        return false;
+    }
+    map |= INT_MAP_FEAT_ACTIVITY_OUT_BIT;
+    return writeRegister8(REG_INT_MAP_FEAT, map);
+}
+
+bool UnitBMI270::clear_activity_features()
+{
+    if (!writeRegister8(REG_FEAT_PAGE, FEAT_PAGE_STEP_COUNTER)) {
+        return false;
+    }
+
+    // Only en_activity needs clearing to stop the feature; the other SC_26 fields are left as they
+    // were, same reasoning as clear_step_counter_features().
+    uint8_t buf[2]{};
+    if (!read_feature_bytes(BMI270_FEATURE_STEP_COUNT_SC26_OFS, buf, sizeof(buf))) {
+        return false;
+    }
+    uint16_t word = static_cast<uint16_t>(buf[0]) | (static_cast<uint16_t>(buf[1]) << 8);
+    word          = static_cast<uint16_t>(word & ~SC26_EN_ACTIVITY_BIT);
+    buf[0]        = static_cast<uint8_t>(word & 0xFF);
+    buf[1]        = static_cast<uint8_t>(word >> 8);
+    if (!write_feature_bytes(BMI270_FEATURE_STEP_COUNT_SC26_OFS, buf, sizeof(buf))) {
+        return false;
+    }
+
+    uint8_t map{};
+    if (!readRegister8(REG_INT_MAP_FEAT, map, 0)) {
+        return false;
+    }
+    map &= static_cast<uint8_t>(~INT_MAP_FEAT_ACTIVITY_OUT_BIT);
+    return writeRegister8(REG_INT_MAP_FEAT, map);
+}
+
 bool UnitBMI270::resetStepCount()
 {
     if (!writeRegister8(REG_FEAT_PAGE, FEAT_PAGE_STEP_COUNTER)) {
@@ -1191,9 +1278,9 @@ bool UnitBMI270::read_wr_gest_act(m5::imu::ActivityType& act, m5::imu::GestureTy
     // wr_gest_out (bits[2:0]) encodes 0 (no gesture) through 5 (flick_out) in the same order as
     // m5::imu::GestureType (datasheet section 4.8.7 Output details table), so no remap is needed.
     const uint8_t gest_raw = static_cast<uint8_t>(val & WR_GEST_ACT_GEST_MASK);
-    gest = (gest_raw <= static_cast<uint8_t>(m5::imu::GestureType::WristFlickOut))
-               ? static_cast<m5::imu::GestureType>(gest_raw)
-               : m5::imu::GestureType::None;
+    gest                   = (gest_raw <= static_cast<uint8_t>(m5::imu::GestureType::WristFlickOut))
+                                 ? static_cast<m5::imu::GestureType>(gest_raw)
+                                 : m5::imu::GestureType::None;
 
     // act_out (bits[4:3]) uses 0=still, 1=walking, 2=running, 3=unknown (datasheet section 4.8.5),
     // which does not line up with m5::imu::ActivityType (whose Unknown is 0) -- remap explicitly.
