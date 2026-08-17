@@ -79,6 +79,10 @@ struct MotionEventStatus {
 /*!
   @struct AnyMotionConfig
   @brief Configuration for MotionEventKind::AnyMotion (BMI270 any_motion / MPU-6886 WoM)
+  @note Chip-specific behavior:
+   - BMI270: uses feature engine ANYMO_1/ANYMO_2 (§4.8.2), 11-bit threshold at ~0.48mg/LSB scale
+   - MPU-6886: uses per-axis Wake-on-Motion registers ACCEL_WOM_X/Y/Z_THR (0x20-0x22) at 4mg/LSB;
+     duration_ms is ignored (no consecutive-sample HW gate on this chip)
  */
 struct AnyMotionConfig {
     uint16_t threshold_mg{500};  //!< @brief Motion threshold in mg (driver converts to LSB)
@@ -91,6 +95,10 @@ struct AnyMotionConfig {
 /*!
   @struct NoMotionConfig
   @brief BMI270 no_motion feature configuration (§4.8.3)
+  @note Chip-specific behavior:
+   - BMI270: uses feature engine NOMO_1/NOMO_2 (§4.8.3), 13-bit duration @50Hz, 11-bit threshold
+     at ~0.48mg/LSB scale
+   - Other chips: not supported at this tier
  */
 struct NoMotionConfig {
     uint16_t threshold_mg{70};   //!< @brief Slope threshold (default 70mg per datasheet)
@@ -108,6 +116,11 @@ struct NoMotionConfig {
 /*!
   @struct SignificantMotionConfig
   @brief BMI270 significant_motion feature configuration (§4.8.4, Android SIGNIFICANT_MOTION)
+  @note Chip-specific behavior:
+   - BMI270: uses feature engine SIGMO_1 / SIGMO_2 (§4.8.4), 16-bit block_size in 50Hz samples
+     (duration_ms is converted internally). Once triggered the chip auto-disables the feature;
+     re-enable is required to arm the next detection (Android SIGNIFICANT_MOTION convention).
+   - Other chips: not supported at this tier
  */
 struct SignificantMotionConfig {
     uint32_t duration_ms{5000};  //!< @brief block_size in ms (16-bit @ 50Hz, default 5 sec)
@@ -120,6 +133,11 @@ struct SignificantMotionConfig {
 /*!
   @struct StepCounterConfig
   @brief BMI270 step counter/detector configuration (§4.8.8)
+  @note Chip-specific behavior:
+   - BMI270: watermark_level (SC_26 bits 9:0) implicitly has a 20x scaling factor; the driver
+     rounds watermark_steps to the nearest 20 and logs an M5_LIB_LOGW when the requested value
+     cannot be represented exactly. See stepCounterResolutionSteps() for the query API.
+   - Other chips: may resolve at 1-step granularity (LSM6DSOX FSM) or firmware-defined (ICM DMP)
  */
 struct StepCounterConfig {
     //! @brief Firing mode
