@@ -372,61 +372,80 @@ void render_event(const m5::imu::MotionEventStatus& status)
     char step_label[32];
     char act_label[32];
     char gest_label[32];
-    const char* name;
-    uint8_t bg_pal;
-    uint8_t text_pal;
+
+    // Collect every fired event as its own label; background/text palette follows the highest-priority
+    // entry (entries[0]). All labels are then stacked vertically in event_sprite so simultaneous
+    // fires stay visible instead of the lower-priority ones being hidden by the else-if chain.
+    struct FiredLabel {
+        const char* text;
+        uint8_t txt_pal;
+    };
+    FiredLabel entries[8];
+    int n         = 0;
+    uint8_t bg_pal = PAL_IDLE_BG;
+
     if (has_any && has_ff) {
-        name     = "AnyMotion + FreeFall";
-        bg_pal   = PAL_COMBO_BG;
-        text_pal = PAL_TEXT_LT;
-    } else if (has_any) {
-        name     = "AnyMotion";
-        bg_pal   = PAL_ANY_BG;
-        text_pal = PAL_TEXT_LT;
-    } else if (has_ff) {
-        name     = "FreeFall";
-        bg_pal   = PAL_FF_BG;
-        text_pal = PAL_TEXT_DK;
-    } else if (has_step) {
-        std::snprintf(step_label, sizeof(step_label), "Steps: %u", static_cast<unsigned>(status.step_count));
-        name     = step_label;
-        bg_pal   = PAL_STEP_BG;
-        text_pal = PAL_TEXT_LT;
-    } else if (has_sig) {
-        name     = "SigMotion";
-        bg_pal   = PAL_SIGMOTION_BG;
-        text_pal = PAL_TEXT_LT;
-    } else if (has_no) {
-        name     = "NoMotion";
-        bg_pal   = PAL_NOMOTION_BG;
-        text_pal = PAL_TEXT_LT;
-    } else if (has_activity) {
-        std::snprintf(act_label, sizeof(act_label), "Activity: %s", activity_type_str(status.activity_type));
-        name     = act_label;
-        bg_pal   = PAL_ACT_BG;
-        text_pal = PAL_TEXT_LT;
-    } else if (has_pickup) {
-        name     = "PickUp";
-        bg_pal   = PAL_WRIST_BG;
-        text_pal = PAL_TEXT_LT;
-    } else if (has_wrist) {
-        std::snprintf(gest_label, sizeof(gest_label), "Gesture: %s", gesture_type_str(status.gesture_type));
-        name     = gest_label;
-        bg_pal   = PAL_WRIST_BG;
-        text_pal = PAL_TEXT_LT;
+        entries[n++] = {"AnyMotion + FreeFall", PAL_TEXT_LT};
+        bg_pal       = PAL_COMBO_BG;
     } else {
-        name     = slots[current_slot].label;
-        bg_pal   = PAL_IDLE_BG;
-        text_pal = PAL_TEXT_LT;
+        if (has_any) {
+            entries[n++] = {"AnyMotion", PAL_TEXT_LT};
+            if (n == 1) bg_pal = PAL_ANY_BG;
+        }
+        if (has_ff) {
+            entries[n++] = {"FreeFall", PAL_TEXT_DK};
+            if (n == 1) bg_pal = PAL_FF_BG;
+        }
+    }
+    if (has_step) {
+        std::snprintf(step_label, sizeof(step_label), "Steps: %u", static_cast<unsigned>(status.step_count));
+        entries[n++] = {step_label, PAL_TEXT_LT};
+        if (n == 1) bg_pal = PAL_STEP_BG;
+    }
+    if (has_sig) {
+        entries[n++] = {"SigMotion", PAL_TEXT_LT};
+        if (n == 1) bg_pal = PAL_SIGMOTION_BG;
+    }
+    if (has_no) {
+        entries[n++] = {"NoMotion", PAL_TEXT_LT};
+        if (n == 1) bg_pal = PAL_NOMOTION_BG;
+    }
+    if (has_activity) {
+        std::snprintf(act_label, sizeof(act_label), "Activity: %s", activity_type_str(status.activity_type));
+        entries[n++] = {act_label, PAL_TEXT_LT};
+        if (n == 1) bg_pal = PAL_ACT_BG;
+    }
+    if (has_pickup) {
+        entries[n++] = {"PickUp", PAL_TEXT_LT};
+        if (n == 1) bg_pal = PAL_WRIST_BG;
+    }
+    if (has_wrist) {
+        std::snprintf(gest_label, sizeof(gest_label), "Gesture: %s", gesture_type_str(status.gesture_type));
+        entries[n++] = {gest_label, PAL_TEXT_LT};
+        if (n == 1) bg_pal = PAL_WRIST_BG;
+    }
+    if (n == 0) {
+        entries[n++] = {slots[current_slot].label, PAL_TEXT_LT};
+        bg_pal       = PAL_IDLE_BG;
     }
 
     event_sprite.fillSprite(bg_pal);
-    event_sprite.setTextColor(text_pal, bg_pal);
-    fit_text_size(event_sprite, name, event_sprite.width());
-    const int32_t text_w = event_sprite.textWidth(name);
-    const int32_t text_h = event_sprite.fontHeight();
-    event_sprite.setCursor((event_sprite.width() - text_w) / 2, (event_sprite.height() - text_h) / 2);
-    event_sprite.print(name);
+    const int32_t sprite_w = event_sprite.width();
+    const int32_t sprite_h = event_sprite.height();
+    const int32_t line_h   = sprite_h / n;
+    for (int i = 0; i < n; ++i) {
+        event_sprite.setTextColor(entries[i].txt_pal, bg_pal);
+        // Fit both horizontally (width) and vertically (per-line slice)
+        fit_text_size(event_sprite, entries[i].text, sprite_w);
+        while (event_sprite.fontHeight() > line_h - 2 && event_sprite.getTextSizeY() > 1) {
+            event_sprite.setTextSize(event_sprite.getTextSizeX() - 1);
+        }
+        const int32_t text_w = event_sprite.textWidth(entries[i].text);
+        const int32_t text_h = event_sprite.fontHeight();
+        const int32_t y      = i * line_h + (line_h - text_h) / 2;
+        event_sprite.setCursor((sprite_w - text_w) / 2, y);
+        event_sprite.print(entries[i].text);
+    }
     event_sprite.pushSprite(0, header_h);
 }
 
