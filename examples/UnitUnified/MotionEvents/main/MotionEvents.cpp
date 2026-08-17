@@ -159,7 +159,9 @@ const m5::imu::StepCounterConfig step_detector_cfg = [] {
 // empty structs with no tunable params yet, so aggregate default-init is fine (no IIFE needed).
 const m5::imu::ActivityChangeConfig activity_cfg{};
 const m5::imu::PickUpGestureConfig pickup_cfg{};
-const m5::imu::WristGestureConfig wrist_gesture_cfg{};
+// wearable_arm can be toggled at runtime via BtnB (see loop()); keep the config mutable so the
+// pointer stored in slots[] picks up the change on the next activate().
+m5::imu::WristGestureConfig wrist_gesture_cfg{};
 
 // --- Slot cycle table: BtnA click advances through these ---
 struct EventSpec {
@@ -256,6 +258,19 @@ bool slot_uses_step_counter(const size_t idx)
     const Slot& s = slots[idx];
     for (uint8_t i = 0; i < s.count; ++i) {
         if (m5::imu::any(s.entries[i].kind & m5::imu::MotionEventKind::StepCounter)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+//! @brief Does the current slot enable WristGesture? Used to decide whether BtnB should re-activate
+//! the slot after toggling wearable_arm.
+bool slot_uses_wrist_gesture(const size_t idx)
+{
+    const Slot& s = slots[idx];
+    for (uint8_t i = 0; i < s.count; ++i) {
+        if (m5::imu::any(s.entries[i].kind & m5::imu::MotionEventKind::WristGesture)) {
             return true;
         }
     }
@@ -723,6 +738,24 @@ void loop()
         activate(current_slot, true);
         render_event(m5::imu::MotionEventStatus{});
         M5_LOGI("[REARM] slot %s", slots[current_slot].label);
+    }
+    if (M5.BtnB.wasClicked()) {
+        // Toggle wearable_arm (Left <-> Right). The BMI270 wrist gesture algorithm uses the arm side
+        // to interpret roll direction, so flipping it may improve fire accuracy when the user is
+        // holding the device with the "opposite" arm than the chip's default (Left).
+        // Boards without a physical BtnB (e.g. StickC) never fire this branch, so the default arm
+        // is used as-is on those hosts.
+        wrist_gesture_cfg.arm = (wrist_gesture_cfg.arm == m5::imu::WristGestureConfig::Arm::Left)
+                                    ? m5::imu::WristGestureConfig::Arm::Right
+                                    : m5::imu::WristGestureConfig::Arm::Left;
+        M5_LOGI("[MotionEvents] wearable_arm = %s",
+                wrist_gesture_cfg.arm == m5::imu::WristGestureConfig::Arm::Left ? "Left" : "Right");
+        // Re-activate current slot only when it actually enables WristGesture; otherwise the toggle
+        // just updates the config and takes effect the next time a WristGesture slot is entered.
+        if (slot_uses_wrist_gesture(current_slot)) {
+            activate(current_slot, false);
+            render_event(m5::imu::MotionEventStatus{});
+        }
     }
 
     const uint32_t now = m5::utility::millis();
