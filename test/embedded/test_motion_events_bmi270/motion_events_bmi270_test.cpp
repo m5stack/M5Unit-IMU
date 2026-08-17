@@ -269,3 +269,132 @@ TEST_F(TestMotionEventsBMI270, step_counter_initial_count_is_zero)
     EXPECT_EQ(st.step_count, 0u) << "Fresh enable did not start step_count at 0";
     motion.disable(MotionEventKind::StepCounter);
 }
+
+// --- ActivityChange ---
+
+// Register-roundtrip: enable/disable is reflected 1:1 in enabledEvents(). Positive fire (a real
+// activity classification) depends on sustained motion and is not exercised on the bench.
+TEST_F(TestMotionEventsBMI270, activity_change_enable_disable_reflects)
+{
+    SCOPED_TRACE(ustr);
+
+    ActivityChangeConfig cfg;
+    EXPECT_TRUE(motion.enable(MotionEventKind::ActivityChange, &cfg));
+    EXPECT_EQ(motion.enabledEvents() & MotionEventKind::ActivityChange, MotionEventKind::ActivityChange);
+    EXPECT_TRUE(motion.disable(MotionEventKind::ActivityChange));
+    EXPECT_EQ(motion.enabledEvents() & MotionEventKind::ActivityChange, MotionEventKind::None);
+}
+
+// --- PickUpGesture ---
+
+// Register-roundtrip: enable/disable is reflected 1:1 in enabledEvents()
+TEST_F(TestMotionEventsBMI270, pickup_enable_disable_reflects)
+{
+    SCOPED_TRACE(ustr);
+
+    PickUpGestureConfig cfg;
+    EXPECT_TRUE(motion.enable(MotionEventKind::PickUpGesture, &cfg));
+    EXPECT_EQ(motion.enabledEvents() & MotionEventKind::PickUpGesture, MotionEventKind::PickUpGesture);
+    EXPECT_TRUE(motion.disable(MotionEventKind::PickUpGesture));
+    EXPECT_EQ(motion.enabledEvents() & MotionEventKind::PickUpGesture, MotionEventKind::None);
+}
+
+// Negative test: the wrist wear wakeup gesture needs an actual raise-to-view motion, so a board
+// sitting still on the bench for 1 second must not fire it
+TEST_F(TestMotionEventsBMI270, pickup_no_fire_on_bench_within_1sec)
+{
+    SCOPED_TRACE(ustr);
+
+    PickUpGestureConfig cfg;
+    EXPECT_TRUE(motion.enable(MotionEventKind::PickUpGesture, &cfg));
+
+    for (int i = 0; i < 100; ++i) {
+        unit->update();
+        motion.update(0.010f);
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    MotionEventStatus st{};
+    motion.latest(st);
+    EXPECT_FALSE(any(st.fired & MotionEventKind::PickUpGesture));
+    motion.disable(MotionEventKind::PickUpGesture);
+}
+
+// --- WristGesture ---
+
+// Register-roundtrip: enable/disable is reflected 1:1 in enabledEvents()
+TEST_F(TestMotionEventsBMI270, wrist_gesture_enable_disable_reflects)
+{
+    SCOPED_TRACE(ustr);
+
+    WristGestureConfig cfg;
+    EXPECT_TRUE(motion.enable(MotionEventKind::WristGesture, &cfg));
+    EXPECT_EQ(motion.enabledEvents() & MotionEventKind::WristGesture, MotionEventKind::WristGesture);
+    EXPECT_TRUE(motion.disable(MotionEventKind::WristGesture));
+    EXPECT_EQ(motion.enabledEvents() & MotionEventKind::WristGesture, MotionEventKind::None);
+}
+
+// A fresh enable must not carry over a stale gesture classification: the wrist-family gestures
+// need an actual wrist motion to classify, which this bench setup does not provide
+TEST_F(TestMotionEventsBMI270, wrist_gesture_initial_type_is_none)
+{
+    SCOPED_TRACE(ustr);
+
+    WristGestureConfig cfg;
+    EXPECT_TRUE(motion.enable(MotionEventKind::WristGesture, &cfg));
+    unit->update();
+    motion.update(0.010f);
+
+    MotionEventStatus st{};
+    motion.latest(st);
+    EXPECT_EQ(st.gesture_type, GestureType::None) << "Fresh enable should start gesture_type = None";
+    motion.disable(MotionEventKind::WristGesture);
+}
+
+// --- Capability queries ---
+
+// supportedActivityTypes() advertises exactly the activity classes the chip's feature engine
+// can report (Unknown/Stationary/Walking/Running); Cycling/InVehicle/etc. are not classified
+TEST_F(TestMotionEventsBMI270, supported_activity_types_matches_bmi270)
+{
+    SCOPED_TRACE(ustr);
+
+    const uint32_t mask = unit->supportedActivityTypes();
+    const uint32_t expected =
+        (1u << static_cast<uint8_t>(ActivityType::Unknown)) | (1u << static_cast<uint8_t>(ActivityType::Stationary)) |
+        (1u << static_cast<uint8_t>(ActivityType::Walking)) | (1u << static_cast<uint8_t>(ActivityType::Running));
+    EXPECT_EQ(mask, expected);
+}
+
+// supportedGestureTypes() advertises exactly the five wrist-family gestures WR_GEST_OUT can report
+TEST_F(TestMotionEventsBMI270, supported_gesture_types_matches_bmi270)
+{
+    SCOPED_TRACE(ustr);
+
+    const uint32_t mask = unit->supportedGestureTypes();
+    const uint32_t expected = (1u << static_cast<uint8_t>(GestureType::WristPushArmDown)) |
+                              (1u << static_cast<uint8_t>(GestureType::WristPivotUp)) |
+                              (1u << static_cast<uint8_t>(GestureType::WristShake)) |
+                              (1u << static_cast<uint8_t>(GestureType::WristFlickIn)) |
+                              (1u << static_cast<uint8_t>(GestureType::WristFlickOut));
+    EXPECT_EQ(mask, expected);
+}
+
+// --- Non-support negative tests (BMI270 does not implement these) ---
+
+// TapGesture is not in motionEventSpec() for this chip, so enable() must reject it
+TEST_F(TestMotionEventsBMI270, tap_gesture_enable_returns_false_on_bmi270)
+{
+    SCOPED_TRACE(ustr);
+
+    EXPECT_FALSE(motion.enable(MotionEventKind::TapGesture, nullptr));
+    EXPECT_EQ(motion.enabledEvents() & MotionEventKind::TapGesture, MotionEventKind::None);
+}
+
+// TiltGesture is not in motionEventSpec() for this chip, so enable() must reject it
+TEST_F(TestMotionEventsBMI270, tilt_gesture_enable_returns_false_on_bmi270)
+{
+    SCOPED_TRACE(ustr);
+
+    EXPECT_FALSE(motion.enable(MotionEventKind::TiltGesture, nullptr));
+    EXPECT_EQ(motion.enabledEvents() & MotionEventKind::TiltGesture, MotionEventKind::None);
+}
