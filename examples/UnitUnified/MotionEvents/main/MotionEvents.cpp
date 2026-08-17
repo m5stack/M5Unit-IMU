@@ -176,7 +176,7 @@ const Slot slots[] = {
     {"AnyMotion+FreeFall", 2, {{m5::imu::MotionEventKind::AnyMotion, &any_cfg}, {example::FreeFallBit, nullptr}}},
     {"NoMotion", 1, {{m5::imu::MotionEventKind::NoMotion, &no_motion_cfg}}},
     {"SignificantMotion", 1, {{m5::imu::MotionEventKind::SignificantMotion, &sig_motion_cfg}}},
-    {"StepCounter@20", 1, {{m5::imu::MotionEventKind::StepCounter, &step_counter_cfg}}},
+    {"StepCounter", 1, {{m5::imu::MotionEventKind::StepCounter, &step_counter_cfg}}},
     {"StepDetector", 1, {{m5::imu::MotionEventKind::StepCounter, &step_detector_cfg}}},
     // Detector mode fires on every single step, giving a demo-friendly overlap with the SW plugin;
     // Counter mode's 20-step watermark would fire too rarely to see the combo in a short bench test.
