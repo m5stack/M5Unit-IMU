@@ -102,6 +102,14 @@ constexpr uint32_t SC26_WATERMARK_STEP_UNIT{20};
 // ever needs to touch the enable bit and leaves out_conf at its default.
 constexpr uint16_t WR_WAKEUP_1_ENABLE_BIT{1u << 4};
 
+// WR_GEST_1 (word, BMI270_FEATURE_WR_GEST_1_OFS, page FEAT_PAGE_WRIST_GESTURE): out_conf[3:0],
+// wearable_arm[4], enable[5] (BMI270 datasheet section 4.8.7, page 6, address 0x36). Unlike
+// WR_WAKEUP_1 above, wearable_arm sits between out_conf and enable, so enable lands on bit 5 here,
+// not bit 4. out_conf's reset value 0x5 already selects BIT_4, matching wrist_gesture_out's fixed
+// INT_STATUS_0 position, so this driver only ever needs to touch the enable bit and leaves
+// out_conf/wearable_arm at their defaults (wearable_arm default 0 = Left, not exposed at MVP).
+constexpr uint16_t WR_GEST_1_ENABLE_BIT{1u << 5};
+
 // REG_WR_GEST_ACT (0x20): wr_gest_out[2:0], act_out[4:3] (BMI270 datasheet section 5.2.32)
 constexpr uint8_t WR_GEST_ACT_GEST_MASK{0x07};
 constexpr uint8_t WR_GEST_ACT_ACT_SHIFT{3};
@@ -745,6 +753,15 @@ bool UnitBMI270::enableEvent(const m5::imu::MotionEventKind kind, const void* cf
         _enabled_mask |= m5::imu::MotionEventKind::PickUpGesture;
         _pickup_pending = false;
         return true;
+    } else if (kind == m5::imu::MotionEventKind::WristGesture) {
+        const auto& c = *static_cast<const m5::imu::WristGestureConfig*>(cfg);
+        if (!write_wrist_gesture_features(c)) {
+            return false;
+        }
+        _wrist_gesture_cfg = c;
+        _enabled_mask |= m5::imu::MotionEventKind::WristGesture;
+        _wrist_gesture_pending = false;
+        return true;
     }
     return false;
 }
@@ -793,6 +810,13 @@ bool UnitBMI270::disableEvent(const m5::imu::MotionEventKind kind)
         _enabled_mask &= ~m5::imu::MotionEventKind::PickUpGesture;
         _pickup_pending = false;
         return true;
+    } else if (kind == m5::imu::MotionEventKind::WristGesture) {
+        if (!clear_wrist_gesture_features()) {
+            return false;
+        }
+        _enabled_mask &= ~m5::imu::MotionEventKind::WristGesture;
+        _wrist_gesture_pending = false;
+        return true;
     }
     return false;
 }
@@ -802,7 +826,8 @@ bool UnitBMI270::readEventStatus(m5::imu::MotionEventStatus& out)
     const m5::imu::MotionEventKind feature_mask =
         m5::imu::MotionEventKind::AnyMotion | m5::imu::MotionEventKind::NoMotion |
         m5::imu::MotionEventKind::SignificantMotion | m5::imu::MotionEventKind::StepCounter |
-        m5::imu::MotionEventKind::ActivityChange | m5::imu::MotionEventKind::PickUpGesture;
+        m5::imu::MotionEventKind::ActivityChange | m5::imu::MotionEventKind::PickUpGesture |
+        m5::imu::MotionEventKind::WristGesture;
     if (!m5::imu::any(_enabled_mask & feature_mask)) return false;
 
     // INT_STATUS_0 is read-to-clear on the chip and reports every feature engine output in a
@@ -828,6 +853,9 @@ bool UnitBMI270::readEventStatus(m5::imu::MotionEventStatus& out)
         }
         if (status & INT_STATUS_0_WRIST_WAKEUP_OUT_BIT) {
             _pickup_pending = true;
+        }
+        if (status & INT_STATUS_0_WRIST_GESTURE_OUT_BIT) {
+            _wrist_gesture_pending = true;
         }
     }
 
@@ -873,6 +901,17 @@ bool UnitBMI270::readEventStatus(m5::imu::MotionEventStatus& out)
         out.fired |= m5::imu::MotionEventKind::PickUpGesture;
         _pickup_pending = false;
         fired           = true;
+    }
+    if (m5::imu::any(_enabled_mask & m5::imu::MotionEventKind::WristGesture) && _wrist_gesture_pending) {
+        // Refresh activity+gesture cache (single register read updates both). ActivityChange
+        // consumption above may have already read this in the same tick, but a second read is
+        // cheap and side-effect free: REG_WR_GEST_ACT is not read-to-clear, it just mirrors the
+        // feature engine's latest classification, so reading it twice yields the same value.
+        read_wr_gest_act(_activity_latest, _gesture_latest);
+        out.fired |= m5::imu::MotionEventKind::WristGesture;
+        out.gesture_type       = _gesture_latest;
+        _wrist_gesture_pending = false;
+        fired                  = true;
     }
     return fired;
 }
@@ -1356,6 +1395,64 @@ bool UnitBMI270::clear_pickup_features()
         return false;
     }
     map &= static_cast<uint8_t>(~INT_MAP_FEAT_WRIST_WAKEUP_OUT_BIT);
+    return writeRegister8(REG_INT_MAP_FEAT, map);
+}
+
+bool UnitBMI270::write_wrist_gesture_features(const m5::imu::WristGestureConfig& /*cfg*/)
+{
+    if (!writeRegister8(REG_FEAT_PAGE, FEAT_PAGE_WRIST_GESTURE)) {
+        return false;
+    }
+
+    // WR_GEST_1 is shared with nothing else, but is still read-modify-written to leave out_conf
+    // (already the correct BIT_4 routing at its reset value) and wearable_arm (default 0 = Left,
+    // not exposed at MVP) untouched -- only enable is set here.
+    uint8_t buf[2]{};
+    if (!read_feature_bytes(BMI270_FEATURE_WR_GEST_1_OFS, buf, sizeof(buf))) {
+        return false;
+    }
+    uint16_t word = static_cast<uint16_t>(buf[0]) | (static_cast<uint16_t>(buf[1]) << 8);
+    word |= WR_GEST_1_ENABLE_BIT;
+    buf[0] = static_cast<uint8_t>(word & 0xFF);
+    buf[1] = static_cast<uint8_t>(word >> 8);
+    if (!write_feature_bytes(BMI270_FEATURE_WR_GEST_1_OFS, buf, sizeof(buf))) {
+        return false;
+    }
+
+    // Map wrist_gesture_out onto INT1 as well, same reasoning as write_pickup_features()
+    uint8_t map{};
+    if (!readRegister8(REG_INT_MAP_FEAT, map, 0)) {
+        return false;
+    }
+    map |= INT_MAP_FEAT_WRIST_GESTURE_OUT_BIT;
+    return writeRegister8(REG_INT_MAP_FEAT, map);
+}
+
+bool UnitBMI270::clear_wrist_gesture_features()
+{
+    if (!writeRegister8(REG_FEAT_PAGE, FEAT_PAGE_WRIST_GESTURE)) {
+        return false;
+    }
+
+    // Only enable needs clearing to stop the feature; out_conf and wearable_arm are left as they
+    // were, same reasoning as clear_pickup_features().
+    uint8_t buf[2]{};
+    if (!read_feature_bytes(BMI270_FEATURE_WR_GEST_1_OFS, buf, sizeof(buf))) {
+        return false;
+    }
+    uint16_t word = static_cast<uint16_t>(buf[0]) | (static_cast<uint16_t>(buf[1]) << 8);
+    word          = static_cast<uint16_t>(word & ~WR_GEST_1_ENABLE_BIT);
+    buf[0]        = static_cast<uint8_t>(word & 0xFF);
+    buf[1]        = static_cast<uint8_t>(word >> 8);
+    if (!write_feature_bytes(BMI270_FEATURE_WR_GEST_1_OFS, buf, sizeof(buf))) {
+        return false;
+    }
+
+    uint8_t map{};
+    if (!readRegister8(REG_INT_MAP_FEAT, map, 0)) {
+        return false;
+    }
+    map &= static_cast<uint8_t>(~INT_MAP_FEAT_WRIST_GESTURE_OUT_BIT);
     return writeRegister8(REG_INT_MAP_FEAT, map);
 }
 

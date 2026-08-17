@@ -367,9 +367,12 @@ protected:
     // Declared here for Task 3-5; not yet implemented.
     bool write_pickup_features(const m5::imu::PickUpGestureConfig& cfg);
     bool clear_pickup_features();
-    // Programs WR_GEST_1..4 (page FEAT_PAGE_WRIST_GESTURE) and maps wrist_gesture_out onto INT1.
-    // Declared here for Task 3-5; not yet implemented.
+    // Programs WR_GEST_1 (page FEAT_PAGE_WRIST_GESTURE) and maps wrist_gesture_out onto INT1.
+    // Only the enable bit is touched; out_conf/wearable_arm and WR_GEST_2..4 stay at their
+    // datasheet defaults (see unit_bmi270.cpp for the register layout).
     bool write_wrist_gesture_features(const m5::imu::WristGestureConfig& cfg);
+    // Clears the wrist_gesture feature's enable bit and its INT_MAP_FEAT routing, without
+    // disturbing out_conf/wearable_arm written elsewhere
     bool clear_wrist_gesture_features();
     // Reads REG_WR_GEST_ACT (0x20, no FEAT_PAGE select needed): wr_gest_out (bits[2:0], maps 1:1 onto
     // GestureType) and act_out (bits[4:3], remapped -- its raw encoding does not match ActivityType)
