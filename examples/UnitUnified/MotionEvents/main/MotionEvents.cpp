@@ -638,6 +638,24 @@ void setup()
     } else {
         M5_LOGI("Slot table: %u slots", static_cast<unsigned>(slot_count));
     }
+
+    // Apply BMI270-specific bench-tuned WristWakeup/Gesture thresholds so bench held-in-hand
+    // motion is more likely to fire PickUp/WristGesture. Datasheet defaults target wrist-mounted
+    // use; bench dynamics differ. Framework config (PickUpGestureConfig / WristGestureConfig) stays
+    // universal -- the loose thresholds are applied via the BMI270 chip-specific API here.
+    // Non-BMI270 hosts (MPU-6886 on UnitMiniIMU and built-in Core2 v1.1) do not expose these
+    // gestures at all, so no preset is applied.
+#if defined(USING_BUILTIN_IMU)
+    if (bmi_ptr) {
+        bmi_ptr->applyBenchPickUpPreset();
+        bmi_ptr->applyBenchWristGesturePreset();
+    }
+#elif defined(USING_UNIT_DOF6) || defined(USING_UNIT_DOF9) || defined(USING_UNIT_DOF10) || \
+    defined(USING_UNIT_MINI_IMU_PRO)
+    hw_source_ptr->applyBenchPickUpPreset();
+    hw_source_ptr->applyBenchWristGesturePreset();
+#endif
+
     activate(current_slot, false);
 
     render_event(m5::imu::MotionEventStatus{});  // idle
