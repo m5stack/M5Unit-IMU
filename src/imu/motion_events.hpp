@@ -28,12 +28,13 @@ enum class MotionEventKind : uint32_t {
     SignificantMotion = 1u << 2,  //!< @brief BMI270 significant_motion
     StepCounter       = 1u << 3,  //!< @brief BMI270 step_counter / detector
     ActivityChange    = 1u << 4,  //!< @brief BMI270 activity_change_recognition; type via ActivityType
-    PickUpGesture     = 1u << 5,  //!< @brief Raise-to-view / wake gesture (Android WAKE_GESTURE equivalent); BMI270 wrist_wear_wakeup
-    TapGesture        = 1u << 6,  //!< @brief Single tap detection; reserved, no BMI270 support at this tier
-    DoubleTapGesture  = 1u << 7,  //!< @brief Double tap detection; reserved, no BMI270 support at this tier
-    TiltGesture       = 1u << 8,  //!< @brief Tilt gesture; reserved, no BMI270 support at this tier
-    WristGesture      = 1u << 9,  //!< @brief BMI270 wrist_navigation_gesture; wrist-family type via GestureType
-    // Reserved bit 10+ for future tiers
+    PickUpGesture =
+        1u << 5,  //!< @brief Raise-to-view / wake gesture (Android WAKE_GESTURE equivalent); BMI270 wrist_wear_wakeup
+    TapGesture       = 1u << 6,  //!< @brief Single tap detection; reserved, no BMI270 support
+    DoubleTapGesture = 1u << 7,  //!< @brief Double tap detection; reserved, no BMI270 support
+    TiltGesture      = 1u << 8,  //!< @brief Tilt gesture; reserved, no BMI270 support
+    WristGesture     = 1u << 9,  //!< @brief BMI270 wrist_navigation_gesture; wrist-family type via GestureType
+    // Reserved bit 10+ for future events
 };
 
 //! @brief Bitwise OR
@@ -112,10 +113,11 @@ enum class GestureType : uint8_t {
   @brief Latched event snapshot returned by readEventStatus() and Controller::latest()
  */
 struct MotionEventStatus {
-    MotionEventKind fired{MotionEventKind::None};       //!< @brief Bitmap of events fired since last read
-    uint32_t step_count{0};                             //!< @brief Set when StepCounter fired (BMI270)
-    ActivityType activity_type{ActivityType::Unknown};  //!< @brief Latest activity classification (updated when ActivityChange fires)
-    GestureType gesture_type{GestureType::None};        //!< @brief Latest wrist gesture (updated when WristGesture fires)
+    MotionEventKind fired{MotionEventKind::None};  //!< @brief Bitmap of events fired since last read
+    uint32_t step_count{0};                        //!< @brief Set when StepCounter fired (BMI270)
+    ActivityType activity_type{
+        ActivityType::Unknown};  //!< @brief Latest activity classification (updated when ActivityChange fires)
+    GestureType gesture_type{GestureType::None};  //!< @brief Latest wrist gesture (updated when WristGesture fires)
 };
 
 /*!
@@ -140,7 +142,7 @@ struct AnyMotionConfig {
   @note Chip-specific behavior:
    - BMI270: uses feature engine NOMO_1/NOMO_2 (§4.8.3), 13-bit duration @50Hz, 11-bit threshold
      at ~0.48mg/LSB scale
-   - Other chips: not supported at this tier
+   - Other chips: not supported
  */
 struct NoMotionConfig {
     uint16_t threshold_mg{70};   //!< @brief Slope threshold (default 70mg per datasheet)
@@ -162,7 +164,7 @@ struct NoMotionConfig {
    - BMI270: uses feature engine SIGMO_1 / SIGMO_2 (§4.8.4), 16-bit block_size in 50Hz samples
      (duration_ms is converted internally). Once triggered the chip auto-disables the feature;
      re-enable is required to arm the next detection (Android SIGNIFICANT_MOTION convention).
-   - Other chips: not supported at this tier
+   - Other chips: not supported
  */
 struct SignificantMotionConfig {
     uint32_t duration_ms{5000};  //!< @brief block_size in ms (16-bit @ 50Hz, default 5 sec)
@@ -213,7 +215,7 @@ struct ActivityChangeConfig {
   @brief Raise-to-view / wake gesture configuration (Android WAKE_GESTURE equivalent)
   @note Chip-specific behavior:
    - BMI270: enables the wrist wear wakeup feature (WR_WAKEUP_1); angle/tilt thresholds use
-     datasheet defaults from §4.8.6 Table 14. No user-tunable params at this tier.
+     datasheet defaults from §4.8.6 Table 14. No user-tunable params yet.
    - Other chips (LSM/ICM/BHI): would implement raise-to-wake via their own algorithms
  */
 struct PickUpGestureConfig {
@@ -225,7 +227,7 @@ struct PickUpGestureConfig {
   @brief Wrist-family gesture detector configuration
   @note Chip-specific behavior:
    - BMI270: enables WR_GEST_1..4 (§4.8.7); wearable_arm defaults to Left (chip default 0),
-     other timing/threshold params use datasheet defaults. Not exposed at this tier;
+     other timing/threshold params use datasheet defaults. Not exposed yet;
      may be extended in a future release.
    - Wrist-specific by definition; non-wrist chips report supportedGestureTypes()==0 and
      enableEvent(WristGesture, ...) returns false.

@@ -370,7 +370,7 @@ TEST_F(TestMotionEventsBMI270, supported_gesture_types_matches_bmi270)
 {
     SCOPED_TRACE(ustr);
 
-    const uint32_t mask = unit->supportedGestureTypes();
+    const uint32_t mask     = unit->supportedGestureTypes();
     const uint32_t expected = (1u << static_cast<uint8_t>(GestureType::WristPushArmDown)) |
                               (1u << static_cast<uint8_t>(GestureType::WristPivotUp)) |
                               (1u << static_cast<uint8_t>(GestureType::WristShake)) |

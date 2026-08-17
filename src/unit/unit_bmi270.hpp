@@ -516,9 +516,9 @@ constexpr uint8_t INT_MAP_FEAT_SIG_MOTION_OUT_BIT{1 << 0};
 // table). Values are FEATURES-window register addresses, for use with read_feature_bytes()/
 // write_feature_bytes() -- same convention as BMI270_FEATURE_STEP_COUNT_SC26_OFS above. Neither
 // offset is read/written yet: this driver only establishes them here, Task 3-5 program the fields.
-constexpr uint8_t FEAT_PAGE_WRIST_GESTURE{0x06};         // same page as step_counter (SC_25/SC_26)
-constexpr uint16_t BMI270_FEATURE_WR_GEST_1_OFS{0x36};   // WR_GEST_1 (page 6)
-constexpr uint8_t FEAT_PAGE_WRIST_WAKEUP{0x07};          // dedicated page
+constexpr uint8_t FEAT_PAGE_WRIST_GESTURE{0x06};          // same page as step_counter (SC_25/SC_26)
+constexpr uint16_t BMI270_FEATURE_WR_GEST_1_OFS{0x36};    // WR_GEST_1 (page 6)
+constexpr uint8_t FEAT_PAGE_WRIST_WAKEUP{0x07};           // dedicated page
 constexpr uint16_t BMI270_FEATURE_WR_WAKEUP_1_OFS{0x30};  // WR_WAKEUP_1 (page 7)
 
 // Direct (non-paged) register carrying the wrist gesture and activity classifier outputs

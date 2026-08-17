@@ -12,7 +12,7 @@ using m5::imu::MotionEventSource;
 using m5::imu::MotionEventStatus;
 
 namespace {
-// No tunable params at this tier; the recorder only verifies that the cfg pointer
+// No tunable params yet; the recorder only verifies that the cfg pointer
 // handed to enableEvent() arrives at the driver unchanged, matching the
 // void*-cfg-per-kind contract declared on MotionEventSource.
 class RecordingSource : public MotionEventSource {
