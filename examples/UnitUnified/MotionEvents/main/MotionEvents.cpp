@@ -155,6 +155,12 @@ const m5::imu::StepCounterConfig step_detector_cfg = [] {
     return c;
 }();
 
+// --- BMI270-only event configs (ActivityChange / PickUpGesture / WristGesture). All three are
+// empty structs with no tunable params yet, so aggregate default-init is fine (no IIFE needed).
+const m5::imu::ActivityChangeConfig activity_cfg{};
+const m5::imu::PickUpGestureConfig pickup_cfg{};
+const m5::imu::WristGestureConfig wrist_gesture_cfg{};
+
 // --- Slot cycle table: BtnA click advances through these ---
 struct EventSpec {
     m5::imu::MotionEventKind kind;
@@ -183,6 +189,21 @@ const Slot slots[] = {
     {"StepCounter+FreeFall",
      2,
      {{m5::imu::MotionEventKind::StepCounter, &step_detector_cfg}, {example::FreeFallBit, nullptr}}},
+    // BMI270-only events below (ActivityChange / PickUpGesture / WristGesture); MPU-6886 host stays
+    // at SLOT_COUNT_SAFE and never reaches these slots.
+    {"ActivityChange", 1, {{m5::imu::MotionEventKind::ActivityChange, &activity_cfg}}},
+    // Detector mode reused here for the same demo-friendliness reason as StepCounter+FreeFall above.
+    {"Activity+Step+NoMotion",
+     3,
+     {{m5::imu::MotionEventKind::ActivityChange, &activity_cfg},
+      {m5::imu::MotionEventKind::StepCounter, &step_detector_cfg},
+      {m5::imu::MotionEventKind::NoMotion, &no_motion_cfg}}},
+    {"PickUp", 1, {{m5::imu::MotionEventKind::PickUpGesture, &pickup_cfg}}},
+    {"WristGesture", 1, {{m5::imu::MotionEventKind::WristGesture, &wrist_gesture_cfg}}},
+    {"PickUp+WristGesture",
+     2,
+     {{m5::imu::MotionEventKind::PickUpGesture, &pickup_cfg},
+      {m5::imu::MotionEventKind::WristGesture, &wrist_gesture_cfg}}},
 };
 // slots that both chips handle correctly (AnyMotion, FreeFall SW). MPU-6886 has no HW support for
 // NoMotion / SignificantMotion / StepCounter at all, so every slot beyond this stays BMI270-only.
@@ -221,6 +242,8 @@ enum : uint8_t {
     PAL_STEP_BG      = 6,
     PAL_NOMOTION_BG  = 7,
     PAL_SIGMOTION_BG = 8,
+    PAL_ACT_BG       = 9,
+    PAL_WRIST_BG     = 10,
 };
 
 //! @brief True if any entry of the given slot enables StepCounter
@@ -282,6 +305,40 @@ void activate(const size_t idx, const bool reset_step)
     header_sprite.pushSprite(0, 0);
 }
 
+//! @brief Map ActivityType to a short LCD-friendly label
+const char* activity_type_str(const m5::imu::ActivityType t)
+{
+    switch (t) {
+        case m5::imu::ActivityType::Stationary:
+            return "Still";
+        case m5::imu::ActivityType::Walking:
+            return "Walk";
+        case m5::imu::ActivityType::Running:
+            return "Run";
+        default:
+            return "?";  // Unknown / not yet classified
+    }
+}
+
+//! @brief Map GestureType to a short LCD-friendly label
+const char* gesture_type_str(const m5::imu::GestureType t)
+{
+    switch (t) {
+        case m5::imu::GestureType::WristPushArmDown:
+            return "PushDown";
+        case m5::imu::GestureType::WristPivotUp:
+            return "PivotUp";
+        case m5::imu::GestureType::WristShake:
+            return "Shake";
+        case m5::imu::GestureType::WristFlickIn:
+            return "FlickIn";
+        case m5::imu::GestureType::WristFlickOut:
+            return "FlickOut";
+        default:
+            return "?";  // None / not yet classified
+    }
+}
+
 //! @brief Pick the text size that fits `text` inside `width`, starting from a width-proportional guess
 uint8_t fit_text_size(M5Canvas& spr, const char* text, const int32_t width)
 {
@@ -302,14 +359,19 @@ void render_event(const m5::imu::MotionEventStatus& status)
         return;
     }
 
-    const auto fired    = status.fired;
-    const bool has_any  = m5::imu::any(fired & m5::imu::MotionEventKind::AnyMotion);
-    const bool has_ff   = m5::imu::any(fired & example::FreeFallBit);
-    const bool has_step = m5::imu::any(fired & m5::imu::MotionEventKind::StepCounter);
-    const bool has_no   = m5::imu::any(fired & m5::imu::MotionEventKind::NoMotion);
-    const bool has_sig  = m5::imu::any(fired & m5::imu::MotionEventKind::SignificantMotion);
+    const auto fired        = status.fired;
+    const bool has_any      = m5::imu::any(fired & m5::imu::MotionEventKind::AnyMotion);
+    const bool has_ff       = m5::imu::any(fired & example::FreeFallBit);
+    const bool has_step     = m5::imu::any(fired & m5::imu::MotionEventKind::StepCounter);
+    const bool has_no       = m5::imu::any(fired & m5::imu::MotionEventKind::NoMotion);
+    const bool has_sig      = m5::imu::any(fired & m5::imu::MotionEventKind::SignificantMotion);
+    const bool has_activity = m5::imu::any(fired & m5::imu::MotionEventKind::ActivityChange);
+    const bool has_pickup   = m5::imu::any(fired & m5::imu::MotionEventKind::PickUpGesture);
+    const bool has_wrist    = m5::imu::any(fired & m5::imu::MotionEventKind::WristGesture);
 
     char step_label[32];
+    char act_label[32];
+    char gest_label[32];
     const char* name;
     uint8_t bg_pal;
     uint8_t text_pal;
@@ -337,6 +399,20 @@ void render_event(const m5::imu::MotionEventStatus& status)
     } else if (has_no) {
         name     = "NoMotion";
         bg_pal   = PAL_NOMOTION_BG;
+        text_pal = PAL_TEXT_LT;
+    } else if (has_activity) {
+        std::snprintf(act_label, sizeof(act_label), "Activity: %s", activity_type_str(status.activity_type));
+        name     = act_label;
+        bg_pal   = PAL_ACT_BG;
+        text_pal = PAL_TEXT_LT;
+    } else if (has_pickup) {
+        name     = "PickUp";
+        bg_pal   = PAL_WRIST_BG;
+        text_pal = PAL_TEXT_LT;
+    } else if (has_wrist) {
+        std::snprintf(gest_label, sizeof(gest_label), "Gesture: %s", gesture_type_str(status.gesture_type));
+        name     = gest_label;
+        bg_pal   = PAL_WRIST_BG;
         text_pal = PAL_TEXT_LT;
     } else {
         name     = slots[current_slot].label;
@@ -372,6 +448,15 @@ void log_fired(const m5::imu::MotionEventStatus& status)
     }
     if (m5::imu::any(fired & m5::imu::MotionEventKind::StepCounter)) {
         M5_LOGI("[FIRED] StepCounter %u", static_cast<unsigned>(status.step_count));
+    }
+    if (m5::imu::any(fired & m5::imu::MotionEventKind::ActivityChange)) {
+        M5_LOGI("[FIRED] ActivityChange %s", activity_type_str(status.activity_type));
+    }
+    if (m5::imu::any(fired & m5::imu::MotionEventKind::PickUpGesture)) {
+        M5_LOGI("[FIRED] PickUp");
+    }
+    if (m5::imu::any(fired & m5::imu::MotionEventKind::WristGesture)) {
+        M5_LOGI("[FIRED] WristGesture %s", gesture_type_str(status.gesture_type));
     }
 }
 
@@ -456,6 +541,8 @@ void setup()
         event_sprite.setPaletteColor(PAL_STEP_BG, TFT_DARKGREEN);
         event_sprite.setPaletteColor(PAL_NOMOTION_BG, TFT_NAVY);
         event_sprite.setPaletteColor(PAL_SIGMOTION_BG, TFT_ORANGE);
+        event_sprite.setPaletteColor(PAL_ACT_BG, TFT_MAGENTA);     // activity: a continuously-changing state
+        event_sprite.setPaletteColor(PAL_WRIST_BG, TFT_DARKCYAN);  // wrist gestures: smart-watch feel
     }
 
     bool ok{};
