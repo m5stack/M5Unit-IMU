@@ -78,10 +78,12 @@ m5::unit::UnitDoF10 unit{DOF_BMI270_ADDRESS};
 // so imu() carries the magnetometer too.
 m5::unit::UnitMiniIMUPro unit{};
 #elif defined(USING_BUILTIN_IMU)
-// Built-in IMU on M5.In_I2C: probed at setup() to pick the driver (BMI270 or MPU-6886). Both
-// storage instances are declared up front; only the one that matches the probe is added to Units.
-m5::unit::UnitBMI270 hw_bmi_storage{};
-m5::unit::UnitMPU6886 hw_mpu_storage{};
+// Built-in IMU on M5.In_I2C: probed at setup() to pick the driver (BMI270 or MPU-6886) and, for
+// BMI270, its address (0x68 on AtomS3R/StickS3/PaperS3; 0x69 on CoreS3/CoreS3SE). Heap-allocated
+// after the probe so the address is known at construction; Units keeps it alive for the program's
+// lifetime (an example singleton, intentionally never deleted -- same pattern as AhrsDemo).
+m5::unit::UnitBMI270* hw_bmi_storage  = nullptr;
+m5::unit::UnitMPU6886* hw_mpu_storage = nullptr;
 #else
 #error Please choose unit!
 #endif
@@ -626,17 +628,27 @@ void setup()
     const auto kind = m5::unit::imu::detectBuiltinImu(
         [](uint8_t addr, uint8_t reg, uint8_t& out) { return M5.In_I2C.readRegister(addr, reg, &out, 1, 400000); });
     switch (kind) {
-        case m5::unit::imu::ImuKind::BMI270:
-            bmi_ptr       = &hw_bmi_storage;
-            hw_source_ptr = &hw_bmi_storage;
-            ok            = Units.add(hw_bmi_storage, M5.In_I2C);
+        case m5::unit::imu::ImuKind::BMI270: {
+            // BMI270 lives at 0x68 or 0x69 depending on the board (AtomS3R/StickS3/PaperS3: 0x68;
+            // CoreS3/CoreS3SE: 0x69); probe the actual address before construction so the driver
+            // talks to the right endpoint. Mirrors AhrsDemo begin_builtin_bmi270().
+            uint8_t bmi_addr{0x68};
+            m5::unit::bmi270::detectAddress(
+                [](uint8_t a, uint8_t reg, uint8_t& out) { return M5.In_I2C.readRegister(a, reg, &out, 1, 400000); },
+                bmi_addr);
+            hw_bmi_storage = new m5::unit::UnitBMI270(bmi_addr);
+            bmi_ptr        = hw_bmi_storage;
+            hw_source_ptr  = hw_bmi_storage;
+            ok             = Units.add(*hw_bmi_storage, M5.In_I2C);
             break;
+        }
         case m5::unit::imu::ImuKind::MPU6886:
         case m5::unit::imu::ImuKind::MPU6050:
         case m5::unit::imu::ImuKind::MPU9250:
-            mpu_ptr       = &hw_mpu_storage;
-            hw_source_ptr = &hw_mpu_storage;
-            ok            = Units.add(hw_mpu_storage, M5.In_I2C);
+            hw_mpu_storage = new m5::unit::UnitMPU6886();
+            mpu_ptr        = hw_mpu_storage;
+            hw_source_ptr  = hw_mpu_storage;
+            ok             = Units.add(*hw_mpu_storage, M5.In_I2C);
             break;
         default:
             M5_LOGE("No supported built-in IMU detected (BMI270 or MPU-6886)");
@@ -745,6 +757,16 @@ void setup()
                 break;
         }
         bmi_ptr->writeAxisRemap(chip_remap);
+
+        // Log the detected board and the chip-side axis remap actually reflected in the chip
+        // (read back so a silent write failure is visible in Serial). Useful for verifying which
+        // case of the switch above matched at runtime, and as a sanity check when adding a new
+        // board mapping. Canonical decode: rotation_deg is always 0 on readback (see AxisRemap doc)
+        m5::unit::bmi270::AxisRemap applied{};
+        if (bmi_ptr->readAxisRemap(applied)) {
+            M5_LOGI("[MotionEvents] board=%d chip_axis_remap=(x=%d y=%d z=%d swap=%d)", static_cast<int>(M5.getBoard()),
+                    applied.invert_x, applied.invert_y, applied.invert_z, applied.swap_xy);
+        }
     }
 #endif
 
