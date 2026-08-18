@@ -109,7 +109,7 @@ m5::unit::UnitBMI270* hw_source_ptr = &unit.imu();
 #elif defined(USING_UNIT_DOF10)
 m5::unit::UnitBMI270* hw_source_ptr = &unit.imu();
 #elif defined(USING_UNIT_MINI_IMU_PRO)
-m5::unit::UnitBMI270* hw_source_ptr = &unit.imu();
+m5::unit::UnitBMI270* hw_source_ptr   = &unit.imu();
 #endif
 m5::imu::imu_convert_param_t convert_param{};
 
