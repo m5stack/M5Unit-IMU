@@ -186,6 +186,111 @@ constexpr uint8_t PWR_CONF_ACTIVE{0x00};
 
 #include "unit_bmi270_config.inl"
 
+// Chip-side axis remap helpers (see writeAxisRemap()/readAxisRemap()).
+// Encoded axis descriptor: 2-bit axis select (0=X, 1=Y, 2=Z) + 1-bit sign
+struct AxisDesc {
+    uint8_t select;
+    uint8_t sign;  // 0 = positive, 1 = negative
+};
+
+// Swap X <-> Y in an axis descriptor (Z passes through). Mirrors ZSWatch's
+// bmi2_swap_axis in app/drivers/sensor/bmi270/zsw_bosch_bmi270.c
+inline AxisDesc swap_xy_axis(AxisDesc a)
+{
+    if (a.select == AXIS_MAP_TO_X) {
+        a.select = AXIS_MAP_TO_Y;
+    } else if (a.select == AXIS_MAP_TO_Y) {
+        a.select = AXIS_MAP_TO_X;
+    }
+    return a;
+}
+
+// Toggle sign of an axis descriptor (ZSWatch bmi2_swap_axis_sign equivalent)
+inline AxisDesc negate_axis(AxisDesc a)
+{
+    a.sign = a.sign ? 0 : 1;
+    return a;
+}
+
+// Translate user-facing AxisRemap into 3 chip axis descriptors (x/y/z outputs)
+// using ZSWatch's ordering: apply invert_x/invert_y, then swap_xy, then rotation.
+// rotation_deg values other than 0/90/180/270 are treated as 0
+void axis_remap_to_desc(const AxisRemap& r, AxisDesc& xd, AxisDesc& yd, AxisDesc& zd)
+{
+    xd = {AXIS_MAP_TO_X, 0};
+    yd = {AXIS_MAP_TO_Y, 0};
+    zd = {AXIS_MAP_TO_Z, 0};
+
+    if (r.invert_x) {
+        xd = negate_axis(xd);
+    }
+    if (r.invert_y) {
+        yd = negate_axis(yd);
+    }
+    if (r.swap_xy) {
+        AxisDesc tmp = xd;
+        xd           = yd;
+        yd           = tmp;
+    }
+    if (r.rotation_deg == 90) {
+        xd = swap_xy_axis(xd);
+        xd = negate_axis(xd);
+        yd = swap_xy_axis(yd);
+    } else if (r.rotation_deg == 180) {
+        xd = negate_axis(xd);
+        yd = negate_axis(yd);
+    } else if (r.rotation_deg == 270) {
+        xd = swap_xy_axis(xd);
+        yd = swap_xy_axis(yd);
+        yd = negate_axis(yd);
+    }
+}
+
+// Pack 3 axis descriptors into the 2 remap bytes (byte 0 = all 8 bits of x/y/z
+// axis-select plus x/y signs; byte1_zsign = only the z-sign bit for byte 1)
+void encode_axis_desc(const AxisDesc& xd, const AxisDesc& yd, const AxisDesc& zd, uint8_t& byte0, uint8_t& byte1_zsign)
+{
+    byte0       = static_cast<uint8_t>((xd.select & AXIS_MAP_X_AXIS_MASK) | (xd.sign ? AXIS_MAP_X_AXIS_SIGN_BIT : 0) |
+                                       ((yd.select << AXIS_MAP_Y_AXIS_POS) & AXIS_MAP_Y_AXIS_MASK) |
+                                       (yd.sign ? AXIS_MAP_Y_AXIS_SIGN_BIT : 0) |
+                                       ((zd.select << AXIS_MAP_Z_AXIS_POS) & AXIS_MAP_Z_AXIS_MASK));
+    byte1_zsign = zd.sign ? AXIS_MAP_Z_AXIS_SIGN_BIT : 0;
+}
+
+// Unpack the 2 remap bytes into 3 axis descriptors
+void decode_axis_desc(uint8_t byte0, uint8_t byte1, AxisDesc& xd, AxisDesc& yd, AxisDesc& zd)
+{
+    xd.select = byte0 & AXIS_MAP_X_AXIS_MASK;
+    xd.sign   = (byte0 & AXIS_MAP_X_AXIS_SIGN_BIT) ? 1 : 0;
+    yd.select = static_cast<uint8_t>((byte0 & AXIS_MAP_Y_AXIS_MASK) >> AXIS_MAP_Y_AXIS_POS);
+    yd.sign   = (byte0 & AXIS_MAP_Y_AXIS_SIGN_BIT) ? 1 : 0;
+    zd.select = static_cast<uint8_t>((byte0 & AXIS_MAP_Z_AXIS_MASK) >> AXIS_MAP_Z_AXIS_POS);
+    zd.sign   = (byte1 & AXIS_MAP_Z_AXIS_SIGN_BIT) ? 1 : 0;
+}
+
+// Canonical decode: chip axis descriptors -> AxisRemap using only invert_x/y +
+// swap_xy (rotation_deg always 0). Assumes the chip state was written by
+// writeAxisRemap(), where Z is left as +Z. Anything outside that subset is
+// returned as identity (best-effort; document as read-only decode limitation)
+void desc_to_axis_remap(const AxisDesc& xd, const AxisDesc& yd, const AxisDesc& zd, AxisRemap& out)
+{
+    out = AxisRemap{};
+    if (zd.select != AXIS_MAP_TO_Z || zd.sign != 0) {
+        return;  // outside our writeAxisRemap subset -> identity
+    }
+    if (xd.select == AXIS_MAP_TO_X && yd.select == AXIS_MAP_TO_Y) {
+        out.swap_xy  = false;
+        out.invert_x = (xd.sign != 0);
+        out.invert_y = (yd.sign != 0);
+    } else if (xd.select == AXIS_MAP_TO_Y && yd.select == AXIS_MAP_TO_X) {
+        out.swap_xy = true;
+        // swap moves original x-sign to yd and original y-sign to xd
+        out.invert_x = (yd.sign != 0);
+        out.invert_y = (xd.sign != 0);
+    }
+    // Otherwise (x or y mapped to Z, or duplicate axis): leave as identity
+}
+
 }  // namespace
 
 namespace m5 {
@@ -1531,6 +1636,41 @@ bool UnitBMI270::read_feature_bytes(const uint16_t ofs_bytes, uint8_t* buf, cons
 bool UnitBMI270::write_feature_bytes(const uint16_t ofs_bytes, const uint8_t* buf, const size_t len)
 {
     return writeRegister(static_cast<uint8_t>(ofs_bytes), buf, len);
+}
+
+bool UnitBMI270::writeAxisRemap(const AxisRemap& remap)
+{
+    if (!writeRegister8(REG_FEAT_PAGE, FEAT_PAGE_AXIS_MAP)) {
+        return false;
+    }
+    // Read current 2 bytes so the gyroscope self-offset correction bits sharing
+    // byte 1 (bits [7:1]) are preserved on write (datasheet section 5.2.6)
+    uint8_t buf[2]{};
+    if (!read_feature_bytes(REG_FEATURES_AXIS_MAP, buf, sizeof(buf))) {
+        return false;
+    }
+    AxisDesc xd{}, yd{}, zd{};
+    axis_remap_to_desc(remap, xd, yd, zd);
+    uint8_t byte0{}, byte1_zsign{};
+    encode_axis_desc(xd, yd, zd, byte0, byte1_zsign);
+    buf[0] = byte0;
+    buf[1] = static_cast<uint8_t>((buf[1] & ~AXIS_MAP_Z_AXIS_SIGN_BIT) | byte1_zsign);
+    return write_feature_bytes(REG_FEATURES_AXIS_MAP, buf, sizeof(buf));
+}
+
+bool UnitBMI270::readAxisRemap(AxisRemap& remap)
+{
+    if (!writeRegister8(REG_FEAT_PAGE, FEAT_PAGE_AXIS_MAP)) {
+        return false;
+    }
+    uint8_t buf[2]{};
+    if (!read_feature_bytes(REG_FEATURES_AXIS_MAP, buf, sizeof(buf))) {
+        return false;
+    }
+    AxisDesc xd{}, yd{}, zd{};
+    decode_axis_desc(buf[0], buf[1], xd, yd, zd);
+    desc_to_axis_remap(xd, yd, zd, remap);
+    return true;
 }
 
 bool UnitBMI270::write_pickup_thresholds_impl(const uint16_t min_angle_focus, const uint16_t min_angle_nonfocus,

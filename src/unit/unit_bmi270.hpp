@@ -382,6 +382,28 @@ public:
       @return true on success
      */
     bool applyBenchWristGesturePreset();
+    /*!
+      @brief Write chip-side axis remap (BMI270 feature engine input + raw data output)
+      @param remap Desired remap (see bmi270::AxisRemap for field semantics)
+      @return true on success
+      @warning The chip-side remap also affects raw accel/gyro output, so
+      combining this with AhrsController IMU orientation remap produces a
+      double remap. When using chip remap (typical for wrist_gesture accuracy),
+      set AhrsController orientation to Default
+      @note Preserves the gyroscope self-offset correction bits sharing the
+      second remap byte (datasheet section 5.2.6). Call resetAxisRemap() to
+      restore identity mapping
+     */
+    bool writeAxisRemap(const bmi270::AxisRemap& remap);
+    /*!
+      @brief Read chip-side axis remap
+      @param[out] remap Decoded remap. Returned in canonical form: rotation_deg
+      is always 0, using invert_x/invert_y and swap_xy to represent chip state.
+      Multiple writeAxisRemap() inputs can produce the same chip state, so this
+      reproduces the chip state rather than the exact user input encoding
+      @return true on success
+     */
+    bool readAxisRemap(bmi270::AxisRemap& remap);
     ///@}
 
 protected:
@@ -642,6 +664,31 @@ constexpr uint8_t INT_STATUS_0_WRIST_GESTURE_OUT_BIT{1 << 4};
 constexpr uint8_t INT_MAP_FEAT_ACTIVITY_OUT_BIT{1 << 2};
 constexpr uint8_t INT_MAP_FEAT_WRIST_WAKEUP_OUT_BIT{1 << 3};
 constexpr uint8_t INT_MAP_FEAT_WRIST_GESTURE_OUT_BIT{1 << 4};
+
+// Chip-side axis remap (datasheet section 5.2.6, Bosch BMI270_SensorAPI
+// BMI270_AXIS_MAP_STRT_ADDR): 2 bytes at feature page 1, FEATURES window + 0x04.
+// Applied at the sensor data path so it remaps BOTH the raw accel/gyro readout
+// AND the feature engine input (any_motion, no_motion, step_counter, activity,
+// pick_up_gesture, wrist_gesture). Byte 0 packs the 3 axis-select fields
+// (2 bits each) with the x and y sign bits; byte 1 bit 0 carries the z sign,
+// byte 1 bits [7:1] hold the gyroscope self-offset correction and MUST be
+// preserved on write.
+constexpr uint8_t FEAT_PAGE_AXIS_MAP{0x01};
+constexpr uint8_t REG_FEATURES_AXIS_MAP{0x34};  // REG_FEATURES (0x30) + 0x04
+// Byte 0 bit layout (mirrors Bosch bmi2_defs.h BMI2_X_AXIS_MASK etc.)
+constexpr uint8_t AXIS_MAP_X_AXIS_MASK{0x03};         // bits [1:0]
+constexpr uint8_t AXIS_MAP_X_AXIS_SIGN_BIT{1u << 2};  // bit 2
+constexpr uint8_t AXIS_MAP_Y_AXIS_MASK{0x18};         // bits [4:3]
+constexpr uint8_t AXIS_MAP_Y_AXIS_POS{3};
+constexpr uint8_t AXIS_MAP_Y_AXIS_SIGN_BIT{1u << 5};  // bit 5
+constexpr uint8_t AXIS_MAP_Z_AXIS_MASK{0xC0};         // bits [7:6]
+constexpr uint8_t AXIS_MAP_Z_AXIS_POS{6};
+// Byte 1 bit 0 = z sign; bits [7:1] = gyroscope self-offset (preserve on write)
+constexpr uint8_t AXIS_MAP_Z_AXIS_SIGN_BIT{1u << 0};
+// Axis-select field values (0=X, 1=Y, 2=Z; mirrors Bosch BMI2_MAP_*_AXIS)
+constexpr uint8_t AXIS_MAP_TO_X{0};
+constexpr uint8_t AXIS_MAP_TO_Y{1};
+constexpr uint8_t AXIS_MAP_TO_Z{2};
 
 constexpr uint8_t REG_INIT_CTRL{0x59};
 constexpr uint8_t REG_INIT_ADDR_0{0x5B};  // followed by INIT_ADDR_1 (0x5C)
