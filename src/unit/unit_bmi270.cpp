@@ -256,9 +256,9 @@ void axis_remap_to_desc(const AxisRemap& r, AxisDesc& xd, AxisDesc& yd, AxisDesc
 void encode_axis_desc(const AxisDesc& xd, const AxisDesc& yd, const AxisDesc& zd, uint8_t& byte0, uint8_t& byte1_zsign)
 {
     byte0       = static_cast<uint8_t>((xd.select & AXIS_MAP_X_AXIS_MASK) | (xd.sign ? AXIS_MAP_X_AXIS_SIGN_BIT : 0) |
-                                       ((yd.select << AXIS_MAP_Y_AXIS_POS) & AXIS_MAP_Y_AXIS_MASK) |
-                                       (yd.sign ? AXIS_MAP_Y_AXIS_SIGN_BIT : 0) |
-                                       ((zd.select << AXIS_MAP_Z_AXIS_POS) & AXIS_MAP_Z_AXIS_MASK));
+                                 ((yd.select << AXIS_MAP_Y_AXIS_POS) & AXIS_MAP_Y_AXIS_MASK) |
+                                 (yd.sign ? AXIS_MAP_Y_AXIS_SIGN_BIT : 0) |
+                                 ((zd.select << AXIS_MAP_Z_AXIS_POS) & AXIS_MAP_Z_AXIS_MASK));
     byte1_zsign = zd.sign ? AXIS_MAP_Z_AXIS_SIGN_BIT : 0;
 }
 
@@ -1159,7 +1159,7 @@ bool UnitBMI270::write_no_motion_features(const m5::imu::NoMotionConfig& cfg)
     // 0.48 mg/LSB (BMI270 datasheet 4.8.3, same scale as ANYMO_2.threshold); rounds to nearest LSB
     const uint32_t thr_lsb = (static_cast<uint32_t>(cfg.threshold_mg) * 1000U + 240U) / 480U;
     const uint16_t word1   = static_cast<uint16_t>((thr_lsb & NOMO2_THRESHOLD_MASK) |
-                                                   (existing_word1 & NOMO2_OUT_CONF_MASK) | NOMO2_ENABLE_BIT);
+                                                 (existing_word1 & NOMO2_OUT_CONF_MASK) | NOMO2_ENABLE_BIT);
 
     const uint8_t buf[4]{
         static_cast<uint8_t>(word0 & 0xFF),
