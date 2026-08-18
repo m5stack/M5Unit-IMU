@@ -171,6 +171,41 @@ constexpr uint32_t odr_interval_ms(const GyroODR odr)
 }
 
 /*!
+  @struct AxisRemap
+  @brief Low-level BMI270 chip axis remap. Applied at the sensor data path, so
+  it affects both the raw accel/gyro readout AND the on-chip feature engine
+  input (any_motion / no_motion / step_counter / activity / pick_up_gesture /
+  wrist_gesture)
+  @warning Combining chip-side remap with AhrsController IMU orientation remap
+  produces a double remap. When using chip remap for feature engine tuning
+  (typical for wrist_gesture accuracy on wearables), set AhrsController
+  orientation to Default so the two layers do not stack
+ */
+struct AxisRemap {
+    bool invert_x{false};      //!< @brief Invert sign of X after other transforms
+    bool invert_y{false};      //!< @brief Invert sign of Y after other transforms
+    bool swap_xy{false};       //!< @brief Swap X and Y before rotation
+    uint16_t rotation_deg{0};  //!< @brief In-plane rotation applied to X/Y (0/90/180/270)
+};
+
+/*!
+  @enum WearableOrientation
+  @brief High-level preset for chip axis remap, aimed at feature engine
+  (wrist_gesture / pick_up_gesture / activity) accuracy on wearable mounts.
+  Applied via UnitBMI270::writeWearableOrientation() which delegates to
+  writeAxisRemap()
+  @note Expand the enum only when a preset has been bench-verified against a
+  specific board mount. Prefer writeAxisRemap() with an explicit AxisRemap for
+  ad-hoc bench tuning
+ */
+enum class WearableOrientation : uint8_t {
+    Default = 0,   //!< @brief No remap (chip-native axes)
+    Rotate90CW,    //!< @brief Rotate X/Y 90 degrees clockwise (viewed from +Z)
+    Rotate180,     //!< @brief Rotate X/Y 180 degrees
+    Rotate270CW,   //!< @brief Rotate X/Y 270 degrees clockwise (viewed from +Z)
+};
+
+/*!
   @struct Data
   @brief One measurement. Accel/gyro are always 12 bytes, little-endian
   (register 0x0C when the AUX/BMM150 bridge is not in use, or bytes [8..19] of
