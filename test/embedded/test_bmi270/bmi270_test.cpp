@@ -741,6 +741,7 @@ TEST_F(TestBMI270, AxisRemapDefaultIsIdentity)
     EXPECT_TRUE(unit->readAxisRemap(r));
     EXPECT_FALSE(r.invert_x);
     EXPECT_FALSE(r.invert_y);
+    EXPECT_FALSE(r.invert_z);
     EXPECT_FALSE(r.swap_xy);
     EXPECT_EQ(0, r.rotation_deg);
 }
@@ -750,23 +751,30 @@ TEST_F(TestBMI270, AxisRemapRoundTrip)
     SCOPED_TRACE(ustr);
     // AxisRemap has default member initializers, so C++11 does not permit aggregate init.
     // Build values field-by-field via a helper
-    auto mk = [](bool ix, bool iy, bool sw, uint16_t rot) {
+    auto mk = [](bool ix, bool iy, bool iz, bool sw, uint16_t rot) {
         AxisRemap r{};
         r.invert_x     = ix;
         r.invert_y     = iy;
+        r.invert_z     = iz;
         r.swap_xy      = sw;
         r.rotation_deg = rot;
         return r;
     };
-    // Canonical form (rotation_deg=0, invert_x/invert_y/swap_xy only) roundtrips exactly
+    // Canonical form (rotation_deg=0, invert_x/invert_y/invert_z/swap_xy only) roundtrips exactly
     struct Case {
         AxisRemap in;
         const char* label;
     };
     const Case cases[] = {
-        {mk(false, false, false, 0), "identity"},  {mk(true, false, false, 0), "invert_x"},
-        {mk(false, true, false, 0), "invert_y"},   {mk(false, false, true, 0), "swap"},
-        {mk(true, true, false, 0), "invert_both"}, {mk(true, true, true, 0), "invert_swap"},
+        {mk(false, false, false, false, 0), "identity"},
+        {mk(true, false, false, false, 0), "invert_x"},
+        {mk(false, true, false, false, 0), "invert_y"},
+        {mk(false, false, true, false, 0), "invert_z"},
+        {mk(false, false, false, true, 0), "swap"},
+        {mk(true, true, false, false, 0), "invert_xy"},
+        {mk(true, true, true, false, 0), "invert_xyz"},
+        {mk(true, true, false, true, 0), "invert_xy+swap"},
+        {mk(true, false, true, false, 0), "invert_xz-atomMatrix"},
     };
     for (const auto& c : cases) {
         SCOPED_TRACE(c.label);
@@ -775,6 +783,7 @@ TEST_F(TestBMI270, AxisRemapRoundTrip)
         ASSERT_TRUE(unit->readAxisRemap(r));
         EXPECT_EQ(c.in.invert_x, r.invert_x);
         EXPECT_EQ(c.in.invert_y, r.invert_y);
+        EXPECT_EQ(c.in.invert_z, r.invert_z);
         EXPECT_EQ(c.in.swap_xy, r.swap_xy);
         EXPECT_EQ(0, r.rotation_deg);
     }
@@ -782,21 +791,22 @@ TEST_F(TestBMI270, AxisRemapRoundTrip)
     // returns that canonical form (rotation_deg=0). Verify chip-state stability: writing the read
     // value back produces the same read
     const AxisRemap rot_cases[] = {
-        mk(false, false, false, 90),
-        mk(false, false, false, 180),
-        mk(false, false, false, 270),
+        mk(false, false, false, false, 90), mk(false, false, false, false, 180), mk(false, false, false, false, 270),
+        mk(false, false, true, false, 90),  // rotation + independent invert_z
     };
     for (const auto& in : rot_cases) {
         SCOPED_TRACE(in.rotation_deg);
         ASSERT_TRUE(unit->writeAxisRemap(in));
         AxisRemap first{};
         ASSERT_TRUE(unit->readAxisRemap(first));
-        EXPECT_EQ(0, first.rotation_deg);  // canonical decode drops rotation
+        EXPECT_EQ(0, first.rotation_deg);        // canonical decode drops rotation
+        EXPECT_EQ(in.invert_z, first.invert_z);  // invert_z is independent, preserved through decode
         ASSERT_TRUE(unit->writeAxisRemap(first));
         AxisRemap second{};
         ASSERT_TRUE(unit->readAxisRemap(second));
         EXPECT_EQ(first.invert_x, second.invert_x);
         EXPECT_EQ(first.invert_y, second.invert_y);
+        EXPECT_EQ(first.invert_z, second.invert_z);
         EXPECT_EQ(first.swap_xy, second.swap_xy);
         EXPECT_EQ(0, second.rotation_deg);
     }
@@ -812,15 +822,17 @@ TEST_F(TestBMI270, WearableOrientationPresetsAndReset)
     ASSERT_TRUE(unit->readAxisRemap(rdef));
     EXPECT_FALSE(rdef.invert_x);
     EXPECT_FALSE(rdef.invert_y);
+    EXPECT_FALSE(rdef.invert_z);
     EXPECT_FALSE(rdef.swap_xy);
     EXPECT_EQ(0, rdef.rotation_deg);
 
-    // Each rotation preset produces a distinct non-identity chip state
+    // Each rotation preset produces a distinct non-identity chip state (X/Y only; Z stays)
     ASSERT_TRUE(unit->writeWearableOrientation(WearableOrientation::Rotate90CW));
     AxisRemap r90{};
     ASSERT_TRUE(unit->readAxisRemap(r90));
-    const bool r90_is_identity = !r90.invert_x && !r90.invert_y && !r90.swap_xy;
+    const bool r90_is_identity = !r90.invert_x && !r90.invert_y && !r90.invert_z && !r90.swap_xy;
     EXPECT_FALSE(r90_is_identity);
+    EXPECT_FALSE(r90.invert_z);  // rotation acts in the X/Y plane only
 
     ASSERT_TRUE(unit->writeWearableOrientation(WearableOrientation::Rotate180));
     AxisRemap r180{};
@@ -828,6 +840,7 @@ TEST_F(TestBMI270, WearableOrientationPresetsAndReset)
     const bool r180_matches_r90 =
         (r180.invert_x == r90.invert_x) && (r180.invert_y == r90.invert_y) && (r180.swap_xy == r90.swap_xy);
     EXPECT_FALSE(r180_matches_r90);
+    EXPECT_FALSE(r180.invert_z);
 
     ASSERT_TRUE(unit->writeWearableOrientation(WearableOrientation::Rotate270CW));
     AxisRemap r270{};
@@ -835,6 +848,7 @@ TEST_F(TestBMI270, WearableOrientationPresetsAndReset)
     const bool r270_matches_r180 =
         (r270.invert_x == r180.invert_x) && (r270.invert_y == r180.invert_y) && (r270.swap_xy == r180.swap_xy);
     EXPECT_FALSE(r270_matches_r180);
+    EXPECT_FALSE(r270.invert_z);
 
     // resetAxisRemap() restores identity
     ASSERT_TRUE(unit->resetAxisRemap());
@@ -842,6 +856,7 @@ TEST_F(TestBMI270, WearableOrientationPresetsAndReset)
     ASSERT_TRUE(unit->readAxisRemap(rreset));
     EXPECT_FALSE(rreset.invert_x);
     EXPECT_FALSE(rreset.invert_y);
+    EXPECT_FALSE(rreset.invert_z);
     EXPECT_FALSE(rreset.swap_xy);
     EXPECT_EQ(0, rreset.rotation_deg);
 }

@@ -244,6 +244,11 @@ void axis_remap_to_desc(const AxisRemap& r, AxisDesc& xd, AxisDesc& yd, AxisDesc
         yd = swap_xy_axis(yd);
         yd = negate_axis(yd);
     }
+    // Z inversion is independent of the X/Y transforms above (rotation acts in
+    // the X/Y plane; swap does not touch Z)
+    if (r.invert_z) {
+        zd = negate_axis(zd);
+    }
 }
 
 // Pack 3 axis descriptors into the 2 remap bytes (byte 0 = all 8 bits of x/y/z
@@ -268,16 +273,18 @@ void decode_axis_desc(uint8_t byte0, uint8_t byte1, AxisDesc& xd, AxisDesc& yd, 
     zd.sign   = (byte1 & AXIS_MAP_Z_AXIS_SIGN_BIT) ? 1 : 0;
 }
 
-// Canonical decode: chip axis descriptors -> AxisRemap using only invert_x/y +
+// Canonical decode: chip axis descriptors -> AxisRemap using only invert_x/y/z +
 // swap_xy (rotation_deg always 0). Assumes the chip state was written by
-// writeAxisRemap(), where Z is left as +Z. Anything outside that subset is
-// returned as identity (best-effort; document as read-only decode limitation)
+// writeAxisRemap(), where the z-axis stays Z (only its sign can flip via
+// invert_z). Anything outside that subset (x/y mapped to Z, duplicate axes)
+// is returned as identity (best-effort; document as read-only decode limitation)
 void desc_to_axis_remap(const AxisDesc& xd, const AxisDesc& yd, const AxisDesc& zd, AxisRemap& out)
 {
     out = AxisRemap{};
-    if (zd.select != AXIS_MAP_TO_Z || zd.sign != 0) {
+    if (zd.select != AXIS_MAP_TO_Z) {
         return;  // outside our writeAxisRemap subset -> identity
     }
+    out.invert_z = (zd.sign != 0);
     if (xd.select == AXIS_MAP_TO_X && yd.select == AXIS_MAP_TO_Y) {
         out.swap_xy  = false;
         out.invert_x = (xd.sign != 0);

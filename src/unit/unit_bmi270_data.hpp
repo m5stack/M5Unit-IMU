@@ -184,6 +184,7 @@ constexpr uint32_t odr_interval_ms(const GyroODR odr)
 struct AxisRemap {
     bool invert_x{false};      //!< @brief Invert sign of X after other transforms
     bool invert_y{false};      //!< @brief Invert sign of Y after other transforms
+    bool invert_z{false};      //!< @brief Invert sign of Z (independent of swap/rotation which act on X/Y)
     bool swap_xy{false};       //!< @brief Swap X and Y before rotation
     uint16_t rotation_deg{0};  //!< @brief In-plane rotation applied to X/Y (0/90/180/270)
 };
@@ -199,10 +200,10 @@ struct AxisRemap {
   ad-hoc bench tuning
  */
 enum class WearableOrientation : uint8_t {
-    Default = 0,   //!< @brief No remap (chip-native axes)
-    Rotate90CW,    //!< @brief Rotate X/Y 90 degrees clockwise (viewed from +Z)
-    Rotate180,     //!< @brief Rotate X/Y 180 degrees
-    Rotate270CW,   //!< @brief Rotate X/Y 270 degrees clockwise (viewed from +Z)
+    Default = 0,  //!< @brief No remap (chip-native axes)
+    Rotate90CW,   //!< @brief Rotate X/Y 90 degrees clockwise (viewed from +Z)
+    Rotate180,    //!< @brief Rotate X/Y 180 degrees
+    Rotate270CW,  //!< @brief Rotate X/Y 270 degrees clockwise (viewed from +Z)
 };
 
 /*!

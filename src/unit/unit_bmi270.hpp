@@ -398,9 +398,10 @@ public:
     /*!
       @brief Read chip-side axis remap
       @param[out] remap Decoded remap. Returned in canonical form: rotation_deg
-      is always 0, using invert_x/invert_y and swap_xy to represent chip state.
-      Multiple writeAxisRemap() inputs can produce the same chip state, so this
-      reproduces the chip state rather than the exact user input encoding
+      is always 0, using invert_x/invert_y/invert_z and swap_xy to represent
+      the chip state. Multiple writeAxisRemap() inputs can produce the same chip
+      state, so this reproduces the chip state rather than the exact user input
+      encoding
       @return true on success
      */
     bool readAxisRemap(bmi270::AxisRemap& remap);
