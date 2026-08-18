@@ -972,7 +972,14 @@ bool UnitBMI270::readEventStatus(m5::imu::MotionEventStatus& out)
         if (status & INT_STATUS_0_ANY_MOTION_OUT_BIT) {
             _any_motion_pending = true;
         }
-        if (status & INT_STATUS_0_NO_MOTION_OUT_BIT) {
+        // NO_MOTION quirk workaround (documented in ZSWatch app/drivers/sensor/bmi270/trigger/
+        // zsw_bosch_bmi270_interrupt.c bmi2_process_int()): after INT_STATUS_0 clears the NO_MOTION
+        // bit, the next time any other feature interrupt fires the chip spuriously re-asserts the
+        // NO_MOTION bit in the same status read. Trust NO_MOTION only when it is the sole event bit
+        // set (status equals exactly the NO_MOTION mask). Any coincident real NO_MOTION alongside
+        // another event is intentionally suppressed here -- Bosch's own SDK does not compensate
+        // either, so this is the only conservative reading.
+        if (status == INT_STATUS_0_NO_MOTION_OUT_BIT) {
             _no_motion_pending = true;
         }
         if (status & INT_STATUS_0_SIG_MOTION_OUT_BIT) {
