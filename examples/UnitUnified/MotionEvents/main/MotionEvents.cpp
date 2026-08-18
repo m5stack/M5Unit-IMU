@@ -301,7 +301,7 @@ void activate(const size_t idx, const bool reset_step)
     // regardless of what was firing in the previous slot.
     prev_fired_bits = m5::imu::MotionEventKind::None;
     const Slot& s   = slots[idx];
-    bool all_ok   = true;
+    bool all_ok     = true;
     for (uint8_t i = 0; i < s.count; ++i) {
         if (!motion.enable(s.entries[i].kind, s.entries[i].cfg)) {
             M5_LOGW("enable slot=%s entry=%u failed (chip unsupported)", s.label, i);
@@ -403,7 +403,7 @@ void render_event(const m5::imu::MotionEventStatus& status)
         uint8_t txt_pal;
     };
     FiredLabel entries[8];
-    int n         = 0;
+    int n          = 0;
     uint8_t bg_pal = PAL_IDLE_BG;
 
     if (has_any && has_ff) {
@@ -708,6 +708,44 @@ void setup()
     defined(USING_UNIT_MINI_IMU_PRO)
     hw_source_ptr->applyBenchPickUpPreset();
     hw_source_ptr->applyBenchWristGesturePreset();
+#endif
+
+    // Apply the chip-side axis remap that matches M5Unified IMU_Class::begin()'s host-side
+    // correction for each BMI270 board. This gives the on-chip feature engine (wrist_gesture /
+    // pick_up_gesture) input in the board convention that its algorithms expect, and mirrors what
+    // AhrsController would otherwise correct on the host side. Non-BMI270 hosts have no chip
+    // axis remap. Unit hosts (DoF6/9/10, MiniIMU-Pro) all use chip identity and need no remap.
+    // Reference: docs/imu_orientation/README.md, ../M5Unified/src/utility/IMU_Class.cpp.
+#if defined(USING_BUILTIN_IMU)
+    if (bmi_ptr) {
+        m5::unit::bmi270::AxisRemap chip_remap{};  // identity by default
+        switch (M5.getBoard()) {
+            // AtomS3R family + CoreMatrix: 270-degree in-plane rotation
+            case m5::board_t::board_M5AtomS3R:
+            case m5::board_t::board_M5AtomS3RCam:
+            case m5::board_t::board_M5AtomS3RExt:
+            case m5::board_t::board_M5CoreMatrix:
+                chip_remap.rotation_deg = 270;
+                break;
+            // AtomMatrix v1.1: invert X and Z (no equivalent WearableOrientation preset)
+            case m5::board_t::board_M5AtomMatrix:
+                chip_remap.invert_x = true;
+                chip_remap.invert_z = true;
+                break;
+            // ChainCaptain: full triple invert plus X/Y swap
+            case m5::board_t::board_M5ChainCaptain:
+                chip_remap.invert_x = true;
+                chip_remap.invert_y = true;
+                chip_remap.invert_z = true;
+                chip_remap.swap_xy  = true;
+                break;
+            // Other BMI270 hosts (CoreS3 / CoreS3SE / StackChan / Core2 v1.3 / StickS3 / PaperS3 /
+            // Capsule / CardputerADV / NessoN1 / UnitC6L / Tab5) leave the chip at identity
+            default:
+                break;
+        }
+        bmi_ptr->writeAxisRemap(chip_remap);
+    }
 #endif
 
     activate(current_slot, false);
