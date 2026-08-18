@@ -404,6 +404,22 @@ public:
       @return true on success
      */
     bool readAxisRemap(bmi270::AxisRemap& remap);
+    /*!
+      @brief Apply a wearable-mount preset to the chip axis remap
+      @param orient Preset selecting a rotation (see bmi270::WearableOrientation)
+      @return true on success
+      @note Convenience wrapper over writeAxisRemap() for wrist_gesture / pick_up
+      accuracy tuning on wearable mounts. Same AhrsController double-remap
+      warning applies (see bmi270::AxisRemap Doxygen)
+     */
+    bool writeWearableOrientation(bmi270::WearableOrientation orient);
+    /*!
+      @brief Reset chip axis remap to identity (all invert/swap cleared, rotation 0)
+      @return true on success
+      @note Use before enabling AhrsController IMU orientation remap, so the
+      host layer becomes the sole remap layer (avoids double remap)
+     */
+    bool resetAxisRemap();
     ///@}
 
 protected:

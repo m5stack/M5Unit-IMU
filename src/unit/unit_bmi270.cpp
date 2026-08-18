@@ -1673,6 +1673,31 @@ bool UnitBMI270::readAxisRemap(AxisRemap& remap)
     return true;
 }
 
+bool UnitBMI270::writeWearableOrientation(const WearableOrientation orient)
+{
+    AxisRemap r{};
+    switch (orient) {
+        case WearableOrientation::Rotate90CW:
+            r.rotation_deg = 90;
+            break;
+        case WearableOrientation::Rotate180:
+            r.rotation_deg = 180;
+            break;
+        case WearableOrientation::Rotate270CW:
+            r.rotation_deg = 270;
+            break;
+        case WearableOrientation::Default:
+        default:
+            break;  // identity
+    }
+    return writeAxisRemap(r);
+}
+
+bool UnitBMI270::resetAxisRemap()
+{
+    return writeAxisRemap(AxisRemap{});
+}
+
 bool UnitBMI270::write_pickup_thresholds_impl(const uint16_t min_angle_focus, const uint16_t min_angle_nonfocus,
                                               const uint16_t max_tilt_lr, const uint16_t max_tilt_ll,
                                               const uint16_t max_tilt_pd, const uint16_t max_tilt_pu)
