@@ -732,3 +732,116 @@ TEST_F(TestBMI270, StartPeriodicWithArgs)
     EXPECT_TRUE(unit->readGyroODR(go));
     EXPECT_EQ(go, GyroODR::Rate50Hz);
 }
+
+TEST_F(TestBMI270, AxisRemapDefaultIsIdentity)
+{
+    SCOPED_TRACE(ustr);
+    // After begin() the config blob leaves the axis remap at chip default (identity)
+    AxisRemap r;
+    EXPECT_TRUE(unit->readAxisRemap(r));
+    EXPECT_FALSE(r.invert_x);
+    EXPECT_FALSE(r.invert_y);
+    EXPECT_FALSE(r.swap_xy);
+    EXPECT_EQ(0, r.rotation_deg);
+}
+
+TEST_F(TestBMI270, AxisRemapRoundTrip)
+{
+    SCOPED_TRACE(ustr);
+    // AxisRemap has default member initializers, so C++11 does not permit aggregate init.
+    // Build values field-by-field via a helper
+    auto mk = [](bool ix, bool iy, bool sw, uint16_t rot) {
+        AxisRemap r{};
+        r.invert_x     = ix;
+        r.invert_y     = iy;
+        r.swap_xy      = sw;
+        r.rotation_deg = rot;
+        return r;
+    };
+    // Canonical form (rotation_deg=0, invert_x/invert_y/swap_xy only) roundtrips exactly
+    struct Case {
+        AxisRemap in;
+        const char* label;
+    };
+    const Case cases[] = {
+        {mk(false, false, false, 0), "identity"},  {mk(true, false, false, 0), "invert_x"},
+        {mk(false, true, false, 0), "invert_y"},   {mk(false, false, true, 0), "swap"},
+        {mk(true, true, false, 0), "invert_both"}, {mk(true, true, true, 0), "invert_swap"},
+    };
+    for (const auto& c : cases) {
+        SCOPED_TRACE(c.label);
+        ASSERT_TRUE(unit->writeAxisRemap(c.in));
+        AxisRemap r{};
+        ASSERT_TRUE(unit->readAxisRemap(r));
+        EXPECT_EQ(c.in.invert_x, r.invert_x);
+        EXPECT_EQ(c.in.invert_y, r.invert_y);
+        EXPECT_EQ(c.in.swap_xy, r.swap_xy);
+        EXPECT_EQ(0, r.rotation_deg);
+    }
+    // rotation_deg=90/180/270 land in the same chip state as some invert+swap combo. The read
+    // returns that canonical form (rotation_deg=0). Verify chip-state stability: writing the read
+    // value back produces the same read
+    const AxisRemap rot_cases[] = {
+        mk(false, false, false, 90),
+        mk(false, false, false, 180),
+        mk(false, false, false, 270),
+    };
+    for (const auto& in : rot_cases) {
+        SCOPED_TRACE(in.rotation_deg);
+        ASSERT_TRUE(unit->writeAxisRemap(in));
+        AxisRemap first{};
+        ASSERT_TRUE(unit->readAxisRemap(first));
+        EXPECT_EQ(0, first.rotation_deg);  // canonical decode drops rotation
+        ASSERT_TRUE(unit->writeAxisRemap(first));
+        AxisRemap second{};
+        ASSERT_TRUE(unit->readAxisRemap(second));
+        EXPECT_EQ(first.invert_x, second.invert_x);
+        EXPECT_EQ(first.invert_y, second.invert_y);
+        EXPECT_EQ(first.swap_xy, second.swap_xy);
+        EXPECT_EQ(0, second.rotation_deg);
+    }
+    EXPECT_TRUE(unit->resetAxisRemap());
+}
+
+TEST_F(TestBMI270, WearableOrientationPresetsAndReset)
+{
+    SCOPED_TRACE(ustr);
+    // Default preset writes identity
+    ASSERT_TRUE(unit->writeWearableOrientation(WearableOrientation::Default));
+    AxisRemap rdef{};
+    ASSERT_TRUE(unit->readAxisRemap(rdef));
+    EXPECT_FALSE(rdef.invert_x);
+    EXPECT_FALSE(rdef.invert_y);
+    EXPECT_FALSE(rdef.swap_xy);
+    EXPECT_EQ(0, rdef.rotation_deg);
+
+    // Each rotation preset produces a distinct non-identity chip state
+    ASSERT_TRUE(unit->writeWearableOrientation(WearableOrientation::Rotate90CW));
+    AxisRemap r90{};
+    ASSERT_TRUE(unit->readAxisRemap(r90));
+    const bool r90_is_identity = !r90.invert_x && !r90.invert_y && !r90.swap_xy;
+    EXPECT_FALSE(r90_is_identity);
+
+    ASSERT_TRUE(unit->writeWearableOrientation(WearableOrientation::Rotate180));
+    AxisRemap r180{};
+    ASSERT_TRUE(unit->readAxisRemap(r180));
+    const bool r180_matches_r90 =
+        (r180.invert_x == r90.invert_x) && (r180.invert_y == r90.invert_y) && (r180.swap_xy == r90.swap_xy);
+    EXPECT_FALSE(r180_matches_r90);
+
+    ASSERT_TRUE(unit->writeWearableOrientation(WearableOrientation::Rotate270CW));
+    AxisRemap r270{};
+    ASSERT_TRUE(unit->readAxisRemap(r270));
+    const bool r270_matches_r180 =
+        (r270.invert_x == r180.invert_x) && (r270.invert_y == r180.invert_y) && (r270.swap_xy == r180.swap_xy);
+    EXPECT_FALSE(r270_matches_r180);
+
+    // resetAxisRemap() restores identity
+    ASSERT_TRUE(unit->resetAxisRemap());
+    AxisRemap rreset{};
+    ASSERT_TRUE(unit->readAxisRemap(rreset));
+    EXPECT_FALSE(rreset.invert_x);
+    EXPECT_FALSE(rreset.invert_y);
+    EXPECT_FALSE(rreset.swap_xy);
+    EXPECT_EQ(0, rreset.rotation_deg);
+}
