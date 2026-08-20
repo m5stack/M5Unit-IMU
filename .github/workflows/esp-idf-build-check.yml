@@ -1,0 +1,141 @@
+name: Build(esp-idf-native)
+
+on:
+  push:
+    tags-ignore:
+      - '*.*.*'
+      - 'v*.*.*'
+    branches:
+      - '*'
+    paths:
+      - 'src/**.cpp'
+      - 'src/**.hpp'
+      - 'src/**.h'
+      - 'src/**.c'
+      - 'CMakeLists.txt'
+      - 'idf_component.yml'
+      - 'examples/UnitUnified/**.cpp'
+      - 'examples/UnitUnified/**.hpp'
+      - 'examples/UnitUnified/**.h'
+      - 'examples/UnitUnified/**.c'
+      - 'examples/UnitUnified/**/CMakeLists.txt'
+      - 'examples/UnitUnified/**/Kconfig.projbuild'
+      - 'examples/UnitUnified/common/**'
+      - '.github/workflows/esp-idf-build-check.yml'
+  pull_request:
+    paths:
+      - 'src/**.cpp'
+      - 'src/**.hpp'
+      - 'src/**.h'
+      - 'src/**.c'
+      - 'CMakeLists.txt'
+      - 'idf_component.yml'
+      - 'examples/UnitUnified/**.cpp'
+      - 'examples/UnitUnified/**.hpp'
+      - 'examples/UnitUnified/**.h'
+      - 'examples/UnitUnified/**.c'
+      - 'examples/UnitUnified/**/CMakeLists.txt'
+      - 'examples/UnitUnified/**/Kconfig.projbuild'
+      - 'examples/UnitUnified/common/**'
+      - '.github/workflows/esp-idf-build-check.yml'
+  workflow_dispatch:
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Cross design (NFC-style 2-job; UnitIMU has no Tab5-dedicated example, so esp32p4 is folded
+# into the chip-coverage job): variant coverage on a single representative target (esp32s3),
+# chip coverage on the other SoCs with the default variant (USING_UNIT_MINI_IMU).
+jobs:
+  # Variant coverage: every Kconfig variant, across both example sources (PlotToSerial /
+  # AhrsDemo), on esp32s3 (LCD-capable dual-core Xtensa with PSRAM -- also required by AhrsDemo's
+  # LCD gizmo and the built-in-IMU variant, which needs a board with an on-chip sensor).
+  build-variants:
+    name: ${{ matrix.idf }} esp32s3 ${{ matrix.example_config.label }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix:
+        # idf boundaries: 5.1.7 = oldest legacy-driver (5.0.x dropped: M5GFX needs esp_mm added
+        # in 5.1), 5.4.4 = new driver/*_master.h era, 5.5.4 = latest.
+        idf: [v5.1.7, v5.4.4, v5.5.4]
+        example_config:
+          - label: PlotToSerial-UnitIMUMini
+            variant: USING_UNIT_MINI_IMU
+            path: examples/UnitUnified/PlotToSerial
+          - label: PlotToSerial-UnitBMM350
+            variant: USING_UNIT_BMM350
+            path: examples/UnitUnified/PlotToSerial
+          - label: AhrsDemo-UnitIMUMini
+            variant: USING_UNIT_MINI_IMU
+            path: examples/UnitUnified/AhrsDemo
+          - label: AhrsDemo-UnitIMUMiniWithBMM350
+            variant: USING_UNIT_MINI_IMU_WITH_BMM350
+            path: examples/UnitUnified/AhrsDemo
+          - label: AhrsDemo-BuiltinIMU
+            variant: USING_BUILTIN_IMU
+            path: examples/UnitUnified/AhrsDemo
+          # DoF10 (BMI270 + BMM350 + SPA06): the only variant that pulls the barometer driver from
+          # M5Unit-ENV, so this exercises the ESP-IDF component-manager fetch of ENV and the native
+          # build of UnitSPA06 (the reason the idf_component.yml ENV dependency exists).
+          - label: AhrsDemo-UnitDoF10
+            variant: USING_UNIT_DOF10
+            path: examples/UnitUnified/AhrsDemo
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Kconfig variant
+        # The example's own sdkconfig.defaults is not read (top CMakeLists points SDKCONFIG_DEFAULTS
+        # at common/sdkconfig.defaults). Append the choice to common/ in the CI workspace only.
+        run: |
+          echo "" >> examples/UnitUnified/common/sdkconfig.defaults
+          echo "CONFIG_EXAMPLE_${{ matrix.example_config.variant }}=y" >> examples/UnitUnified/common/sdkconfig.defaults
+
+      - name: ESP-IDF build
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: ${{ matrix.idf }}
+          target: esp32s3
+          path: ${{ matrix.example_config.path }}
+
+  # Chip coverage: PlotToSerial (UnitIMUMini / GROVE+onboard I2C) on every other supported SoC.
+  # esp32 = classic Xtensa dual-core. esp32c6 (NanoC6) / esp32h2 (NanoH2) = RISC-V single-core,
+  # exercises the app_main CONFIG_FREERTOS_UNICORE feedIdle branch. esp32p4 (M5Stack Tab5) =
+  # RISC-V dual-core; no Tab5-dedicated example exists yet, so it is folded in here.
+  build-chips:
+    name: ${{ matrix.idf }} ${{ matrix.target }} PlotToSerial-UnitIMUMini
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix:
+        target: [esp32, esp32c6, esp32h2, esp32p4]
+        idf: [v5.1.7, v5.4.4, v5.5.4]
+        exclude:
+          # esp32p4 stable from IDF v5.3 (M5GFX P4 verified on 5.4/5.5). 5.1.7 not applicable.
+          - target: esp32p4
+            idf: v5.1.7
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Kconfig variant
+        run: |
+          echo "" >> examples/UnitUnified/common/sdkconfig.defaults
+          echo "CONFIG_EXAMPLE_USING_UNIT_MINI_IMU=y" >> examples/UnitUnified/common/sdkconfig.defaults
+
+      - name: ESP-IDF build
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: ${{ matrix.idf }}
+          target: ${{ matrix.target }}
+          path: examples/UnitUnified/PlotToSerial

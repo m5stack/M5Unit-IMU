@@ -1,0 +1,39 @@
+# Shared "Target unit" selection for the M5Unit-IMU UnitUnified examples (ESP-IDF).
+# rsource'd from each example's main/Kconfig.projbuild. The chosen CONFIG_EXAMPLE_USING_* is mapped
+# to the source-level USING_* macro in common/variant.cmake (shared with the Arduino build).
+menu "M5Unit-IMU example"
+
+choice EXAMPLE_IMU_VARIANT
+    prompt "Target device"
+    default EXAMPLE_USING_UNIT_MINI_IMU
+    help
+        Which IMU unit/device this example drives.
+
+    config EXAMPLE_USING_UNIT_MINI_IMU
+        bool "UnitMiniIMU (U095, MPU6886)"
+    config EXAMPLE_USING_UNIT_BMM350
+        bool "UnitBMM350 (U231)"
+    config EXAMPLE_USING_UNIT_DOF6
+        bool "UnitDoF6 (U228, BMI270)"
+    config EXAMPLE_USING_UNIT_DOF9
+        bool "UnitDoF9 (U229, BMI270+BMM350)"
+    config EXAMPLE_USING_UNIT_DOF10
+        bool "UnitDoF10 (U230, BMI270+BMM350+SPA06)"
+    config EXAMPLE_USING_UNIT_MINI_IMU_PRO
+        bool "UnitMiniIMUPro (U171, BMI270+BMM150+BMP280)"
+    config EXAMPLE_USING_UNIT_MINI_IMU_WITH_BMM350
+        bool "UnitMiniIMU + UnitBMM350, 9-axis GROVE (AhrsDemo only)"
+    config EXAMPLE_USING_BUILTIN_IMU
+        bool "Built-in IMU, M5.getBoard() auto-detect (AhrsDemo only)"
+endchoice
+
+config EXAMPLE_DOF_BMI270_ADDRESS
+    hex "DoF BMI270 I2C address (SW1 switch)"
+    depends on EXAMPLE_USING_UNIT_DOF6 || EXAMPLE_USING_UNIT_DOF9 || EXAMPLE_USING_UNIT_DOF10
+    range 0x68 0x69
+    default 0x68
+    help
+        The DoF board's SW1 switch selects the BMI270 I2C address: 0x68 (default) or 0x69.
+        Set this to match the physical switch position.
+
+endmenu

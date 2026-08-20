@@ -38,6 +38,12 @@
 build/
 cmake-build-*/
 managed_components/
+sdkconfig
+sdkconfig.old
+dependencies.lock
+
+# clangd LSP (personal, environment-specific)
+.clangd
 
 # PlatformIO
 .pio/
@@ -59,3 +65,15 @@ bin/
 obj/
 
 *.code-workspace
+
+# Doxygen
+docs/html/
+
+# Temporary
+tmp/
+
+# Secrets
+.env*
+*.pem
+*.key
+*.cert

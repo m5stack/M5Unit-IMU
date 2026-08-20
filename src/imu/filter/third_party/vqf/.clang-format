@@ -1,0 +1,9 @@
+# Vendored from https://github.com/dlaidig/vqf (MIT License; see LICENSE, and the
+# SPDX-FileCopyrightText headers of the individual files for the actual copyright holder --
+# LICENSE itself is REUSE's generic MIT template, copied byte-for-byte from upstream
+# LICENSES/MIT.txt). basicvqf.hpp and basicvqf.cpp.inc (a plain rename of upstream's
+# basicvqf.cpp -- see basicvqf.cpp for why) are kept byte-for-byte identical to upstream;
+# disable clang-format for everything under here (including the small non-vendored
+# basicvqf.cpp wrapper) instead of touching the vendored files.
+DisableFormat: true
+SortIncludes: false

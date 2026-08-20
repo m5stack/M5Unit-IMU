@@ -1,0 +1,174 @@
+name: Build(arduino-m5stack)
+
+env:
+  SKETCH_NAMES_FIND_START: ./examples/UnitUnified
+  REQUIRED_LIBRARIES: M5Unified,M5UnitUnified,M5Unit-ENV
+
+on:
+  push:
+    tags-ignore:
+      - '*.*.*'
+      - 'v*.*.*'
+    branches:
+      - '*'
+    paths:
+      - 'src/**.cpp'
+      - 'src/**.hpp'
+      - 'src/**.h'
+      - 'src/**.c'
+      - 'examples/UnitUnified/**.ino'
+      - 'examples/UnitUnified/**.cpp'
+      - 'examples/UnitUnified/**.hpp'
+      - 'examples/UnitUnified/**.h'
+      - 'examples/UnitUnified/**.c'
+      - '.github/workflows/arduino-m5-build-check.yml'
+  pull_request:
+    paths:
+      - 'src/**.cpp'
+      - 'src/**.hpp'
+      - 'src/**.h'
+      - 'src/**.c'
+      - 'examples/UnitUnified/**.ino'
+      - 'examples/UnitUnified/**.cpp'
+      - 'examples/UnitUnified/**.hpp'
+      - 'examples/UnitUnified/**.h'
+      - 'examples/UnitUnified/**.c'
+      - '.github/workflows/arduino-m5-build-check.yml'
+  workflow_dispatch:
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.build-properties }}:${{ matrix.sketch }}:${{matrix.board}}@${{matrix.platform-version}}
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix:
+        platform-url:
+          - https://m5stack.oss-cn-shenzhen.aliyuncs.com/resource/arduino/package_m5stack_index.json
+
+        sketch:
+          - PlotToSerial
+
+        build-properties:
+          - "-DUSING_UNIT_MINI_IMU"
+
+        board:
+          # Reduced to chip-arch reps + distinct-build-property boards. This workflow verifies the
+          # m5stack:esp32 fork toolchain; unit/ifdef coverage lives in platformio-build-check.yml.
+          # Pure variant siblings below compile identical code -> covered by the reps.
+          - m5stack_core         # ESP32 representative
+          - m5stack_cores3       # ESP32-S3 representative
+          - m5stack_nano_c6      # ESP32-C6 representative
+          - m5stack_nano_h2      # ESP32-H2 representative (M5-fork-only board; no WiFi radio)
+          - m5stack_tab5         # ESP32-P4 representative
+          - m5stack_atoms3r      # ESP32-S3, distinct FQBN build property (PSRAM)
+          - m5stack_cardputer    # ESP32-S3, distinct FQBN build property (PSRAM / USB / memory_type)
+          - m5stack_papers3      # ESP32-S3, distinct FQBN build property (16MB / PSRAM)
+          - m5stack_sticks3      # ESP32-S3, distinct FQBN build property
+#          - arduino_nesso_n1    # ESP32-C6: represented by nano_c6
+#          - m5stack_atom        # ESP32: represented by core
+#          - m5stack_atoms3      # ESP32-S3: represented by cores3
+#          - m5stack_capsule     # ESP32-S3: represented by cores3
+#          - m5stack_core2       # ESP32: represented by core
+#          - m5stack_coreink     # ESP32: represented by core
+#          - m5stack_dial        # ESP32-S3: represented by cores3
+#          - m5stack_dinmeter    # ESP32-S3: represented by cores3
+#          - m5stack_fire        # ESP32: represented by core
+#          - m5stack_paper       # ESP32 (original M5Paper): represented by core
+#          - m5stack_stamp_s3    # ESP32-S3: represented by cores3
+#          - m5stack_stickc      # ESP32: represented by core
+#          - m5stack_stickc_plus  # ESP32: represented by core
+#          - m5stack_stickc_plus2 # ESP32: represented by core
+#          - m5stack_chain_dualkey
+#          - m5stack_poe_cam
+#          - m5stack_powerhub
+#          - m5stack_stamp_c3
+#          - m5stack_stamp_pico
+#          - m5stack_stamplc
+#          - m5stack_station
+#          - m5stack_timer_cam
+#          - m5stack_tough
+#          - m5stack_unit_c6l
+#          - m5stack_unit_cam
+#          - m5stack_unit_cams3
+
+        platform-version:
+          - 3.2.5
+
+        platform:
+          - m5stack
+
+        archi:
+          - esp32
+
+        include:
+          # UnitBMM350 (U231, GROVE): single representative board (Core2, shared with v2/v3),
+          # full board coverage lives in platformio-build-check.yml.
+          - sketch: PlotToSerial
+            platform-url: https://m5stack.oss-cn-shenzhen.aliyuncs.com/resource/arduino/package_m5stack_index.json
+            platform: m5stack
+            archi: esp32
+            platform-version: 3.2.5
+            board: m5stack_core2
+            build-properties: "-DUSING_UNIT_BMM350"
+          # UnitDoF10 (composite: BMI270 + BMM350 AUX + SPA06 baro): exercises the M5Unit-ENV
+          # umbrella-header LDF activation path (<M5UnitUnifiedENV.h>). Regression guard for the
+          # m5stack:esp32 fork toolchain; full unit/board coverage lives in platformio-build-check.yml.
+          - sketch: PlotToSerial
+            platform-url: https://m5stack.oss-cn-shenzhen.aliyuncs.com/resource/arduino/package_m5stack_index.json
+            platform: m5stack
+            archi: esp32
+            platform-version: 3.2.5
+            board: m5stack_core2
+            build-properties: "-DUSING_UNIT_DOF10"
+          # AhrsDemo: own source (WiFi web viewer + LCD gizmo + begin_builtin dispatch). BUILTIN
+          # compiles the most AhrsDemo-unique code; verifies it builds on the m5stack fork toolchain.
+          - sketch: AhrsDemo
+            platform-url: https://m5stack.oss-cn-shenzhen.aliyuncs.com/resource/arduino/package_m5stack_index.json
+            platform: m5stack
+            archi: esp32
+            platform-version: 3.2.5
+            board: m5stack_cores3
+            build-properties: "-DUSING_BUILTIN_IMU"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare libraries list
+        id: libs
+        run: |
+          {
+            echo "yaml<<EOF"
+            echo "$REQUIRED_LIBRARIES" | tr ',' '\n' | while read -r lib; do
+              echo "- name: $lib"
+            done
+            echo "- source-path: ./"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Compile examples
+        uses: arduino/compile-sketches@v1
+        with:
+          fqbn: ${{ matrix.platform }}:${{ matrix.archi }}:${{ matrix.board }}
+          platforms: |
+            - name: ${{ matrix.platform }}:${{ matrix.archi }}
+              source-url: ${{ matrix.platform-url }}
+              version: ${{ matrix.platform-version }}
+          libraries: ${{ steps.libs.outputs.yaml }}
+          sketch-paths: |
+            - ${{ env.SKETCH_NAMES_FIND_START }}/${{ matrix.sketch }}
+          cli-compile-flags: |
+            - --build-property
+            - build.extra_flags=${{ matrix.build-properties }}

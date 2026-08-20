@@ -1,0 +1,39 @@
+description: M5UnitUnified library for IMU series (UnitIMUMini, DoF6/DoF9/DoF10, BMM350, built-in IMUs)
+url: https://github.com/m5stack/M5Unit-IMU
+issues: https://github.com/m5stack/M5Unit-IMU/issues
+license: MIT
+version: "0.0.1"
+
+dependencies:
+  idf: ">=5.0"
+  # M5UnitUnified is not yet on the ESP Component Registry, so reference the main
+  # branch via git (switch to a version constraint after publish).
+  m5stack/M5UnitUnified:
+    git: https://github.com/m5stack/M5UnitUnified.git
+    version: main
+  # Barometer drivers (UnitSPA06 for DoF10 / UnitBMP280 for MiniIMUPro) live in M5Unit-ENV.
+  # Pinned to master (which now includes the 1.7.1 release that ships the UnitSPA06::pressure() ->
+  # Pa change this repository depends on). Switch to a tag/version constraint after M5UnitUnified
+  # itself moves off git-ref (currently the stack is not on the ESP Component Registry).
+  m5stack/M5Unit-ENV:
+    git: https://github.com/m5stack/M5Unit-ENV.git
+    version: master
+
+targets:
+  - esp32
+  - esp32s3
+  - esp32c3
+  - esp32c6
+  - esp32h2
+  - esp32p4
+
+files:
+  exclude:
+    - "docs/**"
+    - "examples/**"
+    - "test/**"
+    - "boards/**"
+    - ".clang-format"
+    - "platformio.ini"
+    - "library.json"
+    - "library.properties"

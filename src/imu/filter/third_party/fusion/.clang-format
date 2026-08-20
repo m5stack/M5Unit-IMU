@@ -1,0 +1,5 @@
+# Vendored from https://github.com/xioTechnologies/Fusion (MIT License, see LICENSE.md).
+# This directory is kept byte-for-byte identical to upstream; disable clang-format for
+# everything under here instead of touching the vendored files.
+DisableFormat: true
+SortIncludes: false
