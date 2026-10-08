@@ -714,13 +714,13 @@ bool begin_builtin()
 //! @details Classic M5Stack Core is the exception every configuration has to make: its default GROVE
 //! port IS the internal bus, where a 0x68 unit collides with the built-in IMU, so those boards route
 //! to GROVE Port C (needs the M5GO/Fire base). Every other board takes the wiring helper's default
-//! port. Units carry their own clock, but 400kHz is forced here to match the DoF/MiniIMU defaults.
+//! port. Units carry their own clock (400kHz for every IMU unit).
 bool wire_grove_unit(m5::unit::Component& u, const bool attach_to_open_bus = false)
 {
     if (M5.getBoard() == m5::board_t::board_M5Stack) {
         return m5::unit::imu::wiring::i2cPortC(Units, u, attach_to_open_bus);
     }
-    return m5::unit::wiring::addI2C(Units, u, 400 * 1000U);
+    return m5::unit::wiring::addI2C(Units, u);
 }
 
 #if defined(USING_UNIT_DOF6) || defined(USING_UNIT_DOF9) || defined(USING_UNIT_DOF10)

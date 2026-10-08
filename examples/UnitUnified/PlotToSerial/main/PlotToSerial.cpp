@@ -267,10 +267,10 @@ void setup()
         // Route to GROVE Port C on the idle lgfx I2C port (see i2cPortC in m5_unit_imu_wiring.hpp).
         ok = m5::unit::imu::wiring::i2cPortC(Units, unit);
     } else {
-        ok = m5::unit::wiring::addI2C(Units, unit, 400 * 1000U);
+        ok = m5::unit::wiring::addI2C(Units, unit);
     }
 #else
-    ok = m5::unit::wiring::addI2C(Units, unit, 400 * 1000U);
+    ok = m5::unit::wiring::addI2C(Units, unit);
 #endif
 
 #if (defined(USING_UNIT_DOF6) || defined(USING_UNIT_DOF9) || defined(USING_UNIT_DOF10)) && defined(ARDUINO)
