@@ -1,0 +1,27 @@
+var classm5_1_1unit_1_1_unit_b_m_i270 =
+[
+    [ "config_t", "structm5_1_1unit_1_1_unit_b_m_i270_1_1config__t.html", "structm5_1_1unit_1_1_unit_b_m_i270_1_1config__t" ],
+    [ "UnitBMI270", "classm5_1_1unit_1_1_unit_b_m_i270.html#ab6846130f6eabff5bbaa59bcb64f235f", null ],
+    [ "~UnitBMI270", "classm5_1_1unit_1_1_unit_b_m_i270.html#a7b2e62196619586ebffefe4df10035ea", null ],
+    [ "begin", "classm5_1_1unit_1_1_unit_b_m_i270.html#a82e96bc7d2ab8e6a83ee573ee18ac0e3", null ],
+    [ "config", "classm5_1_1unit_1_1_unit_b_m_i270.html#a1b274d072a5604b2786402ad682666e0", null ],
+    [ "config", "classm5_1_1unit_1_1_unit_b_m_i270.html#a9f1ac1c14143d22e64e0d360a276400c", null ],
+    [ "imuConvertParam", "classm5_1_1unit_1_1_unit_b_m_i270.html#a2fcfc851858c979bc7c476d3a09fc0b4", null ],
+    [ "imuSpec", "classm5_1_1unit_1_1_unit_b_m_i270.html#a97e0e07cc0bf4c360e67fa909b2e4c1d", null ],
+    [ "readAccelODR", "classm5_1_1unit_1_1_unit_b_m_i270.html#a339bdc794666d97425fbfb69428dd9b4", null ],
+    [ "readAccelRange", "classm5_1_1unit_1_1_unit_b_m_i270.html#a48771530ca9cb7f15fc3759656fec6fc", null ],
+    [ "readGyroODR", "classm5_1_1unit_1_1_unit_b_m_i270.html#acbf554eeb3b330d32f6966683b2d7006", null ],
+    [ "readGyroRange", "classm5_1_1unit_1_1_unit_b_m_i270.html#a1c3591b201d226b790b6d64360aaaab9", null ],
+    [ "readImuRaw", "classm5_1_1unit_1_1_unit_b_m_i270.html#a0fd25fefd9d04eaf46834c3d1787cee3", null ],
+    [ "sleep", "classm5_1_1unit_1_1_unit_b_m_i270.html#a8659f0d9a25388c73a6656b2bb6713af", null ],
+    [ "softReset", "classm5_1_1unit_1_1_unit_b_m_i270.html#adaed0ee5c1819774203bf4878e84bfdb", null ],
+    [ "startPeriodicMeasurement", "classm5_1_1unit_1_1_unit_b_m_i270.html#afae7dd168ee5a58f39a063938f597c02", null ],
+    [ "startPeriodicMeasurement", "classm5_1_1unit_1_1_unit_b_m_i270.html#a82634d35e01fcd1b3bba6e90d5a242b0", null ],
+    [ "stopPeriodicMeasurement", "classm5_1_1unit_1_1_unit_b_m_i270.html#ac320aedc98b9f66e0f26f349dedae8ee", null ],
+    [ "update", "classm5_1_1unit_1_1_unit_b_m_i270.html#a9296a7139944174edc99188a6d4af103", null ],
+    [ "wakeup", "classm5_1_1unit_1_1_unit_b_m_i270.html#af0a6909bcf427f65be69a8031b3b1d93", null ],
+    [ "writeAccelODR", "classm5_1_1unit_1_1_unit_b_m_i270.html#ae188988a56a9bcec2fac516dbbe99ab7", null ],
+    [ "writeAccelRange", "classm5_1_1unit_1_1_unit_b_m_i270.html#a8436757d8ec31b31097388d0add0d4cb", null ],
+    [ "writeGyroODR", "classm5_1_1unit_1_1_unit_b_m_i270.html#ac0579c6e940060981f2c07b5eb2073f6", null ],
+    [ "writeGyroRange", "classm5_1_1unit_1_1_unit_b_m_i270.html#a52d2badeb1c6ae01117337aec6129712", null ]
+];

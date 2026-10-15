@@ -1,0 +1,26 @@
+var searchData=
+[
+  ['i2cportc_0',['i2cPortC',['../m5__unit__imu__wiring_8hpp.html#a14a73532989b426e6b8e4aefa9529a61',1,'m5::unit::imu::wiring']]],
+  ['identity_1',['identity',['../classm5_1_1math_1_1_matrix.html#a5e0675fb5cea658fa85cec9e9cff1709',1,'m5::math::Matrix::identity()'],['../structm5_1_1math_1_1_quaternion.html#a44254185a191bb0de9191a780b2dcbff',1,'m5::math::Quaternion::identity()']]],
+  ['imu_2',['M5Unit-IMU',['../index.html',1,'']]],
+  ['imu_3',['imu',['../classm5_1_1unit_1_1_unit_do_f10.html#a60d00add3b6a2995d1ff7de911770649',1,'m5::unit::UnitDoF10::imu()'],['../classm5_1_1unit_1_1_unit_do_f9.html#ab092368b3c6841ab46881ffb14fb0081',1,'m5::unit::UnitDoF9::imu()'],['../classm5_1_1unit_1_1_unit_mini_i_m_u_pro.html#a55156d093fc71646fc9b8ab21dd20246',1,'m5::unit::UnitMiniIMUPro::imu()']]],
+  ['imu_5f3d_5ft_4',['imu_3d_t',['../structm5_1_1imu_1_1_ahrs_imu_1_1imu__3d__t.html',1,'m5::imu::AhrsImu']]],
+  ['imu_5fconvert_5fparam_5ft_5',['imu_convert_param_t',['../structm5_1_1imu_1_1imu__convert__param__t.html',1,'m5::imu']]],
+  ['imu_5fdata_5fsource_2ehpp_6',['imu_data_source.hpp',['../imu__data__source_8hpp.html',1,'']]],
+  ['imu_5fdata_5ft_7',['imu_data_t',['../structm5_1_1imu_1_1_ahrs_imu_1_1imu__data__t.html',1,'m5::imu::AhrsImu']]],
+  ['imu_5fdetect_2ehpp_8',['imu_detect.hpp',['../imu__detect_8hpp.html',1,'']]],
+  ['imu_5fphysical_5fdata_5ft_9',['imu_physical_data_t',['../structm5_1_1imu_1_1imu__physical__data__t.html',1,'m5::imu']]],
+  ['imu_5fraw_5fdata_5ft_10',['imu_raw_data_t',['../structm5_1_1imu_1_1imu__raw__data__t.html',1,'m5::imu']]],
+  ['imu_5ftypes_2ehpp_11',['imu_types.hpp',['../imu__types_8hpp.html',1,'']]],
+  ['imuconvertparam_12',['imuConvertParam',['../classm5_1_1imu_1_1_i_m_u_data_source.html#abb01533f58adb78a2c1364950d8a2708',1,'m5::imu::IMUDataSource::imuConvertParam()'],['../classm5_1_1unit_1_1_unit_a_k8963.html#a3fe6501db154bb92cdd8c41807521d6a',1,'m5::unit::UnitAK8963::imuConvertParam()'],['../classm5_1_1unit_1_1_unit_b_m_i270.html#a2fcfc851858c979bc7c476d3a09fc0b4',1,'m5::unit::UnitBMI270::imuConvertParam()'],['../classm5_1_1unit_1_1_unit_b_m_i270_aux_b_m_m150.html#a407d0a1dded2ee8215a33aa939b4027c',1,'m5::unit::UnitBMI270AuxBMM150::imuConvertParam()'],['../classm5_1_1unit_1_1_unit_b_m_m150.html#a6cc537212978cce25ed61318712241d3',1,'m5::unit::UnitBMM150::imuConvertParam()'],['../classm5_1_1unit_1_1_unit_b_m_m350.html#aacf432dc154f5fd2312964e3bc53e7c9',1,'m5::unit::UnitBMM350::imuConvertParam()'],['../classm5_1_1unit_1_1_unit_m_a_g3110.html#ad1386ee55caf0e8566a610ec2aed845f',1,'m5::unit::UnitMAG3110::imuConvertParam()'],['../classm5_1_1unit_1_1_unit_m_p_u6xxx.html#a503b701683192dcac1b4b4d6aaefb453',1,'m5::unit::UnitMPU6xxx::imuConvertParam()'],['../classm5_1_1unit_1_1_unit_s_h200_q.html#a4c66a50d696c5d63ef13b12091a3ac55',1,'m5::unit::UnitSH200Q::imuConvertParam()']]],
+  ['imudatasource_13',['IMUDataSource',['../classm5_1_1imu_1_1_i_m_u_data_source.html',1,'m5::imu']]],
+  ['imukind_14',['ImuKind',['../imu__detect_8hpp.html#ae13f6902a5de02acbc4fdadca69c4690',1,'m5::unit::imu']]],
+  ['imuspec_15',['imuSpec',['../classm5_1_1imu_1_1_i_m_u_data_source.html#afcb9249bdc69cc65ec7c64aa97836bac',1,'m5::imu::IMUDataSource::imuSpec()'],['../classm5_1_1unit_1_1_unit_a_k8963.html#ac115c7264445e058b006fed57be21777',1,'m5::unit::UnitAK8963::imuSpec()'],['../classm5_1_1unit_1_1_unit_b_m_i270.html#a97e0e07cc0bf4c360e67fa909b2e4c1d',1,'m5::unit::UnitBMI270::imuSpec()'],['../classm5_1_1unit_1_1_unit_b_m_i270_aux_b_m_m150.html#ab3022494305cfd24565a06838bcaa751',1,'m5::unit::UnitBMI270AuxBMM150::imuSpec()'],['../classm5_1_1unit_1_1_unit_b_m_m150.html#a5dc2bc6e3ec3f1eb323b52e1f4715dc0',1,'m5::unit::UnitBMM150::imuSpec()'],['../classm5_1_1unit_1_1_unit_b_m_m350.html#a00608874c54f35b60728507613234749',1,'m5::unit::UnitBMM350::imuSpec()'],['../classm5_1_1unit_1_1_unit_m_a_g3110.html#a8385da2c5e9b97e150c8526f5c0f4221',1,'m5::unit::UnitMAG3110::imuSpec()'],['../classm5_1_1unit_1_1_unit_m_p_u6xxx.html#a97e5ddeee15ea61f23f2568b7fbdab00',1,'m5::unit::UnitMPU6xxx::imuSpec()'],['../classm5_1_1unit_1_1_unit_s_h200_q.html#a4c5a5c18050043a7949e9f0c1a8a8919',1,'m5::unit::UnitSH200Q::imuSpec()']]],
+  ['integrate_16',['integrate',['../structm5_1_1math_1_1_quaternion.html#aeaa53255311372039f4db746c7eb0d54',1,'m5::math::Quaternion']]],
+  ['interval_5fms_17',['interval_ms',['../unit__ak8963__data_8hpp.html#a71498a1bc4d6cd1db89fabee16f0b9b2',1,'m5::unit::ak8963::interval_ms()'],['../unit__mag3110__data_8hpp.html#a17685e5c8fe37658acd83f244635ad0b',1,'m5::unit::mag3110::interval_ms()']]],
+  ['invert3x3_18',['invert3x3',['../matrix_8hpp.html#a416d340c33bdfb8cdc162daabe2fcc38',1,'m5::math']]],
+  ['invert_5fx_19',['invert_x',['../structm5_1_1imu_1_1_axis_order.html#a7fe4d3a3ee4b93d589daaedc83bfe115',1,'m5::imu::AxisOrder']]],
+  ['invert_5fy_20',['invert_y',['../structm5_1_1imu_1_1_axis_order.html#a04126229981e192362d03cc83b19267d',1,'m5::imu::AxisOrder']]],
+  ['invert_5fz_21',['invert_z',['../structm5_1_1imu_1_1_axis_order.html#a1339ea44ba1e7d1dfcbaf4ce3877fcf9',1,'m5::imu::AxisOrder']]],
+  ['isenabled_22',['isEnabled',['../classm5_1_1imu_1_1_ahrs_imu.html#a13d2a5b754bd3a1fea075fb58b18703d',1,'m5::imu::AhrsImu']]]
+];

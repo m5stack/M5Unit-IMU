@@ -1,0 +1,26 @@
+var searchData=
+[
+  ['odr_5finterval_5fms_0',['odr_interval_ms',['../unit__bmi270__data_8hpp.html#a9601d8530516f027ef8bd09696142e2e',1,'m5::unit::bmi270']]],
+  ['offset_1',['offset',['../structm5_1_1unit_1_1bmm350_1_1otp__compensation__t.html#ac671484ead145f774045ef8e2873dcd3',1,'m5::unit::bmm350::otp_compensation_t']]],
+  ['operator_26_2',['operator&amp;',['../imu__types_8hpp.html#a57540a5edf9e170de1f757bbe80c30d3',1,'m5::imu']]],
+  ['operator_28_29_3',['operator()',['../classm5_1_1math_1_1_matrix.html#ad4dcf79fe27f918fda3a3bfaa440f552',1,'m5::math::Matrix::operator()(const std::size_t row, const std::size_t col)'],['../classm5_1_1math_1_1_matrix.html#a9e53a02a8b6f2135918707ddba812225',1,'m5::math::Matrix::operator()(const std::size_t row, const std::size_t col) const']]],
+  ['operator_2a_4',['operator*',['../classm5_1_1math_1_1_matrix.html#a95f9d92698a8acfe34bbee24ab7ca665',1,'m5::math::Matrix::operator*(const float scalar) const'],['../classm5_1_1math_1_1_matrix.html#aaa0add5da78dfe1347bc38ec2863d270',1,'m5::math::Matrix::operator*(const Matrix&lt; C, K &gt; &amp;rhs) const'],['../structm5_1_1math_1_1_quaternion.html#a5f3ac450d3cd2e85d39f03ee2726ec44',1,'m5::math::Quaternion::operator*()'],['../structm5_1_1math_1_1_vector3.html#a6b6ebae8ecedc772b5975ef28158fe63',1,'m5::math::Vector3::operator*()']]],
+  ['operator_2b_5',['operator+',['../classm5_1_1math_1_1_matrix.html#a4d7cf05723201ff2288d581eb9b2b903',1,'m5::math::Matrix::operator+()'],['../structm5_1_1math_1_1_vector3.html#a544990154ffc184bf525e54f5e16c66e',1,'m5::math::Vector3::operator+()']]],
+  ['operator_2d_6',['operator-',['../classm5_1_1math_1_1_matrix.html#ad68c13c8495e055afb34aca2fadd96d7',1,'m5::math::Matrix::operator-()'],['../structm5_1_1math_1_1_vector3.html#a0fa69356fbe51a541ca2b43f86baf10a',1,'m5::math::Vector3::operator-()']]],
+  ['operator_3d_7',['operator=',['../classm5_1_1imu_1_1_ahrs_controller.html#a8bd6a250a9d3742cc704124be97b17d7',1,'m5::imu::AhrsController']]],
+  ['operator_7c_8',['operator|',['../imu__types_8hpp.html#a977d41486381a7f488982f5264ff8170',1,'m5::imu']]],
+  ['operator_7c_3d_9',['operator|=',['../imu__types_8hpp.html#a0e7b8f467271028dbd0b64eac6ed25f7',1,'m5::imu']]],
+  ['osr2_10',['Osr2',['../unit__bmi270__data_8hpp.html#a1e8ea7b9350d152a1d596258570def58a6a754a375dca244094108790b79c5ea0',1,'m5::unit::bmi270']]],
+  ['osr2avg2_11',['Osr2Avg2',['../unit__bmi270__data_8hpp.html#a31b78b8cc936e1c61cff02fbdcfe8e9ba6aba0a94a0c6db8f327fa00f8a8a2455',1,'m5::unit::bmi270']]],
+  ['osr4_12',['Osr4',['../unit__bmi270__data_8hpp.html#a1e8ea7b9350d152a1d596258570def58a56a5c83fe27edcab4b40c8f682d25f22',1,'m5::unit::bmi270']]],
+  ['osr4avg1_13',['Osr4Avg1',['../unit__bmi270__data_8hpp.html#a31b78b8cc936e1c61cff02fbdcfe8e9babf141f510c547773988a0b1e184db219',1,'m5::unit::bmi270']]],
+  ['otp_5fcompensation_5ft_14',['otp_compensation_t',['../structm5_1_1unit_1_1bmm350_1_1otp__compensation__t.html',1,'m5::unit::bmm350']]],
+  ['output_5fbit_15',['output_bit',['../structm5_1_1unit_1_1_unit_a_k8963_1_1config__t.html#ae3e41ef25cc959feeac800d2b730c350',1,'m5::unit::UnitAK8963::config_t']]],
+  ['output_5flsb_5fper_5fut_16',['OUTPUT_LSB_PER_UT',['../unit__ak8963__data_8hpp.html#ae5f24ec2ea74c89c89cba8db4bfc59cc',1,'m5::unit::ak8963::OUTPUT_LSB_PER_UT'],['../unit__mag3110__data_8hpp.html#a7cb3f4a74e4d54a8e9f1714ea38c7ffd',1,'m5::unit::mag3110::OUTPUT_LSB_PER_UT']]],
+  ['output_5frate_5fmhz_17',['output_rate_mhz',['../unit__mag3110__data_8hpp.html#a6617b67e677a9b12e375247a2c92d55b',1,'m5::unit::mag3110']]],
+  ['outputbit_18',['OutputBit',['../unit__ak8963__data_8hpp.html#ae906ec0e98e047c2e20127561ad62f70',1,'m5::unit::ak8963']]],
+  ['over_5fsampling_19',['over_sampling',['../structm5_1_1unit_1_1_unit_m_a_g3110_1_1config__t.html#a88aa1e5837421bd4b299942d0db9a18e',1,'m5::unit::UnitMAG3110::config_t']]],
+  ['overflow_20',['overflow',['../structm5_1_1unit_1_1ak8963_1_1_data.html#ade95c4ac1141ce3326f9330222f4ec67',1,'m5::unit::ak8963::Data']]],
+  ['overflow_5foutput_21',['OVERFLOW_OUTPUT',['../unit__bmm150__data_8hpp.html#a6ce1d5a9046b9cf71079a48fb276d77e',1,'m5::unit::bmm150']]],
+  ['oversampling_22',['OverSampling',['../unit__mag3110__data_8hpp.html#ad53f95cdab86a70993469820417ec433',1,'m5::unit::mag3110']]]
+];
