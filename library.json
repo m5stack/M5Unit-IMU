@@ -1,6 +1,6 @@
 {
     "name": "M5Unit-IMU",
-    "version": "0.0.1",
+    "version": "0.0.2",
     "description": "M5UnitUnified library for IMU series (MPU6886 / BMI270 / BMM150 / BMM350). Covers UnitIMUMini, Unit DoF6/DoF9/DoF10, Unit BMM350 and built-in IMUs",
     "keywords": "m5stack, m5unitunified, imu, mpu6886, bmi270, bmm150, bmm350, accelerometer, gyroscope, magnetometer, ahrs, i2c",
     "authors": {

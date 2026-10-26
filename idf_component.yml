@@ -2,7 +2,7 @@ description: M5UnitUnified library for IMU series (UnitIMUMini, DoF6/DoF9/DoF10,
 url: https://github.com/m5stack/M5Unit-IMU
 issues: https://github.com/m5stack/M5Unit-IMU/issues
 license: MIT
-version: "0.0.1"
+version: "0.0.2"
 
 dependencies:
   idf: ">=5.0"
