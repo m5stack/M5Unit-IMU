@@ -169,7 +169,7 @@ orientation differs per board -- see the
 - [IMU orientation (wiki)](https://github.com/m5stack/M5Unit-IMU/wiki/IMU-Orientation) — axis orientation of the IMU units and the built-in IMUs, raw
   and after the axis-remap presets
 
-## Required Libraries:
+## Required Libraries
 
 - [M5UnitUnified](https://github.com/m5stack/M5UnitUnified)
 - [M5Utility](https://github.com/m5stack/M5Utility)
@@ -304,14 +304,16 @@ and warns if the build target does not match the switch position.
 
 ```cpp
 #if !defined(USING_UNIT_MINI_IMU) && !defined(USING_UNIT_MINI_IMU_WITH_BMM350) && !defined(USING_BUILTIN_IMU) && \
-    !defined(USING_UNIT_DOF6) && !defined(USING_UNIT_DOF9) && !defined(USING_UNIT_DOF10) &&                     \
-    !defined(USING_UNIT_MINI_IMU_PRO)
+    !defined(USING_BUILTIN_IMU_WITH_BMM350) && !defined(USING_UNIT_DOF6) && !defined(USING_UNIT_DOF9) &&         \
+    !defined(USING_UNIT_DOF10) && !defined(USING_UNIT_MINI_IMU_PRO)
 // For UnitMiniIMU (U095) - 6-axis, GROVE
 // #define USING_UNIT_MINI_IMU
 // For UnitMiniIMU + UnitBMM350 (U231) - 9-axis on GROVE (0x68 + 0x14 coexist)
 // #define USING_UNIT_MINI_IMU_WITH_BMM350
 // For built-in IMU (Core2 / CoreS3 / AtomS3R / M5Stack Core/Fire)
 // #define USING_BUILTIN_IMU
+// For built-in IMU + UnitBMM350 (U231) on GROVE -- 9-axis for a host whose IMU has no magnetometer
+// #define USING_BUILTIN_IMU_WITH_BMM350
 // For UnitDoF6 (U228) -- 6-axis BMI270
 // #define USING_UNIT_DOF6
 // For UnitDoF9 (U229) -- 9-axis BMI270 + BMM350
@@ -325,12 +327,11 @@ and warns if the build target does not match the switch position.
 
 ### For ESP-IDF settings
 
-> **NOTE:** These examples target ESP-IDF 5.x (>=5.0). M5Unified / M5GFX do not yet support
-> ESP-IDF 6.x; stay on the latest 5.x release.
+> **NOTE:** ESP-IDF native build: 5.1 or later (5.x and 6.x).
 
-> **NOTE:** AhrsDemo's WiFi SoftAP + browser viewer is Arduino-only (it uses the arduino-esp32
-> `WiFi.h` / `WebServer.h`, which do not exist on ESP-IDF native). ESP-IDF builds output to
-> Serial and the LCD only.
+> **NOTE:** AhrsDemo's WiFi SoftAP + browser viewer runs on both Arduino and ESP-IDF native builds,
+> except on ESP32-H2 (no WiFi). On ESP32-P4 (Tab5) it uses the ESP32-C6 co-processor through
+> esp_hosted and needs ESP-IDF 5.3 or later; below that the viewer is compiled out.
 
 `common/variant.cmake` maps the Kconfig `CONFIG_EXAMPLE_USING_*` choice to the source-level
 `USING_*` macro shared with the Arduino build, so you do not edit the example source.
@@ -346,6 +347,7 @@ idf.py menuconfig
 #      UnitMiniIMUPro (U171, BMI270+BMM150+BMP280) /
 #      UnitMiniIMU + UnitBMM350, 9-axis GROVE (AhrsDemo only) /
 #      Built-in IMU, M5.getBoard() auto-detect (AhrsDemo only)
+#    Built-in IMU + UnitBMM350 is Arduino-only for now (no Kconfig choice).
 #    For the DoF units, "DoF BMI270 I2C address (SW1 switch)" selects 0x68 (default) / 0x69.
 idf.py build flash monitor
 ```
