@@ -2,7 +2,7 @@ name: Build(arduino-m5stack)
 
 env:
   SKETCH_NAMES_FIND_START: ./examples/UnitUnified
-  REQUIRED_LIBRARIES: M5Unified,M5UnitUnified,M5Unit-ENV
+  REQUIRED_LIBRARIES: M5Unified,M5UnitUnified,M5Unit-ENV,M5Unit-HUB
 
 on:
   push:
@@ -141,6 +141,15 @@ jobs:
             platform-version: 3.3.10
             board: m5stack_cores3
             build-properties: "-DUSING_BUILTIN_IMU"
+          # ViaPaHub (UnitMiniIMU / DoF6 / DoF9 / DoF10 / BMM350 on one PaHub; M5Unit-HUB is an
+          # example-only dependency). Core only: verifies it builds on the m5stack fork toolchain.
+          - sketch: ViaPaHub
+            platform-url: https://m5stack.oss-cn-shenzhen.aliyuncs.com/resource/arduino/package_m5stack_index.json
+            platform: m5stack
+            archi: esp32
+            platform-version: 3.3.10
+            board: m5stack_core
+            build-properties: ""
 
     steps:
       - name: Checkout

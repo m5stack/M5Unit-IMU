@@ -172,3 +172,25 @@ jobs:
           esp_idf_version: ${{ matrix.idf }}
           target: esp32p4
           path: examples/UnitUnified/AhrsDemo
+
+  # ViaPaHub: multi-unit PaHub example (M5Unit-HUB fetched via git as an example-only dependency).
+  # It has no Kconfig variant; build it on the classic ESP32 representative.
+  build-viapahub:
+    name: ${{ matrix.idf }} esp32 ViaPaHub
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix:
+        idf: [v5.1.7, v5.5.4, v6.1]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: ESP-IDF build
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: ${{ matrix.idf }}
+          target: esp32
+          path: examples/UnitUnified/ViaPaHub

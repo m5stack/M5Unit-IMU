@@ -2,7 +2,7 @@ name: Build(arduino-esp32:3.x)
 
 env:
   SKETCH_NAMES_FIND_START: ./examples/UnitUnified
-  REQUIRED_LIBRARIES: M5Unified,M5UnitUnified,M5Unit-ENV
+  REQUIRED_LIBRARIES: M5Unified,M5UnitUnified,M5Unit-ENV,M5Unit-HUB
 
 on:
   push:
@@ -133,6 +133,15 @@ jobs:
             platform-version: 3.3.12
             board: m5stack_cores3
             build-properties: "-DUSING_BUILTIN_IMU"
+          # ViaPaHub (UnitMiniIMU / DoF6 / DoF9 / DoF10 / BMM350 on one PaHub; M5Unit-HUB is an
+          # example-only dependency). Core only: verifies it builds on the core-3.x toolchain.
+          - sketch: ViaPaHub
+            platform-url: https://espressif.github.io/arduino-esp32/package_esp32_index.json
+            platform: esp32
+            archi: esp32
+            platform-version: 3.3.12
+            board: m5stack_core
+            build-properties: ""
 
     steps:
       - name: Checkout

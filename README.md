@@ -81,7 +81,8 @@ the BMI270 is switchable (SW1 0x68/0x69, `DOF_BMI270_ADDRESS` in the examples). 
 one DoF9/DoF10 on a single host, either (a) use DoF6 pairs (BMI270 only), (b) put the second unit
 on a separate bus (GROVE Port C on the free Arduino `Wire` — M5Unified uses In_I2C/Ex_I2C, not
 `Wire`), or (c) use a UnitPaHub: each unit on its own mux channel coexists at the same address
-(the framework selects the channel per transaction; see M5Unit-PaHub for hub examples).
+(the framework selects the channel per transaction; see the [ViaPaHub](examples/UnitUnified/ViaPaHub)
+example).
 
 ```cpp
 // (c) sketch: two DoF9 on one host via UnitPaHub channels
@@ -157,6 +158,24 @@ responds. All chips below have drivers in this library.
 The list is not exhaustive (boards without an established IMU configuration are omitted). Mounting
 orientation differs per board -- see the
 [IMU orientation](https://github.com/m5stack/M5Unit-IMU/wiki/IMU-Orientation) wiki page.
+
+## Support via [PaHub](https://docs.m5stack.com/en/unit/Unit-PaHub%20v2.1)
+
+|Unit|Support|Note|
+|---|---|---|
+|UnitMiniIMU|OK||
+|UnitMiniIMUPro|OK||
+|UnitDoF6|OK||
+|UnitDoF9|OK||
+|UnitDoF10|OK||
+|UnitBMM350|OK||
+
+Units at the same address (the BMI270 / MPU6886 at 0x68, the BMM350 at 0x14) work together when each
+is on its own PaHub channel. On classic M5Stack Core (Basic / Gray / Fire) connect the PaHub to GROVE
+Port C, for the same built-in-IMU reason as above.
+
+See also the [ViaPaHub](examples/UnitUnified/ViaPaHub) example (UnitMiniIMU / UnitDoF6 / UnitDoF9 /
+UnitDoF10 / UnitBMM350 on one PaHub) and [M5Unit-HUB](https://github.com/m5stack/M5Unit-HUB)
 
 ## Related Link
 
