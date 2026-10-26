@@ -54,6 +54,19 @@ bool atomS3R(AhrsController& ahrs, m5::unit::UnitBMI270& bmi270)
     return true;
 }
 
+bool stickS3(AhrsController& ahrs, m5::unit::UnitBMI270& bmi270)
+{
+    if (!ahrs.add(bmi270)) {
+        return false;
+    }
+    // Same accel/gyro correction as AtomS3R; StickS3's BMI270 has no AUX magnetometer.
+    AxisOrder order;
+    order.permutation = AxisPermutation::YXZ;
+    order.invert_y    = true;
+    ahrs.writeAxisOrder(bmi270, order);
+    return true;
+}
+
 bool m5stackCoreFire(AhrsController& ahrs, m5::unit::UnitMPU6886& mpu6886, m5::unit::UnitBMM150& bmm150)
 {
     const bool added_mpu6886 = ahrs.add(mpu6886);

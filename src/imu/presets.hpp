@@ -71,6 +71,19 @@ bool coreS3(AhrsController& ahrs, m5::unit::UnitBMI270& bmi270);
 bool atomS3R(AhrsController& ahrs, m5::unit::UnitBMI270& bmi270);
 
 /*!
+  @brief StickS3's built-in BMI270
+  @param ahrs Controller to register bmi270 with
+  @param bmi270 StickS3's built-in BMI270 (6-axis, no AUX magnetometer; must already be begin()'d)
+  @return False if ahrs already holds the maximum number of sources (see AhrsController::add())
+  @details M5Unified's IMU_Class::begin(): for board_M5StickS3, accel/gyro get X/Y swapped plus Y
+  inverted (axis_order_yxz | axis_invert_y), the same correction as AtomS3R. The result is X toward
+  the right side (screen facing you, USB-C at the bottom), Y away from the USB-C end, Z out of the
+  screen. The official orientation diagram shows the chip's own axes instead (X toward USB-C, Y
+  right, Z up).
+ */
+bool stickS3(AhrsController& ahrs, m5::unit::UnitBMI270& bmi270);
+
+/*!
   @brief Classic M5Stack Core/Fire's built-in MPU6886 + discrete BMM150 magnetometer
   @param ahrs Controller to register mpu6886 and bmm150 with
   @param mpu6886 The board's built-in MPU6886 (must already be begin()'d)

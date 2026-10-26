@@ -549,9 +549,12 @@ bool begin_builtin_bmi270(const m5::board_t board)
             // ATOM Matrix v1.1 replaced the MPU6886 with a BMI270 at the same orientation.
             return m5::imu::presets::atomMatrix(ahrs, *bmi270);
 
+        case m5::board_t::board_M5StickS3:
+            return m5::imu::presets::stickS3(ahrs, *bmi270);
+
         default:
-            // Core2 v1.3 / StickS3 / PaperS3 and other BMI270 hosts: M5Unified applies no axis
-            // correction (identity).
+            // Core2 v1.3 / PaperS3 and other BMI270 hosts: M5Unified applies no axis correction
+            // (identity).
             return ahrs.add(*bmi270);
     }
 }
