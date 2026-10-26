@@ -156,7 +156,7 @@ responds. All chips below have drivers in this library.
 
 The list is not exhaustive (boards without an established IMU configuration are omitted). Mounting
 orientation differs per board -- see the
-[built-in IMU orientation diagrams](docs/imu_orientation/README.md).
+[IMU orientation](https://github.com/m5stack/M5Unit-IMU/wiki/IMU-Orientation) wiki page.
 
 ## Related Link
 
@@ -166,8 +166,8 @@ orientation differs per board -- see the
 - [Unit DoF9 & Datasheet](https://docs.m5stack.com/en/products/sku/U229)
 - [Unit DoF10 & Datasheet](https://docs.m5stack.com/en/products/sku/U230)
 - [Unit BMM350 & Datasheet](https://docs.m5stack.com/en/products/sku/U231)
-- [Built-in IMU orientation diagrams](docs/imu_orientation/README.md) — per-board axis-orientation
-  references for the built-in IMUs (for setting the correct axis remap)
+- [IMU orientation (wiki)](https://github.com/m5stack/M5Unit-IMU/wiki/IMU-Orientation) — axis orientation of the IMU units and the built-in IMUs, raw
+  and after the axis-remap presets
 
 ## Required Libraries:
 

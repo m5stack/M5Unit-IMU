@@ -107,7 +107,7 @@ bool m5stackCoreFire(AhrsController& ahrs, m5::unit::UnitMPU6886& mpu6886, m5::u
   gates it on the board, not on the accel chip), so the same mag correction as the MPU6886
   generation applies. The SH200Q accel/gyro stay at identity: no M5Unified reference table exists
   for it and field reports suggest its accel and gyro axis systems may disagree -- confirm on 2019.7
-  hardware before committing a correction (see docs/imu_orientation).
+  hardware before committing a correction (see the IMU orientation wiki page).
  */
 bool m5stackCoreFire(AhrsController& ahrs, m5::unit::UnitSH200Q& sh200q, m5::unit::UnitBMM150& bmm150);
 

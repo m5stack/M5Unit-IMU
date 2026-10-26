@@ -260,7 +260,8 @@ void switch_filter()
 
 // -------- Diagnostic snapshot for the web viewer's /info panel (populated during setup) --------
 // Lets you compare, from a browser, which board/chip was detected and exactly which axis remap is
-// being applied -- handy when checking a board's orientation against docs/imu_orientation.
+// being applied -- handy when checking a board's orientation against the IMU orientation wiki page
+// (https://github.com/m5stack/M5Unit-IMU/wiki/IMU-Orientation).
 struct DiagInfo {
     m5::board_t board{};                                       //!< M5.getBoard()
     bool builtin{false};                                       //!< true: built-in IMU; false: external Unit
@@ -565,7 +566,7 @@ bool begin_builtin_bmi270(const m5::board_t board)
 //! and added up front so Units.begin() runs exactly once (same constraint as
 //! begin_builtin_mpu6886()). No axis-remap preset exists for this generation (M5Unified has no
 //! reference table), so both sources stay at identity until confirmed on 2017 hardware
-//! (docs/imu_orientation).
+//! (see the IMU orientation wiki page).
 bool begin_builtin_mpu6050(const m5::board_t board)
 {
     if (!Units.add(mpu6050, M5.In_I2C)) {
@@ -615,7 +616,7 @@ bool begin_builtin_mpu9250()
 //! @brief Register a built-in SH200Q with ahrs (2019.3 M5StickC, or a 2019.7 Fire with a BMM150)
 //! @details No accel/gyro axis-remap preset is applied yet: field reports suggest the SH200Q's
 //! accel and gyro axis systems may not agree with each other (or the datasheet), so identity is
-//! used until the orientation is confirmed on hardware (docs/imu_orientation). Expect a large gyro
+//! used until the orientation is confirmed on hardware (see the IMU orientation wiki page). Expect a large gyro
 //! zero offset. On board_M5Stack (Fire 2019.7) the discrete BMM150 is probed and added up front so
 //! Units.begin() runs exactly once (same constraint as begin_builtin_mpu6886()).
 bool begin_builtin_sh200q(const m5::board_t board)
