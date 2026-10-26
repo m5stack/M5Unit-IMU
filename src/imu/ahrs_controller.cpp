@@ -259,6 +259,7 @@ bool AhrsController::wakeup()
     // hand the filter a dt spanning the entire sleep.
     _has_last_micros = false;
     _has_dt_ema      = false;
+    _pending_dt      = 0.0f;
     return woke;
 }
 
@@ -623,7 +624,10 @@ Capability AhrsController::drain_and_fuse(const float dt)
 
     // The gyro-owning source is the primary clock: every sample it hands out drives one
     // filter->update() call, with dt split evenly across the batch drained this round.
+    // dt accumulates across calls that drain nothing (update() polled faster than the gyro
+    // ODR); dropping it would shrink the integrated rotation by ODR / call rate.
     if (_gyro_src) {
+        _pending_dt += dt;
         size_t gyro_index{};
         for (size_t i = 0; i < _source_count; ++i) {
             if (_sources[i] == _gyro_src) {
@@ -652,7 +656,8 @@ Capability AhrsController::drain_and_fuse(const float dt)
 
         if (gyro_count > 0) {
             updated |= Capability::Gyro;
-            const float dt_per_sample = dt / static_cast<float>(gyro_count);
+            const float dt_per_sample = _pending_dt / static_cast<float>(gyro_count);
+            _pending_dt               = 0.0f;
 
             for (size_t k = 0; k < gyro_count; ++k) {
                 const imu_raw_data_t& sample = gyro_buf[k];

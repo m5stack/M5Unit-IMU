@@ -35,7 +35,9 @@ namespace imu {
   - **Primary clock**: the gyro-owning source drives the filter. Every update() call
     drains the gyro source fully; each popped gyro sample triggers one
     `AhrsFilterBase::update()` call, with the elapsed time divided evenly across the
-    batch (`dt / <samples drained this call>`). Accel/mag samples from a *different*
+    batch (`dt / <samples drained this call>`). The time of a call that drains no gyro
+    sample is carried over to the next call that does, so calling update() faster than the
+    gyro ODR does not shrink the integrated rotation. Accel/mag samples from a *different*
     source than the gyro are drained once per update() call and the resulting "latest"
     value is reused for every filter update() call in that batch (no per-sample
     interpolation across sources); a source shared with the gyro (e.g. a single 6/9-axis
@@ -262,7 +264,8 @@ public:
     /*!
       @brief Drain every source and fuse newly-arrived samples using an explicit dt
       @param dt Time elapsed since the previous update call, in seconds; divided evenly
-      across however many gyro samples are drained this call
+      across however many gyro samples are drained this call (if none is drained, it is
+      carried over to the next call that drains one)
       @return Capability bits that received at least one new sample this call
      */
     Capability update(const float dt);
@@ -467,6 +470,8 @@ private:
     bool _has_last_micros{false};
     float _dt_ema{};
     bool _has_dt_ema{false};
+    // Time from update() calls that drained no gyro sample, not yet handed to the filter
+    float _pending_dt{};
 
     axis_offset_state_t _accel_cal{};
     axis_offset_state_t _gyro_cal{};

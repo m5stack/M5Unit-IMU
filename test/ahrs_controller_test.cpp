@@ -405,6 +405,36 @@ TEST(AhrsController, UpdateWithDtSplitsEvenlyAcrossGyroSamples)
     }
 }
 
+TEST(AhrsController, UpdateWithoutGyroSampleCarriesDtOver)
+{
+    MockSource ag(Capability::Accel | Capability::Gyro);
+
+    AhrsController ahrs;
+    EXPECT_TRUE(ahrs.add(ag));
+    EXPECT_TRUE(ahrs.begin());
+
+    MockFilter mock;
+    ahrs.setFilter(mock);
+
+    // Polled faster than the gyro ODR: the calls that drain nothing must not lose their time
+    ahrs.update(0.01f);
+    ahrs.update(0.01f);
+    EXPECT_EQ(mock.updateCount(), 0);
+
+    ag.pushAccelGyro(0, 0, 1, 0, 0, 0);
+    ahrs.update(0.01f);
+    EXPECT_EQ(mock.updateCount(), 1);
+
+    // Consumed: the next sample only gets its own call's dt
+    ag.pushAccelGyro(0, 0, 1, 0, 0, 0);
+    ahrs.update(0.01f);
+    EXPECT_EQ(mock.updateCount(), 2);
+    if (mock.dts().size() == 2) {
+        EXPECT_NEAR(mock.dts()[0], 0.03f, 1e-6f);
+        EXPECT_NEAR(mock.dts()[1], 0.01f, 1e-6f);
+    }
+}
+
 TEST(AhrsController, EulerAndLatestAreConsistentAfterUpdate)
 {
     MockSource ag(Capability::Accel | Capability::Gyro);
