@@ -104,7 +104,7 @@ jobs:
 #          - m5stack_unit_cams3
 
         platform-version:
-          - 3.2.5
+          - 3.3.10
 
         platform:
           - m5stack
@@ -119,7 +119,7 @@ jobs:
             platform-url: https://m5stack.oss-cn-shenzhen.aliyuncs.com/resource/arduino/package_m5stack_index.json
             platform: m5stack
             archi: esp32
-            platform-version: 3.2.5
+            platform-version: 3.3.10
             board: m5stack_core2
             build-properties: "-DUSING_UNIT_BMM350"
           # UnitDoF10 (composite: BMI270 + BMM350 AUX + SPA06 baro): exercises the M5Unit-ENV
@@ -129,7 +129,7 @@ jobs:
             platform-url: https://m5stack.oss-cn-shenzhen.aliyuncs.com/resource/arduino/package_m5stack_index.json
             platform: m5stack
             archi: esp32
-            platform-version: 3.2.5
+            platform-version: 3.3.10
             board: m5stack_core2
             build-properties: "-DUSING_UNIT_DOF10"
           # AhrsDemo: own source (WiFi web viewer + LCD gizmo + begin_builtin dispatch). BUILTIN
@@ -138,7 +138,7 @@ jobs:
             platform-url: https://m5stack.oss-cn-shenzhen.aliyuncs.com/resource/arduino/package_m5stack_index.json
             platform: m5stack
             archi: esp32
-            platform-version: 3.2.5
+            platform-version: 3.3.10
             board: m5stack_cores3
             build-properties: "-DUSING_BUILTIN_IMU"
 
