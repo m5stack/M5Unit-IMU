@@ -173,6 +173,35 @@ jobs:
           target: esp32p4
           path: examples/UnitUnified/AhrsDemo
 
+  # AhrsDemo on the SoCs build-variants (esp32s3) and build-tab5 (esp32p4) do not cover: its WiFi
+  # web viewer branches per SoC (classic esp32 / esp32c6 on-die radio, esp32h2 with no radio -> the
+  # viewer is compiled out). Default variant, latest IDF only.
+  build-ahrsdemo-chips:
+    name: ${{ matrix.idf }} ${{ matrix.target }} AhrsDemo-UnitIMUMini
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix:
+        target: [esp32, esp32c6, esp32h2]
+        idf: [v6.1]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Kconfig variant
+        run: |
+          echo "" >> examples/UnitUnified/common/sdkconfig.defaults
+          echo "CONFIG_EXAMPLE_USING_UNIT_MINI_IMU=y" >> examples/UnitUnified/common/sdkconfig.defaults
+
+      - name: ESP-IDF build
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: ${{ matrix.idf }}
+          target: ${{ matrix.target }}
+          path: examples/UnitUnified/AhrsDemo
+
   # ViaPaHub: multi-unit PaHub example (M5Unit-HUB fetched via git as an example-only dependency).
   # It has no Kconfig variant; build it on the classic ESP32 representative.
   build-viapahub:
