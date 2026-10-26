@@ -76,6 +76,11 @@ void FusionFilter::quaternion(float& w, float& x, float& y, float& z) const
     z                        = q.element.z;
 }
 
+bool FusionFilter::startupInProgress() const
+{
+    return FusionAhrsGetFlags(&_ahrs).startup;
+}
+
 bool FusionFilter::writeGain(const float gain)
 {
     if (!(gain >= 0.0f)) {
