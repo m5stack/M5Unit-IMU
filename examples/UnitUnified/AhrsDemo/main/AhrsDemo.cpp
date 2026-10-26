@@ -39,7 +39,7 @@
 #if !defined(USING_UNIT_MINI_IMU) && !defined(USING_UNIT_MINI_IMU_WITH_BMM350) && !defined(USING_BUILTIN_IMU) && \
     !defined(USING_BUILTIN_IMU_WITH_BMM350) && !defined(USING_UNIT_DOF6) && !defined(USING_UNIT_DOF9) &&         \
     !defined(USING_UNIT_DOF10) && !defined(USING_UNIT_MINI_IMU_PRO)
-// For UnitMiniIMU (SKU: TBD) - 6-axis, GROVE
+// For UnitMiniIMU (U095) - 6-axis, GROVE
 #define USING_UNIT_MINI_IMU
 // For UnitMiniIMU + UnitBMM350 (U231) - 9-axis on GROVE (0x68 + 0x14 coexist)
 // #define USING_UNIT_MINI_IMU_WITH_BMM350
@@ -1075,12 +1075,13 @@ void draw_gizmo(const float roll, const float pitch, const float yaw)
 // Arduino and the ESP-IDF native builds. The HTTP server answers from its own task: the handlers
 // only read a snapshot that loop() publishes, never the AhrsController or the sensors themselves.
 #if defined(AHRS_WEB_VIEWER)
+#include <cstring>
+
 #include <esp_event.h>
 #include <esp_http_server.h>
 #include <esp_netif.h>
 #include <esp_wifi.h>
 #include <nvs_flash.h>
-#include <cstring>
 #if defined(CONFIG_IDF_TARGET_ESP32P4) && defined(ARDUINO)
 #include <WiFi.h>
 #endif
@@ -1190,19 +1191,19 @@ void build_info_json()
                   board_name(diag.board), static_cast<int>(diag.board), source, diag.mag_label, aostr, mostr);
 }
 
-esp_err_t send_text(httpd_req_t* req, const char* type, const char* body)
+esp_err_t send_text(httpd_req_t* const req, const char* const type, const char* const body)
 {
     httpd_resp_set_type(req, type);
     httpd_resp_set_hdr(req, "Cache-Control", "no-store");
     return httpd_resp_send(req, body, HTTPD_RESP_USE_STRLEN);
 }
 
-esp_err_t handle_root(httpd_req_t* req)
+esp_err_t handle_root(httpd_req_t* const req)
 {
     return send_text(req, "text/html", AHRS_INDEX_HTML);
 }
 
-esp_err_t handle_quaternion(httpd_req_t* req)
+esp_err_t handle_quaternion(httpd_req_t* const req)
 {
     portENTER_CRITICAL(&web_sample_lock);
     const WebSample s = web_sample;
@@ -1226,7 +1227,7 @@ esp_err_t handle_quaternion(httpd_req_t* req)
     return send_text(req, "application/json", buf);
 }
 
-esp_err_t handle_info(httpd_req_t* req)
+esp_err_t handle_info(httpd_req_t* const req)
 {
     return send_text(req, "application/json", web_info_json);
 }
