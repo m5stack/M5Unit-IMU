@@ -12,7 +12,9 @@
    - Boards with WiFi also bring up a SoftAP "AhrsDemo" (password "ahrsdemo123"); browse to
      http://192.168.4.1 for the same gizmo live in a browser (works with or without an LCD)
   Controls:
-   - BtnA click (short press): switch AHRS filter
+   - BtnA click (short press): switch AHRS filter. Fusion restarts its 3-second startup ramp on
+     every selection and, without a magnetometer, holds yaw at 0 meanwhile (a rotation in that
+     window is not reflected); the LCD and the browser mark that window with "init"
    - BtnA double-click: zero the displayed yaw at the current heading (tare; roll/pitch unaffected,
      the filter's own internal heading is untouched)
    - BtnA hold (long press): toggle magnetometer auto-calibration (sphere-fit hard-iron) ON/OFF
@@ -151,6 +153,13 @@ constexpr float MADGWICK_BETA_DEFAULT{0.1f};
 constexpr float MAHONY_KP_BOOST{5.0f};
 constexpr float MAHONY_KP_DEFAULT{1.0f};
 uint32_t settle_until_ms{};  // 0: no boost active
+
+//! @brief Whether Fusion is selected and still inside its startup ramp (labelled "init" on the LCD/browser)
+bool fusion_initialising()
+{
+    return (current_filter == m5::imu::FilterType::Fusion) && ahrs.filter() &&
+           static_cast<const m5::imu::FusionFilter*>(ahrs.filter())->startupInProgress();
+}
 
 /*!
   @brief Remove the gyroscope's static bias once, at boot, before any filter integrates it
@@ -954,9 +963,10 @@ void draw_gizmo(const float roll, const float pitch, const float yaw)
     text_canvas.setTextColor(TFT_WHITE, TFT_BLACK);
     text_canvas.setCursor(4, 2);
     if (compact) {
-        text_canvas.printf("%s %s", filter_name(current_filter), auto_cal_enabled ? "Cal:ON" : "Cal:--");
+        text_canvas.printf("%s%s %s", filter_name(current_filter), fusion_initialising() ? " init" : "",
+                           auto_cal_enabled ? "Cal:ON" : "Cal:--");
     } else {
-        text_canvas.printf("Filter: %s", filter_name(current_filter));
+        text_canvas.printf("Filter: %s%s", filter_name(current_filter), fusion_initialising() ? " (init)" : "");
     }
     text_canvas.setCursor(4, 14);
     if (compact) {
@@ -1090,6 +1100,7 @@ struct WebSample {
     float temp{};
     float hpa{}, alt{};
     m5::imu::FilterType filter{};
+    bool init{};  // Fusion startup ramp in progress
     bool cal{};
 };
 WebSample web_sample{};
@@ -1130,7 +1141,7 @@ draw(q);
 var rr=Math.atan2(2*(q.w*q.x+q.y*q.z),1-2*(q.x*q.x+q.y*q.y))*d;
 var pp=Math.asin(Math.max(-1,Math.min(1,2*(q.w*q.y-q.z*q.x))))*d;
 var yy=Math.atan2(2*(q.w*q.z+q.x*q.y),1-2*(q.y*q.y+q.z*q.z))*d;
-r.textContent='['+q.filter+']  roll '+rr.toFixed(1)+'  pitch '+pp.toFixed(1)+'  yaw '+yy.toFixed(1)+'  temp '+q.temp.toFixed(1)+'C  Cal '+(q.cal?'ON':'OFF')+(q.press!==undefined?('  P '+q.press.toFixed(1)+'hPa Alt '+q.alt.toFixed(1)+'m'):'');
+r.textContent='['+q.filter+(q.init?' init':'')+']  roll '+rr.toFixed(1)+'  pitch '+pp.toFixed(1)+'  yaw '+yy.toFixed(1)+'  temp '+q.temp.toFixed(1)+'C  Cal '+(q.cal?'ON':'OFF')+(q.press!==undefined?('  P '+q.press.toFixed(1)+'hPa Alt '+q.alt.toFixed(1)+'m'):'');
 }).catch(function(){}).then(function(){setTimeout(tick,50);});}
 tick();
 fetch('/info').then(function(res){return res.json();}).then(function(o){
@@ -1146,6 +1157,7 @@ void publish_web_sample()
     ahrs.quaternion(s.w, s.x, s.y, s.z);
     s.temp   = ahrs.latest().temp;
     s.filter = current_filter;
+    s.init   = fusion_initialising();
     s.cal    = auto_cal_enabled;
 #if defined(USING_UNIT_DOF10) || defined(USING_UNIT_MINI_IMU_PRO)
     s.hpa = unit.baro().pressure() / 100.0f;  // baro().pressure() is Pa
@@ -1199,14 +1211,17 @@ esp_err_t handle_quaternion(httpd_req_t* req)
 #if defined(USING_UNIT_DOF10) || defined(USING_UNIT_MINI_IMU_PRO)
     char buf[220];
     std::snprintf(buf, sizeof(buf),
-                  "{\"w\":%.4f,\"x\":%.4f,\"y\":%.4f,\"z\":%.4f,\"filter\":\"%s\",\"temp\":%.1f,\"press\":%.1f,"
-                  "\"alt\":%.1f,\"cal\":%s}",
-                  s.w, s.x, s.y, s.z, filter_name(s.filter), s.temp, s.hpa, s.alt, s.cal ? "true" : "false");
+                  "{\"w\":%.4f,\"x\":%.4f,\"y\":%.4f,\"z\":%.4f,\"filter\":\"%s\",\"init\":%s,\"temp\":%.1f,"
+                  "\"press\":%.1f,\"alt\":%.1f,\"cal\":%s}",
+                  s.w, s.x, s.y, s.z, filter_name(s.filter), s.init ? "true" : "false", s.temp, s.hpa, s.alt,
+                  s.cal ? "true" : "false");
 #else
     char buf[180];
     std::snprintf(buf, sizeof(buf),
-                  "{\"w\":%.4f,\"x\":%.4f,\"y\":%.4f,\"z\":%.4f,\"filter\":\"%s\",\"temp\":%.1f,\"cal\":%s}", s.w, s.x,
-                  s.y, s.z, filter_name(s.filter), s.temp, s.cal ? "true" : "false");
+                  "{\"w\":%.4f,\"x\":%.4f,\"y\":%.4f,\"z\":%.4f,\"filter\":\"%s\",\"init\":%s,\"temp\":%.1f,"
+                  "\"cal\":%s}",
+                  s.w, s.x, s.y, s.z, filter_name(s.filter), s.init ? "true" : "false", s.temp,
+                  s.cal ? "true" : "false");
 #endif
     return send_text(req, "application/json", buf);
 }

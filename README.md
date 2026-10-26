@@ -203,6 +203,10 @@ to converge onto the magnetic heading from a cold start, AhrsDemo temporarily ra
 for 3 seconds after a filter is selected (the initialization strategy Madgwick's own report
 recommends, mirroring Fusion's built-in ramp); steady-state behavior stays at the paper defaults.
 
+Fusion holds yaw at 0 during its 3 s startup ramp when there is no magnetometer, so a rotation in
+that window is not reflected; the ramp restarts whenever the filter is (re)selected (AhrsDemo marks
+it with "init").
+
 ### Third-party licenses
 
 The AHRS layer vendors two third-party filter implementations (unmodified, under
