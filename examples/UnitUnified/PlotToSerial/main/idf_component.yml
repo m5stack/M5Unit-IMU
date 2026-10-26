@@ -9,7 +9,7 @@
 ##   (and thus the component's short name) follows the manifest key's case, and M5Unified's
 ##   CMakeLists REQUIRES the lower-case name "m5gfx".
 dependencies:
-  idf: ">=5.0"
+  idf: ">=5.1"
   m5stack/M5Unit-IMU:
     path: "../../../.."
   m5stack/M5Unified: ">=0.2.17"

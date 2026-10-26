@@ -13,11 +13,11 @@
 ##   (../sdkconfig.defaults.esp32p4). esp_hosted stays on 2.x, the series the Arduino core uses with
 ##   Tab5. Below IDF 5.3 neither is fetched and the viewer is compiled out on P4.
 dependencies:
-  idf: ">=5.0"
+  idf: ">=5.1"
   m5stack/M5Unit-IMU:
     path: "../../../.."
   m5stack/M5Unified: ">=0.2.17"
-  m5stack/m5gfx: ">=0.2.9"
+  m5stack/m5gfx: ">=0.2.20"
   espressif/esp_wifi_remote:
     version: ">=0.8"
     rules:

@@ -252,8 +252,8 @@ void setup()
         canvas.createSprite(lcd.width(), lcd.height());
     }
 
-    // UnitMiniIMU / UnitDoF6 / UnitDoF9 / UnitDoF10: NessoN1 -> SoftwareI2C (M5HAL), NanoC6 / NanoH2 ->
-    //                                                M5.Ex_I2C, others -> Wire
+    // UnitMiniIMU / UnitMiniIMUPro / UnitDoF6 / UnitDoF9 / UnitDoF10: classic M5Stack Core -> GROVE
+    // Port C (avoids the built-in IMU at 0x68); other boards -> addI2C() (board-aware)
     // UnitBMM350: GROVE (all boards)
     bool ok{};
 #if defined(USING_UNIT_MINI_IMU) || defined(USING_UNIT_DOF6) || defined(USING_UNIT_DOF9) || \
