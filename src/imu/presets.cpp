@@ -118,7 +118,7 @@ bool atomMatrix(AhrsController& ahrs, m5::unit::UnitBMI270& bmi270)
         return false;
     }
     // ATOM Matrix v1.1 swapped the MPU6886 for a BMI270 but keeps the same mounting orientation, so
-    // M5Unified applies the identical accel/gyro X/Z inversion (IMU_Class.cpp). The BMI270 here is a
+    // M5Unified applies the identical accel/gyro X/Z inversion (IMU_Class). The BMI270 here is a
     // 6-axis part (no AUX magnetometer), so only the accel/gyro axis order is written.
     AxisOrder order;
     order.invert_x = true;

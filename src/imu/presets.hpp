@@ -34,7 +34,7 @@ namespace presets {
   @param mpu6886 Core2's built-in MPU6886 (must already be begin()'d)
   @return False if ahrs already holds the maximum number of sources (see AhrsController::add())
   @details M5Unified's IMU_Class::begin() has no case for board_M5StackCore2 in its
-  axis-order switch (IMU_Class.cpp), i.e. the identity transform is already correct here.
+  axis-order switch (IMU_Class), i.e. the identity transform is already correct here.
   AhrsController::add() defaults every newly added source to the identity AxisOrder, so this
   function does not call writeAxisOrder().
  */
