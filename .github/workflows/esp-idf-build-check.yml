@@ -20,6 +20,8 @@ on:
       - 'examples/UnitUnified/**.c'
       - 'examples/UnitUnified/**/CMakeLists.txt'
       - 'examples/UnitUnified/**/Kconfig.projbuild'
+      - 'examples/UnitUnified/**/sdkconfig.defaults*'
+      - 'examples/UnitUnified/**/idf_component.yml'
       - 'examples/UnitUnified/common/**'
       - '.github/workflows/esp-idf-build-check.yml'
   pull_request:
@@ -36,6 +38,8 @@ on:
       - 'examples/UnitUnified/**.c'
       - 'examples/UnitUnified/**/CMakeLists.txt'
       - 'examples/UnitUnified/**/Kconfig.projbuild'
+      - 'examples/UnitUnified/**/sdkconfig.defaults*'
+      - 'examples/UnitUnified/**/idf_component.yml'
       - 'examples/UnitUnified/common/**'
       - '.github/workflows/esp-idf-build-check.yml'
   workflow_dispatch:
@@ -48,9 +52,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# Cross design (NFC-style 2-job; UnitIMU has no Tab5-dedicated example, so esp32p4 is folded
-# into the chip-coverage job): variant coverage on a single representative target (esp32s3),
-# chip coverage on the other SoCs with the default variant (USING_UNIT_MINI_IMU).
+# Cross design (NFC-style): variant coverage on a single representative target (esp32s3), chip
+# coverage on the other SoCs with the default variant (USING_UNIT_MINI_IMU), and Tab5 (esp32p4)
+# coverage of AhrsDemo's esp_hosted web viewer.
 jobs:
   # Variant coverage: every Kconfig variant, across both example sources (PlotToSerial /
   # AhrsDemo), on esp32s3 (LCD-capable dual-core Xtensa with PSRAM -- also required by AhrsDemo's
@@ -64,8 +68,8 @@ jobs:
       max-parallel: 20
       matrix:
         # idf boundaries: 5.1.7 = oldest legacy-driver (5.0.x dropped: M5GFX needs esp_mm added
-        # in 5.1), 5.4.4 = new driver/*_master.h era, 5.5.4 = latest.
-        idf: [v5.1.7, v5.4.4, v5.5.4]
+        # in 5.1), 5.4.4 = new driver/*_master.h era, 5.5.4 = latest 5.x, 6.1 = latest.
+        idf: [v5.1.7, v5.4.4, v5.5.4, v6.1]
         example_config:
           - label: PlotToSerial-UnitIMUMini
             variant: USING_UNIT_MINI_IMU
@@ -110,7 +114,7 @@ jobs:
   # Chip coverage: PlotToSerial (UnitIMUMini / GROVE+onboard I2C) on every other supported SoC.
   # esp32 = classic Xtensa dual-core. esp32c6 (NanoC6) / esp32h2 (NanoH2) = RISC-V single-core,
   # exercises the app_main CONFIG_FREERTOS_UNICORE feedIdle branch. esp32p4 (M5Stack Tab5) =
-  # RISC-V dual-core; no Tab5-dedicated example exists yet, so it is folded in here.
+  # RISC-V dual-core; AhrsDemo on Tab5 is built in build-tab5.
   build-chips:
     name: ${{ matrix.idf }} ${{ matrix.target }} PlotToSerial-UnitIMUMini
     runs-on: ubuntu-latest
@@ -120,7 +124,7 @@ jobs:
       max-parallel: 20
       matrix:
         target: [esp32, esp32c6, esp32h2, esp32p4]
-        idf: [v5.1.7, v5.4.4, v5.5.4]
+        idf: [v5.1.7, v5.4.4, v5.5.4, v6.1]
         exclude:
           # esp32p4 stable from IDF v5.3 (M5GFX P4 verified on 5.4/5.5). 5.1.7 not applicable.
           - target: esp32p4
@@ -140,3 +144,31 @@ jobs:
           esp_idf_version: ${{ matrix.idf }}
           target: ${{ matrix.target }}
           path: examples/UnitUnified/PlotToSerial
+
+  # Tab5 (esp32p4): AhrsDemo's web viewer runs on the ESP32-C6 co-processor through esp_hosted
+  # (AhrsDemo/sdkconfig.defaults.esp32p4, esp_wifi_remote / esp_hosted from IDF 5.3), so build it
+  # with the built-in IMU variant on every IDF line that supports it.
+  build-tab5:
+    name: ${{ matrix.idf }} esp32p4 AhrsDemo-BuiltinIMU
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix:
+        idf: [v5.4.4, v5.5.4, v6.1]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Kconfig variant
+        run: |
+          echo "" >> examples/UnitUnified/common/sdkconfig.defaults
+          echo "CONFIG_EXAMPLE_USING_BUILTIN_IMU=y" >> examples/UnitUnified/common/sdkconfig.defaults
+
+      - name: ESP-IDF build
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: ${{ matrix.idf }}
+          target: esp32p4
+          path: examples/UnitUnified/AhrsDemo
