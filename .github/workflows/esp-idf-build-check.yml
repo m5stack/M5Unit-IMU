@@ -93,8 +93,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Select Kconfig variant
-        # The example's own sdkconfig.defaults is not read (top CMakeLists points SDKCONFIG_DEFAULTS
-        # at common/sdkconfig.defaults). Append the choice to common/ in the CI workspace only.
+        # Every example's top CMakeLists reads common/sdkconfig.defaults (AhrsDemo also reads its own
+        # sdkconfig.defaults after it, for the app partition only). Append the choice to common/ in
+        # the CI workspace only.
         run: |
           echo "" >> examples/UnitUnified/common/sdkconfig.defaults
           echo "CONFIG_EXAMPLE_${{ matrix.example_config.variant }}=y" >> examples/UnitUnified/common/sdkconfig.defaults

@@ -67,6 +67,15 @@
 #define DOF_BMI270_ADDRESS 0x68
 #endif
 
+// Browser viewer over a WiFi SoftAP (see start_web_viewer()). ESP32-H2 (NanoH2) has no WiFi radio.
+// ESP32-P4 (Tab5) has none on-die either: its WiFi is an ESP32-C6 co-processor reached over SDIO
+// (esp_hosted). The Arduino core always carries it; the ESP-IDF build gets it from esp_wifi_remote
+// (main/idf_component.yml, IDF 5.3 and later), whose Kconfig defines CONFIG_ESP_WIFI_REMOTE_ENABLED.
+#if !defined(CONFIG_IDF_TARGET_ESP32H2) && \
+    (!defined(CONFIG_IDF_TARGET_ESP32P4) || defined(ARDUINO) || defined(CONFIG_ESP_WIFI_REMOTE_ENABLED))
+#define AHRS_WEB_VIEWER 1
+#endif
+
 namespace {
 auto& lcd = M5.Display;
 m5::unit::UnitUnified Units;
@@ -427,7 +436,7 @@ const char* board_name(const m5::board_t b)
     }
 }
 
-#if __has_include(<WiFi.h>) && !defined(CONFIG_IDF_TARGET_ESP32H2)  // used only by the web /info panel
+#if defined(AHRS_WEB_VIEWER)  // used only by the web /info panel
 const char* imu_kind_name(const m5::unit::imu::ImuKind k)
 {
     using K = m5::unit::imu::ImuKind;
@@ -466,7 +475,7 @@ void axis_order_str(const m5::imu::AxisOrder& o, char* const buf, const size_t n
     inv[k] = '\0';
     std::snprintf(buf, n, "%s inv:%s", PERM[static_cast<uint8_t>(o.permutation)], k ? inv : "-");
 }
-#endif  // __has_include(<WiFi.h>) && !ESP32H2
+#endif  // AHRS_WEB_VIEWER
 
 #if defined(USING_BUILTIN_IMU)
 //! @brief Register a built-in MPU6886 with ahrs, applying this board's axis correction
@@ -1052,21 +1061,44 @@ void draw_gizmo(const float roll, const float pitch, const float yaw)
 // Brings up a SoftAP "AhrsDemo" (password "ahrsdemo123") and serves a self-contained page at
 // http://192.168.4.1 that polls the AhrsController quaternion and renders a live 3D body-axis
 // gizmo (X=red / Y=green / Z=blue). Useful on headless boards, but runs on LCD boards too.
-// ESP32-H2 (NanoH2) has no WiFi radio, but __has_include alone cannot exclude it: PlatformIO's
-// LDF adds the WiFi library to the include path from the raw #include line without evaluating
-// #if, and on core 3.x WiFi.h then compiles empty there (its innards are SOC_WIFI_SUPPORTED-
-// gated) -- hence the explicit H2 target check. Not SOC_WIFI_SUPPORTED here: that is undefined on
-// some Arduino cores (ESP32 classic) and on ESP32-P4 (Tab5), whose WiFi is hosted, so it would
-// wrongly compile the viewer out on those.
-#if __has_include(<WiFi.h>) && !defined(CONFIG_IDF_TARGET_ESP32H2)
-#define AHRS_WEB_VIEWER 1
+// It is built on the ESP-IDF WiFi and HTTP server APIs, so the same code runs under both the
+// Arduino and the ESP-IDF native builds. The HTTP server answers from its own task: the handlers
+// only read a snapshot that loop() publishes, never the AhrsController or the sensors themselves.
+#if defined(AHRS_WEB_VIEWER)
+#include <esp_event.h>
+#include <esp_http_server.h>
+#include <esp_netif.h>
+#include <esp_wifi.h>
+#include <nvs_flash.h>
+#include <cstring>
+#if defined(CONFIG_IDF_TARGET_ESP32P4) && defined(ARDUINO)
 #include <WiFi.h>
-#include <WebServer.h>
+#endif
 
 namespace {
-WebServer web_server(80);
+constexpr char AP_SSID[]{"AhrsDemo"};
+constexpr char AP_PASSWORD[]{"ahrsdemo123"};
+constexpr char AP_ADDRESS[]{"192.168.4.1"};  // esp_netif's default address for a SoftAP
+constexpr uint8_t AP_CHANNEL{1};
+constexpr uint8_t AP_MAX_CLIENTS{4};
 
-const char AHRS_INDEX_HTML[] PROGMEM =
+httpd_handle_t web_server{};
+
+//! @brief What /q reports, copied out of loop() so the server task never touches the controller
+struct WebSample {
+    float w{1.0f}, x{}, y{}, z{};
+    float temp{};
+    float hpa{}, alt{};
+    m5::imu::FilterType filter{};
+    bool cal{};
+};
+WebSample web_sample{};
+portMUX_TYPE web_sample_lock = portMUX_INITIALIZER_UNLOCKED;
+
+// /info is fixed once begin() has run, so it is formatted once in setup()
+char web_info_json[512]{"{}"};
+
+const char AHRS_INDEX_HTML[] =
     R"HTML(<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>AhrsDemo</title><style>
 body{margin:0;background:#111;color:#eee;font-family:sans-serif;text-align:center}
@@ -1107,34 +1139,24 @@ document.getElementById('inf').innerHTML=
 '<br><b>accel/gyro axis:</b> '+o.accel_axis+'<br><b>mag axis:</b> '+o.mag_axis;}).catch(function(){});
 </script></body></html>)HTML";
 
-void handle_root()
+//! @brief Copy what /q reports out of the controller (called from loop(), never from the server)
+void publish_web_sample()
 {
-    web_server.send_P(200, "text/html", AHRS_INDEX_HTML);
-}
-
-void handle_quaternion()
-{
-    float w{1.0f}, x{}, y{}, z{};
-    ahrs.quaternion(w, x, y, z);
+    WebSample s{};
+    ahrs.quaternion(s.w, s.x, s.y, s.z);
+    s.temp   = ahrs.latest().temp;
+    s.filter = current_filter;
+    s.cal    = auto_cal_enabled;
 #if defined(USING_UNIT_DOF10) || defined(USING_UNIT_MINI_IMU_PRO)
-    const float baro_alt = unit.baro().altitude();
-    const float hpa      = unit.baro().pressure() / 100.0f;  // baro().pressure() is Pa
-    char buf[220];
-    std::snprintf(buf, sizeof(buf),
-                  "{\"w\":%.4f,\"x\":%.4f,\"y\":%.4f,\"z\":%.4f,\"filter\":\"%s\",\"temp\":%.1f,\"press\":%.1f,"
-                  "\"alt\":%.1f,\"cal\":%s}",
-                  w, x, y, z, filter_name(current_filter), ahrs.latest().temp, hpa, baro_alt,
-                  auto_cal_enabled ? "true" : "false");
-#else
-    char buf[180];
-    std::snprintf(buf, sizeof(buf),
-                  "{\"w\":%.4f,\"x\":%.4f,\"y\":%.4f,\"z\":%.4f,\"filter\":\"%s\",\"temp\":%.1f,\"cal\":%s}", w, x, y,
-                  z, filter_name(current_filter), ahrs.latest().temp, auto_cal_enabled ? "true" : "false");
+    s.hpa = unit.baro().pressure() / 100.0f;  // baro().pressure() is Pa
+    s.alt = unit.baro().altitude();
 #endif
-    web_server.send(200, "application/json", buf);
+    portENTER_CRITICAL(&web_sample_lock);
+    web_sample = s;
+    portEXIT_CRITICAL(&web_sample_lock);
 }
 
-void handle_info()
+void build_info_json()
 {
     m5::imu::AxisOrder ao{}, mo{};
     char aostr[24] = "-", mostr[24] = "-";
@@ -1150,34 +1172,153 @@ void handle_info()
     } else {
         std::snprintf(source, sizeof(source), "%s", diag.unit_label);
     }
-    char buf[512];
-    std::snprintf(buf, sizeof(buf),
+    std::snprintf(web_info_json, sizeof(web_info_json),
                   "{\"board\":\"%s (0x%02X)\",\"source\":\"%s\",\"mag\":\"%s\",\"accel_axis\":\"%s\","
                   "\"mag_axis\":\"%s\"}",
                   board_name(diag.board), static_cast<int>(diag.board), source, diag.mag_label, aostr, mostr);
-    web_server.send(200, "application/json", buf);
+}
+
+esp_err_t send_text(httpd_req_t* req, const char* type, const char* body)
+{
+    httpd_resp_set_type(req, type);
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    return httpd_resp_send(req, body, HTTPD_RESP_USE_STRLEN);
+}
+
+esp_err_t handle_root(httpd_req_t* req)
+{
+    return send_text(req, "text/html", AHRS_INDEX_HTML);
+}
+
+esp_err_t handle_quaternion(httpd_req_t* req)
+{
+    portENTER_CRITICAL(&web_sample_lock);
+    const WebSample s = web_sample;
+    portEXIT_CRITICAL(&web_sample_lock);
+
+#if defined(USING_UNIT_DOF10) || defined(USING_UNIT_MINI_IMU_PRO)
+    char buf[220];
+    std::snprintf(buf, sizeof(buf),
+                  "{\"w\":%.4f,\"x\":%.4f,\"y\":%.4f,\"z\":%.4f,\"filter\":\"%s\",\"temp\":%.1f,\"press\":%.1f,"
+                  "\"alt\":%.1f,\"cal\":%s}",
+                  s.w, s.x, s.y, s.z, filter_name(s.filter), s.temp, s.hpa, s.alt, s.cal ? "true" : "false");
+#else
+    char buf[180];
+    std::snprintf(buf, sizeof(buf),
+                  "{\"w\":%.4f,\"x\":%.4f,\"y\":%.4f,\"z\":%.4f,\"filter\":\"%s\",\"temp\":%.1f,\"cal\":%s}", s.w, s.x,
+                  s.y, s.z, filter_name(s.filter), s.temp, s.cal ? "true" : "false");
+#endif
+    return send_text(req, "application/json", buf);
+}
+
+esp_err_t handle_info(httpd_req_t* req)
+{
+    return send_text(req, "application/json", web_info_json);
+}
+
+bool start_access_point()
+{
+#if defined(CONFIG_IDF_TARGET_ESP32P4) && defined(ARDUINO)
+    // Tab5 (ESP32-P4) has no on-die radio; route WiFi to its ESP32-C6 co-processor over SDIO
+    // (pins per M5Stack's Tab5 WiFi doc). The Arduino core starts esp_hosted inside these calls.
+    // The ESP-IDF build takes the same pins from sdkconfig.defaults.esp32p4 and goes the IDF way below.
+    if (M5.getBoard() == m5::board_t::board_M5Tab5) {
+        WiFi.setPins(GPIO_NUM_12, GPIO_NUM_13, GPIO_NUM_11, GPIO_NUM_10, GPIO_NUM_9, GPIO_NUM_8, GPIO_NUM_15);
+    }
+    return WiFi.mode(WIFI_AP) && WiFi.softAP(AP_SSID, AP_PASSWORD);
+#else
+    // esp_wifi keeps its calibration data in NVS
+    esp_err_t err = nvs_flash_init();
+    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        if (nvs_flash_erase() != ESP_OK) {
+            return false;
+        }
+        err = nvs_flash_init();
+    }
+    if (err != ESP_OK) {
+        M5_LOGE("nvs_flash_init: %s", esp_err_to_name(err));
+        return false;
+    }
+    // Under Arduino the core may have done these already, which they report as ESP_ERR_INVALID_STATE
+    err = esp_netif_init();
+    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+        M5_LOGE("esp_netif_init: %s", esp_err_to_name(err));
+        return false;
+    }
+    err = esp_event_loop_create_default();
+    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+        M5_LOGE("esp_event_loop_create_default: %s", esp_err_to_name(err));
+        return false;
+    }
+    if (esp_netif_create_default_wifi_ap() == nullptr) {
+        M5_LOGE("esp_netif_create_default_wifi_ap failed");
+        return false;
+    }
+    wifi_init_config_t init_cfg = WIFI_INIT_CONFIG_DEFAULT();
+    err                         = esp_wifi_init(&init_cfg);
+    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+        M5_LOGE("esp_wifi_init: %s", esp_err_to_name(err));
+        return false;
+    }
+
+    wifi_config_t ap_cfg{};
+    std::strncpy(reinterpret_cast<char*>(ap_cfg.ap.ssid), AP_SSID, sizeof(ap_cfg.ap.ssid) - 1);
+    std::strncpy(reinterpret_cast<char*>(ap_cfg.ap.password), AP_PASSWORD, sizeof(ap_cfg.ap.password) - 1);
+    ap_cfg.ap.ssid_len       = static_cast<uint8_t>(std::strlen(AP_SSID));
+    ap_cfg.ap.channel        = AP_CHANNEL;
+    ap_cfg.ap.max_connection = AP_MAX_CLIENTS;
+    ap_cfg.ap.authmode       = WIFI_AUTH_WPA2_PSK;
+    if (esp_wifi_set_mode(WIFI_MODE_AP) != ESP_OK || esp_wifi_set_config(WIFI_IF_AP, &ap_cfg) != ESP_OK ||
+        esp_wifi_start() != ESP_OK) {
+        M5_LOGE("failed to start the access point");
+        return false;
+    }
+    return true;
+#endif
+}
+
+bool start_http_server()
+{
+    httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
+    // The page polls /q every 50 ms; let a reloaded page take over the oldest socket instead of
+    // being refused while the previous page's sockets wait to time out
+    cfg.lru_purge_enable = true;
+    if (httpd_start(&web_server, &cfg) != ESP_OK) {
+        M5_LOGE("httpd_start failed");
+        return false;
+    }
+    // httpd_uri_t has gained members over the IDF versions; value-initialise it and name the
+    // fields, or -Wmissing-field-initializers (an error on IDF 6.x) reports the rest
+    struct Route {
+        const char* uri;
+        esp_err_t (*handler)(httpd_req_t*);
+    };
+    static const Route routes[] = {{"/", handle_root}, {"/q", handle_quaternion}, {"/info", handle_info}};
+    for (const auto& r : routes) {
+        httpd_uri_t uri{};
+        uri.uri     = r.uri;
+        uri.method  = HTTP_GET;
+        uri.handler = r.handler;
+        if (httpd_register_uri_handler(web_server, &uri) != ESP_OK) {
+            M5_LOGE("httpd_register_uri_handler %s failed", r.uri);
+            return false;
+        }
+    }
+    return true;
 }
 
 void start_web_viewer()
 {
-#if defined(CONFIG_IDF_TARGET_ESP32P4)
-    // Tab5 (ESP32-P4) has no on-die radio; route WiFi to its ESP32-C6 co-processor over SDIO
-    // (pins per M5Stack's Tab5 WiFi doc / M5Unified's Basic/Rtc example).
-    if (M5.getBoard() == m5::board_t::board_M5Tab5) {
-        WiFi.setPins(GPIO_NUM_12, GPIO_NUM_13, GPIO_NUM_11, GPIO_NUM_10, GPIO_NUM_9, GPIO_NUM_8, GPIO_NUM_15);
+    build_info_json();
+    publish_web_sample();
+    if (!start_access_point() || !start_http_server()) {
+        M5_LOGE("Web viewer unavailable");
+        return;
     }
-#endif
-    WiFi.mode(WIFI_AP);
-    WiFi.softAP("AhrsDemo", "ahrsdemo123");
-    web_server.on("/", handle_root);
-    web_server.on("/q", handle_quaternion);
-    web_server.on("/info", handle_info);
-    web_server.begin();
-    M5.Log.printf("Web viewer: join WiFi \"AhrsDemo\" (pass \"ahrsdemo123\"), open http://%s\n",
-                  WiFi.softAPIP().toString().c_str());
+    M5.Log.printf("Web viewer: join WiFi \"%s\" (pass \"%s\"), open http://%s\n", AP_SSID, AP_PASSWORD, AP_ADDRESS);
 }
 }  // namespace
-#endif  // __has_include(<WiFi.h>) && !ESP32H2
+#endif  // AHRS_WEB_VIEWER
 
 void setup()
 {
@@ -1279,19 +1420,13 @@ void loop()
 
     if (fail_reason) {
         // IMU unavailable: nothing to drain/fuse/draw, and BtnA is meaningless without a
-        // running filter. Still service the web viewer (its /info panel is the most useful
-        // diagnostic here); the static LCD notice drawn in setup() and the boot log carry the reason.
-#if defined(AHRS_WEB_VIEWER)
-        web_server.handleClient();
-#endif
+        // running filter. The web viewer keeps answering from its own task (its /info panel is
+        // the most useful diagnostic here); the static LCD notice drawn in setup() and the boot
+        // log carry the reason.
         return;
     }
 
     Units.update();
-
-#if defined(AHRS_WEB_VIEWER)
-    web_server.handleClient();
-#endif
 
     end_settle_boost_if_due();
 
@@ -1299,6 +1434,9 @@ void loop()
     if (m5::imu::any(cap)) {
         float roll{}, pitch{}, yaw{};
         ahrs.euler(roll, pitch, yaw);
+#if defined(AHRS_WEB_VIEWER)
+        publish_web_sample();
+#endif
         if (current_filter == m5::imu::FilterType::VQF) {
             // VQF is the only filter that reports what it is doing internally; surfacing it makes
             // the two behaviours that are otherwise invisible observable: whether the gyro bias is

@@ -1,0 +1,14 @@
+# AhrsDemo-only ESP-IDF defaults for esp32p4 (M5Tab5), applied alongside sdkconfig.defaults.
+#
+# Tab5 has no on-die radio: the web viewer's WiFi runs on its ESP32-C6 co-processor through
+# esp_hosted over SDIO (see main/idf_component.yml). esp_hosted's Tab5 preset sets the SDIO pins
+# (CLK 12 / CMD 13 / D0-D3 11,10,9,8 / reset 15, as in M5Stack's Tab5 WiFi doc).
+CONFIG_SLAVE_IDF_TARGET_ESP32C6=y
+CONFIG_ESP32P4_TAB5_C6_BOARD=y
+# The preset defaults the C6 reset to active-low, which keeps the C6 in reset on Tab5 (SDIO card
+# init times out). Active-high is what the Arduino core uses on the same board.
+CONFIG_ESP_HOSTED_SDIO_RESET_ACTIVE_HIGH=y
+# Keep esp_hosted's tasks and buffers in PSRAM. On IDF 6.1 they otherwise exhaust internal RAM and
+# startup fails with ESP_ERR_NO_MEM before app_main.
+CONFIG_ESP_HOSTED_DFLT_TASK_FROM_SPIRAM=y
+CONFIG_ESP_HOSTED_MEMPOOL_PREFER_SPIRAM=y
