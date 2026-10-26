@@ -37,11 +37,12 @@ namespace imu {
     `AhrsFilterBase::update()` call, with the elapsed time divided evenly across the
     batch (`dt / <samples drained this call>`). The time of a call that drains no gyro
     sample is carried over to the next call that does, so calling update() faster than the
-    gyro ODR does not shrink the integrated rotation. Accel/mag samples from a *different*
-    source than the gyro are drained once per update() call and the resulting "latest"
-    value is reused for every filter update() call in that batch (no per-sample
-    interpolation across sources); a source shared with the gyro (e.g. a single 6/9-axis
-    chip) is synchronized sample-for-sample instead.
+    gyro ODR does not shrink the integrated rotation. The carried-over time is capped at
+    0.5 s, so a stalled gyro source does not hand the filter one huge dt when it resumes.
+    Accel/mag samples from a *different* source than the gyro are drained once per update()
+    call and the resulting "latest" value is reused for every filter update() call in that
+    batch (no per-sample interpolation across sources); a source shared with the gyro (e.g.
+    a single 6/9-axis chip) is synchronized sample-for-sample instead.
   - **Magnetometer overflow**: a mag sample where any axis reads exactly -32768 (the
     BMM150 OVERFLOW sentinel) is rejected outright; the previous valid mag value is kept
     (both for latest() and for whatever gets passed to the filter). If no valid mag
@@ -265,7 +266,7 @@ public:
       @brief Drain every source and fuse newly-arrived samples using an explicit dt
       @param dt Time elapsed since the previous update call, in seconds; divided evenly
       across however many gyro samples are drained this call (if none is drained, it is
-      carried over to the next call that drains one)
+      carried over to the next call that drains one; the carried-over part is capped at 0.5 s)
       @return Capability bits that received at least one new sample this call
      */
     Capability update(const float dt);

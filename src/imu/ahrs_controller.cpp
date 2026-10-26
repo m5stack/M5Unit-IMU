@@ -38,6 +38,11 @@ constexpr size_t AHRS_MAX_DRAIN_SAMPLES{32};
 // new dt differs from its currently built period by more than 20% (see vqf.hpp).
 constexpr float AHRS_DT_EMA_ALPHA{0.1f};
 
+// Upper bound on the time carried over from update() calls that drained no gyro sample. If the
+// gyro source stalls (measurement stopped, bus errors) while update() keeps running, the stall
+// would otherwise reach the filter as one huge dt on the first sample after it resumes.
+constexpr float AHRS_MAX_CARRIED_DT{0.5f};
+
 //! @brief BMM150 reports -32768 on any saturated axis; the whole sample is unusable then
 //! (see Plan 2 handoff notes / filter_base.hpp mag contract).
 constexpr int32_t MAG_OVERFLOW_SENTINEL{-32768};
@@ -625,9 +630,9 @@ Capability AhrsController::drain_and_fuse(const float dt)
     // The gyro-owning source is the primary clock: every sample it hands out drives one
     // filter->update() call, with dt split evenly across the batch drained this round.
     // dt accumulates across calls that drain nothing (update() polled faster than the gyro
-    // ODR); dropping it would shrink the integrated rotation by ODR / call rate.
+    // ODR; capped at AHRS_MAX_CARRIED_DT); dropping it would shrink the integrated rotation by
+    // ODR / call rate.
     if (_gyro_src) {
-        _pending_dt += dt;
         size_t gyro_index{};
         for (size_t i = 0; i < _source_count; ++i) {
             if (_sources[i] == _gyro_src) {
@@ -654,9 +659,19 @@ Capability AhrsController::drain_and_fuse(const float dt)
             M5_LIB_LOGW("AhrsController::update: gyro drain overflow, dropped %zu sample(s)", dropped_count);
         }
 
-        if (gyro_count > 0) {
+        if (gyro_count == 0) {
+            const bool was_below = _pending_dt < AHRS_MAX_CARRIED_DT;
+            _pending_dt += dt;
+            if (_pending_dt >= AHRS_MAX_CARRIED_DT) {
+                if (was_below) {
+                    M5_LIB_LOGW("AhrsController::update: no gyro sample for over %.2f s, capping the carried-over dt",
+                                AHRS_MAX_CARRIED_DT);
+                }
+                _pending_dt = AHRS_MAX_CARRIED_DT;
+            }
+        } else {
             updated |= Capability::Gyro;
-            const float dt_per_sample = _pending_dt / static_cast<float>(gyro_count);
+            const float dt_per_sample = (_pending_dt + dt) / static_cast<float>(gyro_count);
             _pending_dt               = 0.0f;
 
             for (size_t k = 0; k < gyro_count; ++k) {

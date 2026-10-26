@@ -459,6 +459,41 @@ TEST(AhrsController, CarriedOverDtIsSplitAcrossTheDrainedSamples)
     }
 }
 
+TEST(AhrsController, CarriedOverDtIsCapped)
+{
+    MockSource ag(Capability::Accel | Capability::Gyro);
+
+    AhrsController ahrs;
+    EXPECT_TRUE(ahrs.add(ag));
+    EXPECT_TRUE(ahrs.begin());
+
+    MockFilter mock;
+    ahrs.setFilter(mock);
+
+    // A 2 s stall with update() still running: only 0.5 s of it is carried over
+    for (int i = 0; i < 4; ++i) {
+        ahrs.update(0.5f);
+    }
+    ag.pushAccelGyro(0, 0, 1, 0, 0, 0);
+    ahrs.update(0.01f);
+    EXPECT_EQ(mock.updateCount(), 1);
+    EXPECT_EQ(mock.dts().size(), 1u);
+    if (mock.dts().size() == 1) {
+        EXPECT_NEAR(mock.dts()[0], 0.51f, 1e-6f);
+    }
+
+    // A call that drains samples keeps its own dt uncapped
+    for (int i = 0; i < 4; ++i) {
+        ag.pushAccelGyro(0, 0, 1, 0, 0, 0);
+    }
+    ahrs.update(2.0f);
+    EXPECT_EQ(mock.updateCount(), 5);
+    EXPECT_EQ(mock.dts().size(), 5u);
+    if (mock.dts().size() == 5) {
+        EXPECT_NEAR(mock.dts()[4], 0.5f, 1e-6f);
+    }
+}
+
 TEST(AhrsController, WakeupDropsCarriedOverDt)
 {
     MockSource ag(Capability::Accel | Capability::Gyro);
