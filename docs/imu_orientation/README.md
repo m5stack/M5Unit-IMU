@@ -14,6 +14,11 @@ Notes:
   reports (Core2 v1.1 MPU6886 → v1.3 BMI270; ATOM Matrix → v1.1 BMI270). AhrsDemo probes the
   internal bus (`m5::unit::imu::detectBuiltinImu`) to pick the accel/gyro driver, while the axis
   remap is still selected by board (the mounting orientation is a board property).
+- The images do not all use the same frame. Some show the chip's own axes, others the axes
+  after M5Unified's per-board correction (which `m5::imu::presets::*` reproduces). On boards
+  where M5Unified applies no accel/gyro correction, the two are the same.
+- Gray/Fire's MPU6886 diagram draws +Z down. That is not a right-handed frame. On hardware,
+  +Z points up out of the screen (X right, Y away from the A/B/C buttons, Z up).
 - Images are © M5Stack, reproduced here for development reference. Some were converted to JPEG
   (UnitMiniIMU and Gray/Fire were originally .webp).
 
@@ -132,6 +137,9 @@ hardware before committing a preset.
 
 ## Gray — MPU6886 (0x68) + BMM150 (0x10)
 
+The MPU6886's +Z in this diagram is wrong: on hardware it points up out of the screen, not
+down. X and Y are as drawn.
+
 <img src="imu-gray.jpg" width="480" alt="Gray IMU orientation">
 
 [Source](https://docs.m5stack.com/en/core/gray)
@@ -168,6 +176,9 @@ M5.getBoard() cannot tell the generations apart, AhrsDemo probes the chip on the
 
 ## AtomS3R (+CAM/Ext/M12) — BMI270 (0x68)
 
+This diagram shows the axes after M5Unified's correction (`presets::atomS3R()`). The BMI270's
+own axes differ: right = +Y, away from USB-C = -X, up = +Z.
+
 <img src="imu-atoms3r.jpg" width="480" alt="AtomS3R IMU orientation">
 
 [Source](https://docs.m5stack.com/en/core/AtomS3R)
@@ -197,6 +208,10 @@ hardware. (StickC-Plus / StickC-Plus2 below are MPU6886 throughout.)
 [Source](https://docs.m5stack.com/en/core/M5StickC%20PLUS2)
 
 ## StickS3 — BMI270 (0x68)
+
+This diagram shows the BMI270's own axes (X toward USB-C, Y right, Z up). M5Unified and
+`presets::stickS3()` swap X/Y and invert Y, so their output is X right, Y away from USB-C, Z up
+(screen facing you, USB-C at the bottom).
 
 <img src="imu-sticks3.jpg" width="480" alt="StickS3 IMU orientation">
 
