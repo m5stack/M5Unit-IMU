@@ -429,9 +429,56 @@ TEST(AhrsController, UpdateWithoutGyroSampleCarriesDtOver)
     ag.pushAccelGyro(0, 0, 1, 0, 0, 0);
     ahrs.update(0.01f);
     EXPECT_EQ(mock.updateCount(), 2);
+    EXPECT_EQ(mock.dts().size(), 2u);
     if (mock.dts().size() == 2) {
         EXPECT_NEAR(mock.dts()[0], 0.03f, 1e-6f);
         EXPECT_NEAR(mock.dts()[1], 0.01f, 1e-6f);
+    }
+}
+
+TEST(AhrsController, CarriedOverDtIsSplitAcrossTheDrainedSamples)
+{
+    MockSource ag(Capability::Accel | Capability::Gyro);
+
+    AhrsController ahrs;
+    EXPECT_TRUE(ahrs.add(ag));
+    EXPECT_TRUE(ahrs.begin());
+
+    MockFilter mock;
+    ahrs.setFilter(mock);
+
+    ahrs.update(0.01f);
+    ahrs.update(0.01f);
+    ag.pushAccelGyro(0, 0, 1, 0, 0, 0);
+    ag.pushAccelGyro(0, 0, 1, 0, 0, 0);
+    ahrs.update(0.01f);  // 0.03 s carried over, split evenly across the 2 samples drained
+    EXPECT_EQ(mock.updateCount(), 2);
+    EXPECT_EQ(mock.dts().size(), 2u);
+    for (const float dt : mock.dts()) {
+        EXPECT_NEAR(dt, 0.015f, 1e-6f);
+    }
+}
+
+TEST(AhrsController, WakeupDropsCarriedOverDt)
+{
+    MockSource ag(Capability::Accel | Capability::Gyro);
+
+    AhrsController ahrs;
+    EXPECT_TRUE(ahrs.add(ag));
+    EXPECT_TRUE(ahrs.begin());
+
+    MockFilter mock;
+    ahrs.setFilter(mock);
+
+    ahrs.update(0.5f);  // drains nothing: carried over
+    EXPECT_TRUE(ahrs.wakeup());
+
+    ag.pushAccelGyro(0, 0, 1, 0, 0, 0);
+    ahrs.update(0.01f);
+    EXPECT_EQ(mock.updateCount(), 1);
+    EXPECT_EQ(mock.dts().size(), 1u);
+    if (mock.dts().size() == 1) {
+        EXPECT_NEAR(mock.dts()[0], 0.01f, 1e-6f);  // not 0.51: the time before wakeup() is dropped
     }
 }
 
