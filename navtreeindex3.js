@@ -1,5 +1,8 @@
 var NAVTREEINDEX3 =
 {
+"unit__ak8963__data_8hpp.html#ad905ffd93545e4f658404ac1b65644daa55f395cb17a13be3c4d0d1c09c7dcc72":[2,0,0,2,2,2,2],
+"unit__ak8963__data_8hpp.html#ad905ffd93545e4f658404ac1b65644daa5738b4738d0d5191678eed09d6b5c6f8":[2,0,0,2,2,2,0],
+"unit__ak8963__data_8hpp.html#ad905ffd93545e4f658404ac1b65644daa66ba162102bbf6ae31b522aec561735e":[2,0,0,2,2,2,1],
 "unit__ak8963__data_8hpp.html#ad905ffd93545e4f658404ac1b65644daaf01242ef29e5426615adc0f4c0f0d43d":[2,0,0,2,2,2,4],
 "unit__ak8963__data_8hpp.html#ad905ffd93545e4f658404ac1b65644daaf5e0c97905431f480b4fd97e9f75d1e9":[2,0,0,2,2,2,5],
 "unit__ak8963__data_8hpp.html#ae5f24ec2ea74c89c89cba8db4bfc59cc":[2,0,0,2,2,6],

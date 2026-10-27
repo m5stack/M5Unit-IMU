@@ -27,7 +27,7 @@
  <tbody>
  <tr id="projectrow">
   <td id="projectalign">
-   <div id="projectname">M5Unit-IMU<span id="projectnumber">&#160;0.0.1 git rev:0f81872</span>
+   <div id="projectname">M5Unit-IMU<span id="projectnumber">&#160;0.0.2 git rev:e5b00aa</span>
    </div>
   </td>
  </tr>
@@ -132,6 +132,9 @@ Functions</h2></td></tr>
 <tr class="memitem:acdb329fd5d49c6c608f5109d1cb4125b" id="r_acdb329fd5d49c6c608f5109d1cb4125b"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="presets_8cpp.html#acdb329fd5d49c6c608f5109d1cb4125b">m5::imu::presets::atomS3R</a> (<a class="el" href="classm5_1_1imu_1_1_ahrs_controller.html">AhrsController</a> &amp;ahrs, <a class="el" href="classm5_1_1unit_1_1_unit_b_m_i270.html">m5::unit::UnitBMI270</a> &amp;bmi270)</td></tr>
 <tr class="memdesc:acdb329fd5d49c6c608f5109d1cb4125b"><td class="mdescLeft">&#160;</td><td class="mdescRight">AtomS3R/AtomS3R CAM/AtomS3R Ext's built-in BMI270 (with AUX BMM150 magnetometer)  <br /></td></tr>
 <tr class="separator:acdb329fd5d49c6c608f5109d1cb4125b"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ac9f4b353f01dcac29afa515b662abaec" id="r_ac9f4b353f01dcac29afa515b662abaec"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="presets_8cpp.html#ac9f4b353f01dcac29afa515b662abaec">m5::imu::presets::stickS3</a> (<a class="el" href="classm5_1_1imu_1_1_ahrs_controller.html">AhrsController</a> &amp;ahrs, <a class="el" href="classm5_1_1unit_1_1_unit_b_m_i270.html">m5::unit::UnitBMI270</a> &amp;bmi270)</td></tr>
+<tr class="memdesc:ac9f4b353f01dcac29afa515b662abaec"><td class="mdescLeft">&#160;</td><td class="mdescRight">StickS3's built-in BMI270.  <br /></td></tr>
+<tr class="separator:ac9f4b353f01dcac29afa515b662abaec"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a4006ee536e93ead3e56496be691b3bf5" id="r_a4006ee536e93ead3e56496be691b3bf5"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="presets_8cpp.html#a4006ee536e93ead3e56496be691b3bf5">m5::imu::presets::m5stackCoreFire</a> (<a class="el" href="classm5_1_1imu_1_1_ahrs_controller.html">AhrsController</a> &amp;ahrs, <a class="el" href="classm5_1_1unit_1_1_unit_m_p_u6886.html">m5::unit::UnitMPU6886</a> &amp;mpu6886, <a class="el" href="classm5_1_1unit_1_1_unit_b_m_m150.html">m5::unit::UnitBMM150</a> &amp;bmm150)</td></tr>
 <tr class="memdesc:a4006ee536e93ead3e56496be691b3bf5"><td class="mdescLeft">&#160;</td><td class="mdescRight">Classic M5Stack Core/Fire's built-in MPU6886 + discrete BMM150 magnetometer.  <br /></td></tr>
 <tr class="separator:a4006ee536e93ead3e56496be691b3bf5"><td class="memSeparator" colspan="2">&#160;</td></tr>
@@ -282,7 +285,7 @@ Functions</h2></td></tr>
   </dd>
 </dl>
 <dl class="section return"><dt>Returns</dt><dd>False if ahrs already holds the maximum number of sources (see AhrsController::add())</dd></dl>
-<p>M5Unified's IMU_Class::begin() has no case for board_M5StackCore2 in its axis-order switch (IMU_Class.cpp), i.e. the identity transform is already correct here. AhrsController::add() defaults every newly added source to the identity AxisOrder, so this function does not call writeAxisOrder(). </p>
+<p>M5Unified's IMU_Class::begin() has no case for board_M5StackCore2 in its axis-order switch (IMU_Class), i.e. the identity transform is already correct here. AhrsController::add() defaults every newly added source to the identity AxisOrder, so this function does not call writeAxisOrder(). </p>
 
 </div>
 </div>
@@ -390,7 +393,7 @@ Functions</h2></td></tr>
   </dd>
 </dl>
 <dl class="section return"><dt>Returns</dt><dd>False if either add() call fails (see AhrsController::add())</dd></dl>
-<p>The BMM150's X/Z inversion is a board-mounting property of board_M5Stack (M5Unified gates it on the board, not on the accel chip), so the same mag correction as the MPU6886 generation applies. The SH200Q accel/gyro stay at identity: no M5Unified reference table exists for it and field reports suggest its accel and gyro axis systems may disagree &ndash; confirm on 2019.7 hardware before committing a correction (see docs/imu_orientation). </p>
+<p>The BMM150's X/Z inversion is a board-mounting property of board_M5Stack (M5Unified gates it on the board, not on the accel chip), so the same mag correction as the MPU6886 generation applies. The SH200Q accel/gyro stay at identity: no M5Unified reference table exists for it and field reports suggest its accel and gyro axis systems may disagree &ndash; confirm on 2019.7 hardware before committing a correction (see the IMU orientation wiki page). </p>
 
 </div>
 </div>
@@ -423,6 +426,38 @@ Functions</h2></td></tr>
 </dl>
 <dl class="section return"><dt>Returns</dt><dd>False if ahrs already holds the maximum number of sources (see AhrsController::add())</dd></dl>
 <p>M5Unified's IMU_Class::begin(): for an MPU9250-internal AK8963 (gated on the accel/gyro being an MPU9250, not on board id), the magnetometer's X/Y axes are swapped and Z inverted (axis_order_yxz | axis_invert_z). AK8963 is a pure-Mag source, so the correction is applied via AhrsController::writeMagAxisOrder() (the mag remap path). </p>
+
+</div>
+</div>
+<a id="ac9f4b353f01dcac29afa515b662abaec" name="ac9f4b353f01dcac29afa515b662abaec"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ac9f4b353f01dcac29afa515b662abaec">&#9670;&#160;</a></span>stickS3()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">bool m5::imu::presets::stickS3 </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="classm5_1_1imu_1_1_ahrs_controller.html">AhrsController</a> &amp;</td>          <td class="paramname"><span class="paramname"><em>ahrs</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype"><a class="el" href="classm5_1_1unit_1_1_unit_b_m_i270.html">m5::unit::UnitBMI270</a> &amp;</td>          <td class="paramname"><span class="paramname"><em>bmi270</em></span>&#160;)</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>StickS3's built-in BMI270. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">ahrs</td><td>Controller to register bmi270 with </td></tr>
+    <tr><td class="paramname">bmi270</td><td>StickS3's built-in BMI270 (6-axis, no AUX magnetometer; must already be begin()'d) </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>False if ahrs already holds the maximum number of sources (see AhrsController::add())</dd></dl>
+<p>M5Unified's IMU_Class::begin(): for board_M5StickS3, accel/gyro get X/Y swapped plus Y inverted (axis_order_yxz | axis_invert_y), the same correction as AtomS3R. The result is X toward the right side (screen facing you, USB-C at the bottom), Y away from the USB-C end, Z out of the screen. The official orientation diagram shows the chip's own axes instead (X toward USB-C, Y right, Z up). </p>
 
 </div>
 </div>

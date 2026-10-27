@@ -27,7 +27,7 @@
  <tbody>
  <tr id="projectrow">
   <td id="projectalign">
-   <div id="projectname">M5Unit-IMU<span id="projectnumber">&#160;0.0.1 git rev:0f81872</span>
+   <div id="projectname">M5Unit-IMU<span id="projectnumber">&#160;0.0.2 git rev:e5b00aa</span>
    </div>
   </td>
  </tr>
@@ -135,6 +135,9 @@ Public Member Functions</h2></td></tr>
 float&#160;</td><td class="memItemRight" valign="bottom"><b>readGain</b> () const</td></tr>
 <tr class="memdesc:af4d86e2eba6b261a29229bbac421408c"><td class="mdescLeft">&#160;</td><td class="mdescRight">Current feedback gain. <br /></td></tr>
 <tr class="separator:af4d86e2eba6b261a29229bbac421408c"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:adfe7edc6c83a047070d6973f3519c579" id="r_adfe7edc6c83a047070d6973f3519c579"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#adfe7edc6c83a047070d6973f3519c579">startupInProgress</a> () const</td></tr>
+<tr class="memdesc:adfe7edc6c83a047070d6973f3519c579"><td class="mdescLeft">&#160;</td><td class="mdescRight">Whether Fusion's startup ramp is still in progress.  <br /></td></tr>
+<tr class="separator:adfe7edc6c83a047070d6973f3519c579"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:ae6a76448504bcf7a32f0ff9d5582f1fc" id="r_ae6a76448504bcf7a32f0ff9d5582f1fc"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ae6a76448504bcf7a32f0ff9d5582f1fc">writeQuaternion</a> (const float w, const float x, const float y, const float z)</td></tr>
 <tr class="memdesc:ae6a76448504bcf7a32f0ff9d5582f1fc"><td class="mdescLeft">&#160;</td><td class="mdescRight">Overwrite the current attitude estimate directly.  <br /></td></tr>
 <tr class="separator:ae6a76448504bcf7a32f0ff9d5582f1fc"><td class="memSeparator" colspan="2">&#160;</td></tr>
@@ -225,6 +228,26 @@ float&#160;</td><td class="memItemRight" valign="bottom"><b>readGain</b> () cons
 <p>Reset the internal attitude estimate (and any filter state) to identity. </p>
 
 <p>Implements <a class="el" href="classm5_1_1imu_1_1_ahrs_filter_base.html#a368b0eecf22f9282aaabff7690222b74">m5::imu::AhrsFilterBase</a>.</p>
+
+</div>
+</div>
+<a id="adfe7edc6c83a047070d6973f3519c579" name="adfe7edc6c83a047070d6973f3519c579"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#adfe7edc6c83a047070d6973f3519c579">&#9670;&#160;</a></span>startupInProgress()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">bool m5::imu::FusionFilter::startupInProgress </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Whether Fusion's startup ramp is still in progress. </p>
+<p>True for the first 3 seconds (of summed <a class="el" href="#aa305520e1f4021c9a8802648b1680961" title="Fuse one IMU sample into the attitude estimate.">update()</a> dt) after construction or <a class="el" href="#a44043eeaafe0d03c95fef5e628ea9f52" title="Reset the internal attitude estimate (and any filter state) to identity.">reset()</a>, with the default gain; a gain of 0 or of 10 (Fusion's startup gain) or more ends it on the first <a class="el" href="#aa305520e1f4021c9a8802648b1680961" title="Fuse one IMU sample into the attitude estimate.">update()</a>. During that window Fusion corrects with a high gain and, on a no-magnetometer <a class="el" href="#aa305520e1f4021c9a8802648b1680961" title="Fuse one IMU sample into the attitude estimate.">update()</a>, holds the yaw heading at 0, so a rotation made then is not reflected. </p>
 
 </div>
 </div>

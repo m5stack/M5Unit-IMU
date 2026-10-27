@@ -8,6 +8,7 @@ var presets_8hpp =
     [ "m5stackCoreFire", "presets_8hpp.html#a4006ee536e93ead3e56496be691b3bf5", null ],
     [ "m5stackCoreFire", "presets_8hpp.html#a0b486e32c92768e78d70c54710db6c02", null ],
     [ "mpu9250Ak8963", "presets_8hpp.html#ab216aef79a460c12b42b32523f3d57d2", null ],
+    [ "stickS3", "presets_8hpp.html#ac9f4b353f01dcac29afa515b662abaec", null ],
     [ "unitBMM350", "presets_8hpp.html#a456a99704891097f2ea248f06e4f2534", null ],
     [ "unitDoF", "presets_8hpp.html#ada70157a7a8ed82fa429c8e6cb06b246", null ]
 ];
