@@ -252,8 +252,8 @@ void setup()
         canvas.createSprite(lcd.width(), lcd.height());
     }
 
-    // UnitMiniIMU / UnitDoF6 / UnitDoF9 / UnitDoF10: NessoN1 -> SoftwareI2C (M5HAL), NanoC6 / NanoH2 ->
-    //                                                M5.Ex_I2C, others -> Wire
+    // UnitMiniIMU / UnitMiniIMUPro / UnitDoF6 / UnitDoF9 / UnitDoF10: classic M5Stack Core -> GROVE
+    // Port C (avoids the built-in IMU at 0x68); other boards -> addI2C() (board-aware)
     // UnitBMM350: GROVE (all boards)
     bool ok{};
 #if defined(USING_UNIT_MINI_IMU) || defined(USING_UNIT_DOF6) || defined(USING_UNIT_DOF9) || \
@@ -267,10 +267,10 @@ void setup()
         // Route to GROVE Port C on the idle lgfx I2C port (see i2cPortC in m5_unit_imu_wiring.hpp).
         ok = m5::unit::imu::wiring::i2cPortC(Units, unit);
     } else {
-        ok = m5::unit::wiring::addI2C(Units, unit, 400 * 1000U);
+        ok = m5::unit::wiring::addI2C(Units, unit);
     }
 #else
-    ok = m5::unit::wiring::addI2C(Units, unit, 400 * 1000U);
+    ok = m5::unit::wiring::addI2C(Units, unit);
 #endif
 
 #if (defined(USING_UNIT_DOF6) || defined(USING_UNIT_DOF9) || defined(USING_UNIT_DOF10)) && defined(ARDUINO)

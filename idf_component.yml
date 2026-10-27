@@ -2,7 +2,7 @@ description: M5UnitUnified library for IMU series (UnitIMUMini, DoF6/DoF9/DoF10,
 url: https://github.com/m5stack/M5Unit-IMU
 issues: https://github.com/m5stack/M5Unit-IMU/issues
 license: MIT
-version: "0.0.1"
+version: "0.0.2"
 
 dependencies:
   idf: ">=5.0"
@@ -10,6 +10,12 @@ dependencies:
   # branch via git (switch to a version constraint after publish).
   m5stack/M5UnitUnified:
     git: https://github.com/m5stack/M5UnitUnified.git
+    version: main
+  # The public headers include m5_utility/container/circular_buffer.hpp, so M5Utility is a
+  # direct dependency. Declaring it here does not conflict with the one M5UnitUnified pulls in:
+  # the same git URL and ref resolve to a single component.
+  m5stack/M5Utility:
+    git: https://github.com/m5stack/M5Utility.git
     version: main
   # Barometer drivers (UnitSPA06 for DoF10 / UnitBMP280 for MiniIMUPro) live in M5Unit-ENV.
   # Pinned to master (which now includes the 1.7.1 release that ships the UnitSPA06::pressure() ->

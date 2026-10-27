@@ -190,6 +190,39 @@ jobs:
             framework: Arduino
             espressif32: latest
             env: BuiltIn_Tab5_AhrsDemo_Arduino_latest
+          # ViaPaHub (UnitMiniIMU / DoF6 / DoF9 / DoF10 / BMM350 on one PaHub) on the compile-config
+          # representatives. NessoN1 (SoftwareI2C PaHub parent) is represented by NanoC6 here; its env
+          # exists in platformio.ini for on-board checks.
+          - example: ViaPaHub
+            unit: PaHub
+            board: Core
+            framework: Arduino
+            espressif32: latest
+            env: ViaPaHub_Core_Arduino_latest
+          - example: ViaPaHub
+            unit: PaHub
+            board: CoreS3
+            framework: Arduino
+            espressif32: latest
+            env: ViaPaHub_CoreS3_Arduino_latest
+          - example: ViaPaHub
+            unit: PaHub
+            board: NanoC6
+            framework: Arduino
+            espressif32: latest
+            env: ViaPaHub_NanoC6_Arduino_latest
+          - example: ViaPaHub
+            unit: PaHub
+            board: NanoH2
+            framework: Arduino
+            espressif32: latest
+            env: ViaPaHub_NanoH2_Arduino_latest
+          - example: ViaPaHub
+            unit: PaHub
+            board: Tab5
+            framework: Arduino
+            espressif32: latest
+            env: ViaPaHub_Tab5_Arduino_latest
 
     steps:
       - name: Checkout

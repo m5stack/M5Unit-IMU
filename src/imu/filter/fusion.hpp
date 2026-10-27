@@ -82,6 +82,16 @@ public:
     }
 
     /*!
+      @brief Whether Fusion's startup ramp is still in progress
+      @details True for the first 3 seconds (of summed update() dt) after construction or
+      reset(), with the default gain; a gain of 0 or of 10 (Fusion's startup gain) or more ends
+      it on the first update(). During that window Fusion corrects with a high gain and, on a
+      no-magnetometer update(), holds the yaw heading at 0, so a rotation made then is not
+      reflected.
+     */
+    bool startupInProgress() const;
+
+    /*!
       @brief Overwrite the current attitude estimate directly
       @details Not part of AhrsFilterBase; intended for seeding a known starting
       attitude (e.g. tests, or resuming from a previously stored orientation).

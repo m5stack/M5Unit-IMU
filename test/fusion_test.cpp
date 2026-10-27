@@ -149,6 +149,21 @@ TEST(FusionFilterTest, ResetReturnsToIdentity)
     EXPECT_NEAR(z1, z2, 1e-5f);
 }
 
+TEST(FusionFilterTest, StartupInProgressEndsAfterRampAndRestartsOnReset)
+{
+    FusionFilter filter;
+    EXPECT_TRUE(filter.startupInProgress());
+
+    run_static(filter, 2.5f, TEST_DT);
+    EXPECT_TRUE(filter.startupInProgress());
+
+    run_static(filter, FUSION_STARTUP_WARMUP_S - 2.5f, TEST_DT);
+    EXPECT_FALSE(filter.startupInProgress());
+
+    filter.reset();
+    EXPECT_TRUE(filter.startupInProgress());
+}
+
 TEST(FusionFilterTest, WriteQuaternionRejectsNearZero)
 {
     FusionFilter filter;

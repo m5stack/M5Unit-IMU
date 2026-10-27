@@ -1,0 +1,6 @@
+# AhrsDemo-only ESP-IDF defaults, read after ../common/sdkconfig.defaults (see CMakeLists.txt).
+#
+# The WiFi SoftAP and HTTP server of the browser viewer take this example past IDF's default
+# single-app layout: ~1.0 MB of a 1 MB partition on esp32s3 (IDF 5.5 leaves 2% free, IDF 6.1
+# overflows). SINGLE_APP_LARGE is IDF's own 1.5 MB layout and fits the 4 MB flash set in common/.
+CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y
